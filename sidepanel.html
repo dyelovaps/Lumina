@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lumina</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+    <style id="lumina-css">
+:root {
+  --bg: #0b0c0e;
+  --bg-2: #141518;
+  --fg: #f2f1ec;
+  --muted: #8b8d93;
+  --line: rgb(242 241 236 / 0.1);
+  --paper: #e8e6df;
+  --ink: #0b0c0e;
+  --sage: #8faf8c;
+  --danger: #c47a72;
+  --amber: #c4a574;
+  --ring: 0 0 0 1px var(--line);
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  color-scheme: dark;
+}
+
+body {
+  font: 400 13px/1.5 "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+button,
+select,
+textarea,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button { cursor: pointer; }
+button:disabled { opacity: 0.42; cursor: default; }
+
+::placeholder { color: rgb(139 141 147 / 0.7); }
+::selection { background: rgb(232 230 223 / 0.22); color: var(--fg); }
+
+.wrap { display: flex; flex-direction: column; min-height: 100vh; }
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.head svg { color: var(--paper); }
+.head strong { display: block; font-size: 17px; letter-spacing: -0.03em; }
+.head span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.head .ver {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 999px;
+  box-shadow: var(--ring);
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 10px;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.tabs button {
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.tabs button.on {
+  background: var(--bg-2);
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: var(--ring);
+}
+
+.page { display: none; padding: 8px 16px 28px; }
+.page.on { display: block; }
+
+label.k,
+.k {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 16px 0 8px;
+}
+.k.tight { margin-top: 10px; }
+
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.modes button {
+  text-align: left;
+  background: var(--bg-2);
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 12px 14px;
+  color: var(--fg);
+  box-shadow: var(--ring);
+  min-height: 88px;
+}
+.modes button.on {
+  background: var(--paper);
+  color: var(--ink);
+}
+.modes small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.modes button.on small { color: rgb(11 12 14 / 0.62); }
+
+textarea {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  background: var(--bg-2);
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--fg);
+  box-shadow: var(--ring);
+  outline: none;
+}
+
+select,
+input[type="text"] {
+  width: 100%;
+  height: 42px;
+  margin-top: 6px;
+  background: var(--bg-2);
+  border: 0;
+  border-radius: 10px;
+  padding: 0 36px 0 12px;
+  color: var(--fg);
+  box-shadow: var(--ring);
+  outline: none;
+}
+
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%238b8d93' d='M1 1.5 6 6.5 11 1.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+select option {
+  background: #141518;
+  color: #f2f1ec;
+}
+
+textarea:focus,
+select:focus,
+input[type="text"]:focus {
+  box-shadow: 0 0 0 1px var(--paper);
+}
+
+.row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.primary,
+.ghost,
+.danger {
+  height: 42px;
+  min-height: 42px;
+  border-radius: 10px;
+  padding: 0 16px;
+  border: 0;
+}
+
+.primary {
+  width: 100%;
+  margin-top: 16px;
+  font-weight: 650;
+  color: var(--ink);
+  background: var(--paper);
+}
+.ghost {
+  background: transparent;
+  color: var(--fg);
+  box-shadow: var(--ring);
+}
+.danger {
+  background: rgb(196 122 114 / 0.16);
+  color: var(--danger);
+}
+
+.field { margin-top: 14px; }
+.field .top {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+input[type="range"] { width: 100%; accent-color: var(--paper); }
+
+.pair,
+.job,
+.json-doc,
+.glass,
+.card-pair {
+  background: var(--bg-2);
+  border: 0;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: var(--ring);
+}
+
+.glass { margin: 14px 0; }
+
+.pair { display: flex; gap: 10px; }
+.pair .idx { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; padding-top: 2px; }
+.pair .a { font-size: 13px; line-height: 1.45; }
+.pair .b { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+.job .meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.job .meta img,
+.job .ph {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #1b1c20;
+  flex-shrink: 0;
+  outline: 1px solid rgb(255 255 255 / 0.1);
+  outline-offset: -1px;
+}
+.job .role {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.paired {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.json-doc pre,
+.glass pre {
+  margin: 10px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  background: #0b0c0e;
+  border-radius: 8px;
+  box-shadow: var(--ring);
+  font: 11px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: var(--paper);
+  white-space: pre-wrap;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chips span {
+  font: 11px/1 ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: var(--fg);
+  background: #1b1c20;
+  padding: 5px 8px;
+  border-radius: 6px;
+  box-shadow: var(--ring);
+}
+
+.badge {
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--paper);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.card-pair header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.card-pair header span {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.card-pair .tools { display: flex; gap: 4px; }
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #1b1c20;
+  color: var(--muted);
+}
+.icon-btn:hover { color: var(--fg); }
+
+.cols { display: grid; gap: 8px; }
+.cols label { display: grid; gap: 6px; font-size: 11px; color: var(--muted); }
+.cols textarea {
+  min-height: 120px;
+  font: 11px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tile {
+  overflow: hidden;
+  border-radius: 10px;
+  background: #1b1c20;
+  box-shadow: var(--ring);
+}
+.tile img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.tile input {
+  width: 100%;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  padding: 0 8px;
+  font-size: 11px;
+}
+.tile-add {
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  box-shadow: var(--ring);
+  font-size: 11px;
+  padding: 8px;
+}
+
+.switch {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.switch small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.switch input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--paper); }
+
+.pill {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #1b1c20;
+  color: var(--muted);
+}
+.pill.run { color: var(--paper); }
+.pill.ok { color: var(--sage); }
+.pill.err { color: var(--danger); }
+.pill.wait { color: var(--amber); }
+
+.prompt {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bar {
+  height: 3px;
+  background: rgb(27 54 93 / 0.22);
+  border-radius: 99px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.bar > i { display: block; height: 100%; background: var(--paper); width: 0; }
+
+.gauge {
+  height: 3px;
+  width: 100%;
+  background: rgb(27 58 107 / 0.22);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.gauge > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #1b3a6b;
+  transition: width 0.35s ease;
+}
+.gauge[data-st="running"] > i {
+  background: linear-gradient(90deg, #12284d, #2c5aa0);
+}
+.gauge[data-st="done"] > i { background: #1b3a6b; }
+.gauge[data-st="error"] > i { background: #243656; }
+.gauge[data-st="cancelled"] > i { background: #243656; }
+.gauge.twin { margin-top: 6px; }
+.json-edit {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  background: #0b0c0e;
+  border: 0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 10px;
+  color: var(--paper);
+  box-shadow: var(--ring);
+  font: 11px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre;
+}
+
+.err { color: var(--danger); font-size: 12px; margin-top: 6px; }
+.empty { text-align: center; color: var(--muted); padding: 40px 12px; }
+
+.popup { padding: 16px; }
+.brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+  color: var(--paper);
+}
+.brand strong { display: block; color: var(--fg); }
+.brand span {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.popup button {
+  width: 100%;
+  height: 42px;
+  border: 0;
+  border-radius: 10px;
+  margin-top: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 650;
+}
+.popup button.ghost {
+  background: transparent;
+  color: var(--fg);
+  font-weight: 400;
+  box-shadow: var(--ring);
+}
+
+.hint,
+.note { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+.seg button {
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: #1b1c20;
+  color: var(--muted);
+  box-shadow: var(--ring);
+  font-weight: 650;
+}
+.seg button.on {
+  background: var(--paper);
+  color: var(--ink);
+}
+.preview {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.card-pair.skipped { opacity: 0.42; }
+.title-row { display: grid; gap: 6px; margin: 0 0 6px; font-size: 11px; color: var(--muted); }
+.title-row input {
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  padding: 0 10px;
+}
+.stem {
+  margin: 0 0 10px;
+  font: 11px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: var(--muted);
+}
+.journal {
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px;
+  background: #0b0c0e;
+  border-radius: 8px;
+  box-shadow: var(--ring);
+  font: 11px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: var(--paper);
+  white-space: pre-wrap;
+}
+.still-card {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 10px;
+  padding: 10px;
+  margin: 8px 0;
+  background: var(--bg-2);
+  border-radius: 12px;
+  box-shadow: var(--ring);
+}
+.still-card.skipped { opacity: 0.42; }
+.still-card img {
+  width: 88px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #0b0c0e;
+}
+.still-card textarea { min-height: 72px; margin: 0; }
+.still-card .still-meta { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 6px; }
+.seg4 { grid-template-columns: 1fr 1fr 1fr; }
+#step-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 16px 4px;
+  padding: 10px 12px;
+  background: #1b3a6b;
+  color: #e8e6df;
+  border-radius: 10px;
+}
+#step-bar.show { display: flex; }
+.mini-dur {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.mini-dur button {
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 650;
+}
+ol { padding-left: 18px; }
+ol li { margin: 8px 0; }
+
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="head">
+        <svg viewBox="0 0 32 32" width="28" height="28" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.25" />
+          <circle cx="16" cy="16" r="7.5" stroke="currentColor" stroke-width="1.25" />
+          <circle cx="16" cy="16" r="2.4" fill="currentColor" />
+          <path d="M16 3v4.5M16 24.5V29M3 16h4.5M24.5 16H29" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" />
+        </svg>
+        <div>
+          <strong>Lumina</strong>
+          <span>studio · Grok & Google Flow</span>
+        </div>
+        <em class="ver">1.9.0</em>
+        <div class="zoom-ctrl" style="margin-left: auto;">
+          <span style="font-size:11px; color:var(--muted); text-transform:uppercase;">Zoom</span>
+          <select id="global-zoom-select" title="Taille d'affichage">
+            <option value="1.0">100%</option>
+            <option value="1.15" selected>115%</option>
+            <option value="1.3">130%</option>
+            <option value="1.5">150%</option>
+          </select>
+        </div>
+      </header>
+      <nav class="tabs">
+        <button type="button" data-tab="control" class="on">Grok</button>
+        <button type="button" data-tab="flow">Google Flow</button>
+        <button type="button" data-tab="queue">File</button>
+        <button type="button" data-tab="settings">Réglages</button>
+      </nav>
+      <section id="flow" class="page">
+        <article class="glass">
+          <p class="k">Google Flow · FlowKit</p>
+          <p class="note">Connectez votre session Google Flow au service local FlowKit. Cette connexion remplace l’extension FlowKit séparée ; les lots Grok restent dans l’onglet Grok.</p>
+          <p class="note">Le service FlowKit doit être lancé sur cet ordinateur pour automatiser les générations. Activez ensuite la connexion dans le panneau ci-dessous.</p>
+          <p class="note"><a href="flow/setup.html" target="_blank" rel="noopener">Installation et utilisation de Google Flow</a></p>
+        </article>
+        <iframe src="flow/side_panel.html" title="Connexion et suivi Google Flow" style="width:100%;height:calc(100vh - 180px);min-height:550px;border:none;border-radius:12px"></iframe>
+      </section>
+      <div id="step-bar" hidden>
+        <span id="step-label">Scène terminée</span>
+        <button type="button" class="primary" id="next-2" style="width:auto;margin:0">Scène suivante</button>
+      </div>
+
+      <section id="control" class="page on">
+        <p class="k">Mode</p>
+        <div class="modes" id="modes">
+          <button type="button" data-mode="pipeline" class="on">Lot mixte<small>Chaque prompt image est classé avec son prompt vidéo. L’image générée devient le plan de départ.</small></button>
+          <button type="button" data-mode="t2v">Texte → Vidéo<small>Une description par plan. Séparez les prompts par une ligne vide.</small></button>
+          <button type="button" data-mode="frame2v">Image → Vidéo<small>1re image = première frame, 2e = dernière frame → un seul clip. Ou 1 image = 1 clip.</small></button>
+          <button type="button" data-mode="montage">Stills → Clips<small>Tes images déjà faites + un prompt vidéo chacun, dans l’ordre. Durée, qualité, format.</small></button>
+          <button type="button" data-mode="ingredients">Ingrédients → Vidéo<small>Joignez des visuels de personnages ou d’objets à animer ensemble.</small></button>
+          <button type="button" data-mode="t2i">Texte → Image<small>Décrivez chaque image. Un prompt = un lot.</small></button>
+          <button type="button" data-mode="i2i">Image → Image<small>Transformez des images sources avec un prompt d’édition.</small></button>
+        </div>
+
+        <p class="k">Saisie</p>
+        <div class="seg" id="input-pills">
+          <button type="button" data-input="text" class="on">Prompts texte</button>
+          <button type="button" data-input="json">JSON</button>
+        </div>
+        <p class="note">Un seul panneau à la fois. JSON : coller, Appliquer, les cartes se remplissent.</p>
+
+        <article class="glass json-doc" id="json-box" hidden>
+          <p class="k">Format JSON</p>
+          <p class="note">Imagine lit un objet JSON comme prompt structuré. Pour un lot mixte, un tableau de paires : image d’abord, vidéo ensuite, dans le même ordre.</p>
+          <p class="k tight">Champs image</p>
+          <div class="chips">
+            <span>scene</span><span>subject</span><span>style</span><span>lighting</span><span>composition</span>
+          </div>
+          <p class="k tight">Champs vidéo</p>
+          <div class="chips">
+            <span>motion</span><span>camera</span><span>mood</span><span>duration</span>
+          </div>
+          <p class="k tight">Références</p>
+          <div class="chips">
+            <span>characters</span><span>location</span><span>props</span>
+          </div>
+          <p class="note">Zone éditable : colle, corrige, puis Appliquer. Raccourci : { "image": "texte", "video": "texte", "title": "phare" }.</p>
+          <textarea id="json-sample" class="json-edit" spellcheck="false"></textarea>
+          <p class="err" id="json-err" hidden></p>
+          <div class="row">
+            <button type="button" class="ghost" id="copy-json">Copier</button>
+            <button type="button" class="ghost" id="load-json">Charger l’exemple</button>
+            <button type="button" class="primary" id="apply-json" style="width:auto;margin-top:0">Appliquer ce JSON</button>
+          </div>
+        </article>
+
+        <article class="glass" id="montage-box" hidden>
+          <p class="k">Montage stills → clips</p>
+          <p class="note">1. Dépose toutes tes images (01, 02, 03…). 2. Colle les prompts vidéo. 3. Lumina relie image n ↔ prompt n. Même nom de fichier pour le clip.</p>
+          <div class="tiles" id="still-tiles"></div>
+          <input id="still-files" type="file" accept="image/*" multiple hidden />
+          <div id="clip-text-wrap">
+          <p class="k tight">Prompts vidéo (un par image, ligne vide entre eux)</p>
+          <textarea id="clip-prompts" placeholder="Travelling avant très lent, poussière en suspension, 6 secondes.&#10;&#10;Rack focus du fond vers le laiton, caméra presque fixe."></textarea>
+          <div class="row">
+            <button type="button" class="ghost" id="link-clips">Relier dans l’ordre</button>
+            <button type="button" class="ghost" id="link-titles">Relier par titre de fichier</button>
+          </div>
+          </div>
+          <p class="preview" id="montage-preview">Aucune image.</p>
+          <div id="still-cards"></div>
+        </article>
+
+        <article class="glass" id="images-box" hidden>
+          <p class="k">Images de départ</p>
+          <p class="note" id="images-hint">1re image = début du clip, 2e = fin. Un prompt = une seule vidéo.</p>
+          <div class="seg" id="frame-pills">
+            <button type="button" data-frame="startEnd" class="on">Début + fin</button>
+            <button type="button" data-frame="startOnly">1 image = 1 clip</button>
+          </div>
+          <div class="tiles" id="src-images"></div>
+          <input id="src-files" type="file" accept="image/*" multiple hidden />
+        </article>
+
+        <article class="glass" id="refs-box">
+          <p class="k">Références</p>
+          <p class="note">Les références choisies sont jointes en plus des images de scène. En vidéo, elles reçoivent le rôle « Référence », distinct des images de début et de fin.</p>
+          <label for="reference-selection">Références à joindre à chaque scène</label>
+          <select id="reference-selection">
+            <option value="all">Toutes les références importées</option>
+            <option value="matching">Seulement les noms cités dans les prompts</option>
+            <option value="none">Aucune référence</option>
+          </select>
+          <p class="note">En sélection par nom : utilisez les noms des tuiles dans le texte ou les champs JSON characters, location, props. Le journal liste les références prévues pour chaque envoi.</p>
+          <p class="k tight">Personnages</p>
+          <div class="tiles" id="chars"></div>
+          <p class="k tight">Lieux</p>
+          <div class="tiles" id="locs"></div>
+          <p class="k tight">Props</p>
+          <div class="tiles" id="props"></div>
+          <input id="ref-char" type="file" accept="image/*" multiple hidden />
+          <input id="ref-loc" type="file" accept="image/*" multiple hidden />
+          <input id="ref-prop" type="file" accept="image/*" multiple hidden />
+        </article>
+
+        <div id="text-prompt-box">
+        <div id="pair-box">
+          <div class="row-between">
+            <p class="k tight">Classement</p>
+            <span class="badge" id="pair-count">0 paire</span>
+          </div>
+          <p class="note">Chaque carte = une scène. Même nom pour l’image et le clip : <code>01-titre.jpg</code> / <code>01-titre.mp4</code>. ○ ignore la scène.</p>
+          <div id="pairs"></div>
+          <div class="row">
+            <button type="button" class="ghost" id="add-pair">Ajouter une paire</button>
+          </div>
+        </div>
+
+        <div id="single-box" hidden>
+          <p class="k">Prompts</p>
+          <textarea id="prompts" placeholder="Un studio photo minimaliste, lumière rasante.&#10;&#10;Un phare breton au crépuscule, mer calme."></textarea>
+        </div>
+        </div>
+
+        <div class="row">
+          <input id="file" type="file" accept=".txt,.csv,.json,.md,text/plain,application/json,text/markdown" hidden />
+          <button type="button" class="ghost" id="import">Importer .txt / .csv / .json / .md</button>
+          <input id="script-file" type="file" accept=".md,.txt,text/markdown,text/plain" hidden />
+          <button type="button" class="ghost" id="import-script">Importer un script ## Titre</button>
+        </div>
+
+        <article class="glass" id="quota-box">
+          <div id="pass-wrap">
+          <p class="k">Passe</p>
+          <div class="seg" id="pass-pills">
+            <button type="button" data-pass="both" class="on">Les deux</button>
+            <button type="button" data-pass="images">Images</button>
+            <button type="button" data-pass="videos">Vidéos</button>
+          </div>
+          <p class="note">Images d’abord, tu valides, puis passe Vidéos. Économise le quota si une photo est mauvaise.</p>
+          </div>
+          <div id="video-settings">
+          <p class="k tight">Durée par défaut</p>
+          <div class="seg" id="dur-pills">
+            <button type="button" data-dur="6" class="on">6 s</button>
+            <button type="button" data-dur="10">10 s</button>
+          </div>
+          <p class="note">Défaut pour les nouveaux clips. Sur chaque carte tu choisis 6 s ou 10 s.</p>
+          <button type="button" class="ghost" id="dur-all">Appliquer cette durée à tous les clips</button>
+          <p class="k tight">Qualité</p>
+          <div class="seg" id="qual-pills">
+            <button type="button" data-qual="speed" class="on">Speed</button>
+            <button type="button" data-qual="quality">Quality</button>
+          </div>
+          <p class="k tight">Définition</p>
+          <div class="seg" id="res-pills">
+            <button type="button" data-res="480p" class="on">480p</button>
+            <button type="button" data-res="720p">720p</button>
+            <button type="button" data-res="1080p">1080p</button>
+          </div>
+          <p class="note">1080p = plus de quota. Speed + 480p pour les tests.</p>
+          </div>
+          <p class="k tight">Format</p>
+          <div class="seg" id="aspect-pills">
+            <button type="button" data-aspect="16:9" class="on">16:9</button>
+            <button type="button" data-aspect="9:16">9:16</button>
+            <button type="button" data-aspect="1:1">1:1</button>
+          </div>
+          <p class="k tight">Sorties par génération</p>
+          <div class="seg" id="out-pills">
+            <button type="button" data-out="1" class="on">1</button>
+            <button type="button" data-out="2">2</button>
+            <button type="button" data-out="4">4</button>
+          </div>
+          <p class="note">1 = une seule pièce (recommandé). Imagine facture chaque clip.</p>
+          <label class="switch">
+            <span>
+              Scène par scène
+              <small>Pause après chaque génération — bouton Scène suivante dans File</small>
+            </span>
+            <input id="step" type="checkbox" />
+          </label>
+          <p class="preview" id="lot-preview">Composez un lot pour voir le quota.</p>
+        </article>
+        <div class="row">
+          <button type="button" class="ghost" id="export-lot">Exporter le lot</button>
+          <button type="button" class="ghost" id="sheet-btn">Planche miniatures</button>
+          <button type="button" class="ghost" id="assemble-btn">Assembler Video complete</button>
+        </div>
+        <button type="button" class="primary" id="run">Lancer le lot</button>
+      </section>
+
+      <section id="queue" class="page">
+        <div class="row">
+          <button type="button" class="danger" id="stop">Arrêter</button>
+          <button type="button" class="ghost" id="next" hidden>Scène suivante</button>
+          <button type="button" class="ghost" id="fix">Correction rapide</button>
+          <button type="button" class="ghost" id="sheet-btn-q">Planche</button>
+          <button type="button" class="ghost" id="assemble-btn-q">Assembler</button>
+        </div>
+        <div id="jobs" class="empty">Aucun job. Composez un lot, puis lancez.</div>
+        <p class="k">Journal</p>
+        <pre id="journal" class="journal">Journal vide.</pre>
+        <button type="button" class="ghost" id="export-journal">Exporter le journal</button>
+      </section>
+
+      <section id="settings" class="page">
+        <div class="field">
+          <div class="top"><span>Prompts simultanés</span><span id="c-label">1</span></div>
+          <input id="concurrent" type="range" min="1" max="1" step="1" value="1" disabled />
+          <p class="note">Une génération à la fois : le lot utilise un seul onglet Imagine.</p>
+        </div>
+        <div class="field">
+          <div class="top"><span>Délai (ms)</span><span id="d-label">1500</span></div>
+          <input id="delay" type="range" min="0" max="8000" step="250" value="1500" />
+        </div>
+        <label class="switch">
+          <span>
+            Continuité de séquence
+            <small>Indisponible : chaque paire utilise sa propre image source.</small>
+          </span>
+          <input id="continuity" type="checkbox" disabled />
+        </label>
+        <div class="field">
+          <span class="k" style="margin-top:0">Variantes par prompt</span>
+          <select id="outputs">
+            <option value="1">1 — une seule</option>
+            <option value="2">2</option>
+            <option value="4">4 — tout ce qu’Imagine propose</option>
+          </select>
+          <p class="note">2 ou 4 variantes nécessitent un sélecteur correspondant dans Imagine. En lot mixte, la première image de chaque scène sert de source vidéo.</p>
+        </div>
+        <div class="field">
+          <span class="k">Format</span>
+          <select id="aspect">
+            <option>16:9</option>
+            <option>9:16</option>
+            <option>1:1</option>
+            <option>2:3</option>
+            <option>3:2</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="top"><span>Plafond de scènes / lot</span><span id="max-label">15</span></div>
+          <input id="max-scenes" type="range" min="1" max="40" step="1" value="15" />
+        </div>
+        <label class="switch">
+          <span>
+            Mode rapide (Speed)
+            <small>Moins de quota qu’en Quality, si le bouton existe sur Imagine</small>
+          </span>
+          <input id="speed" type="checkbox" checked />
+        </label>
+        <label class="switch">
+          <span>
+            Forcer 480p
+            <small>Raccourci. Préfère les pastilles 480p / 720p / 1080p dans Contrôle</small>
+          </span>
+          <input id="force480p" type="checkbox" checked />
+        </label>
+        <div class="field">
+          <span class="k">Projet (sous Téléchargements)</span>
+          <input id="folder" type="text" value="Lumina" />
+        </div>
+        <div class="field">
+          <span class="k">Dossier Images</span>
+          <input id="dir-images" type="text" value="Images" />
+        </div>
+        <div class="field">
+          <span class="k">Dossier Clip vidéo</span>
+          <input id="dir-clips" type="text" value="Clip video" />
+        </div>
+        <div class="field">
+          <span class="k">Dossier Video complete</span>
+          <input id="dir-complete" type="text" value="Video complete" />
+        </div>
+        <div class="field">
+          <span class="k">Dossier Script</span>
+          <input id="dir-script" type="text" value="Script" />
+        </div>
+        <label class="switch">
+          <span>
+            Copier aussi dans Video complete
+            <small>Le clip est enregistré dans Clip video et dupliqué ici</small>
+          </span>
+          <input id="copy-complete" type="checkbox" />
+        </label>
+        <p class="note">Fichiers Grok : Téléchargements/Lumina/Images/01-titre.jpg et …/Clip video/01-titre.mp4. Version 1.9.0.</p>
+      </section>
+    </div>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

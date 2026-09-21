@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Google Flow dans Lumina</title>
+<style>
+body{margin:40px auto;padding:0 24px;max-width:850px;background:#141414;color:#eee;font:16px/1.6 system-ui}
+h1,h2{line-height:1.25}h2{margin-top:32px}a{color:#93c5fd}pre{padding:16px;background:#242424;border-radius:10px;overflow:auto}code{font-size:14px}.note{color:#bbb}
+</style></head>
+<body>
+<h1>Google Flow dans Lumina</h1>
+<p>Lumina regroupe Grok et la connexion Chrome de FlowKit. Il suffit de charger <strong>une seule extension</strong> : Lumina. Si l’extension FlowKit est déjà installée, désactivez-la pour éviter deux connexions concurrentes.</p>
+<h2>Ce qui est intégré</h2>
+<p>L’onglet Google Flow permet d’ouvrir Flow, d’activer la connexion au service local et de suivre ses requêtes. Les formulaires Grok continuent d’envoyer leurs lots uniquement à Grok. Les projets et générations Flow se pilotent avec le tableau de bord ou l’API de FlowKit.</p>
+<h2>Service local nécessaire</h2>
+<p>FlowKit utilise Python 3.10 ou plus. Son tableau de bord utilise Node.js et npm. FFmpeg est nécessaire pour les opérations d’assemblage. Cette page fournit les commandes ; Lumina n’installe et ne démarre pas ces programmes.</p>
+<p>Dans PowerShell, depuis le dossier où vous souhaitez installer le service :</p>
+<pre>git clone https://github.com/crisng95/flowkit.git flowkit-local
+cd flowkit-local
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt</pre>
+<p>Ouvrez <a href="https://flow.google.com/" target="_blank" rel="noopener">Google Flow</a>, connectez-vous et créez un projet. Copiez son identifiant depuis l’adresse du projet. Dans le même terminal, remplacez la valeur ci-dessous puis démarrez le service :</p>
+<pre>$env:FLOW_PROJECT_ID = "identifiant-du-projet-flow"
+.\.venv\Scripts\python.exe -m agent.main</pre>
+<p>Gardez ce terminal et l’onglet Flow ouverts. Dans Lumina → Google Flow, activez la connexion. L’état doit indiquer <strong>Service local connecté</strong>. Cela confirme la connexion au service, pas encore la réussite d’une génération.</p>
+<h2>Tableau de bord des projets et générations</h2>
+<p>Dans un second terminal, depuis le dossier du service :</p>
+<pre>cd dashboard
+npm install
+npm run dev</pre>
+<p>Ouvrez <a href="http://localhost:5173" target="_blank" rel="noopener">le tableau de bord local</a>. Il remplace l’utilisation manuelle de l’API pour les opérations qu’il expose.</p>
+<h2>En cas de connexion impossible</h2>
+<ul><li>Vérifiez que le terminal du service reste ouvert sans erreur.</li><li>Le service HTTP utilise le port 8100 et la connexion extension le port 9222.</li><li>Vérifiez votre connexion à Google Flow et l’identifiant du projet.</li><li>Rechargez Lumina dans chrome://extensions puis actualisez l’onglet Google Flow.</li></ul>
+<p class="note">Intégration fondée sur FlowKit, révision 57b52e6375ac7034848c13da461838a6f7545aca. Les générations réelles nécessitent un compte Google Flow et les capacités disponibles sur ce compte. Les commandes Windows ci-dessus n’ont pas été exécutées automatiquement.</p>
+<p><a href="https://github.com/crisng95/flowkit" target="_blank" rel="noopener">Documentation FlowKit</a> · <a href="LICENSE">Licence MIT et attribution</a></p>
+</body></html>

@@ -1,0 +1,12 @@
+Lumina — extension Chrome (Windows 11)
+
+Chrome refuse le .zip : il faut un DOSSIER qui contient manifest.json.
+
+1. Clic droit sur lumina-extension.zip → Extraire tout
+2. Ouvrez le dossier extrait : vous devez VOIR le fichier « manifest.json »
+   (s’il y a encore un sous-dossier lumina-extension, entrez dedans)
+3. chrome://extensions
+4. Activez Mode développeur (en haut à droite)
+5. « Charger l’extension non empaquetée »
+6. Sélectionnez CE dossier (celui où se trouve manifest.json) — pas le .zip
+7. Ouvrez https://grok.com/imagine puis le panneau Lumina

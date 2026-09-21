@@ -1,0 +1,21 @@
+.lumina-connected {
+  position: fixed !important;
+  top: auto !important;
+  right: auto !important;
+  left: 16px !important;
+  bottom: 16px !important;
+  z-index: 2147483646 !important;
+  height: 32px !important;
+  padding: 0 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  font: 650 11px/1 "Segoe UI", system-ui, sans-serif !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  color: #e8e6df !important;
+  background: #0b0c0e !important;
+  box-shadow: 0 0 0 1px rgb(242 241 236 / 0.16) !important;
+  border-radius: 999px !important;
+  pointer-events: none !important;
+  opacity: 1 !important;
+}

@@ -1862,4 +1862,111 @@ if (zoomSelect) {
   });
 }
 
+/* Lumina — runner de file (moteur GROK IMAGINE).
+ * À APPENDRE à la fin de sidepanel.js (même scope : utilise chromeApi, state, log).
+ *
+ * Tire les jobs "grok" déposés par Claude Code dans le pont, génère via l'onglet
+ * grok.com/imagine (SUBMIT_PROMPT → res.urls), et enregistre le média dans le
+ * dossier projet via le pont (dossier LIBRE, plus Téléchargements).
+ */
+const BRIDGE = 'http://127.0.0.1:8177'; // ou 8100 si tu replies /queue,/save,/done dans FlowKit
+
+/* Envoie UN prompt à Grok et renvoie l'URL du rendu.
+ * opts = { startUrl?, aspect?, duration? } — startUrl = image de départ (image→vidéo). */
+async function grokSubmit(prompt, kind, opts = {}) {
+  const ping = await chromeApi.runtime.sendMessage({ type: 'SEND_TO_TAB', payload: { type: 'PING' } });
+  if (!ping?.ok) throw new Error(ping?.error || 'Onglet grok.com/imagine introuvable (ouvre-le puis F5).');
+
+  const s = state.settings;
+  const startUrl = opts.startUrl || null;
+  const grokMode = kind === 'video' ? (startUrl ? 'frame2v' : 't2v') : 't2i';
+  const images = startUrl ? [startUrl] : [];
+  const attachments = (kind === 'video' && startUrl)
+    ? [{ url: startUrl, role: 'first', name: 'Scène 1' }] : [];
+
+  const res = await chromeApi.runtime.sendMessage({
+    type: 'SEND_TO_TAB',
+    payload: {
+      type: 'SUBMIT_PROMPT',
+      prompt,
+      mediaKind: kind,
+      grokMode,
+      aspectRatio: opts.aspect || s.aspect || '9:16',
+      outputs: 1,
+      preferSpeed: (s.quality || 'speed') === 'speed',
+      force480p: (s.resolution || '480p') === '480p',
+      duration: opts.duration || s.duration || 6,
+      quality: s.quality || 'speed',
+      resolution: s.resolution || '480p',
+      timeoutMs: 240000,
+      images,
+      attachments,
+      framePair: (kind === 'video' && startUrl) ? 'startOnly' : '',
+    },
+  });
+  if (!res?.ok) throw new Error(res?.error || 'Échec de génération Grok.');
+  const url = (res.urls || [])[0];
+  if (!url) throw new Error('Grok n’a renvoyé aucune URL.');
+  return url;
+}
+
+/* Récupère les octets (host_permissions couvrent grok/x.ai/twimg) et les envoie au pont. */
+async function saveToBridge(url, relPath) {
+  const blob = await (await fetch(url)).blob();
+  const r = await fetch(`${BRIDGE}/save`, {
+    method: 'POST',
+    headers: { 'X-Save-Path': relPath, 'Content-Type': blob.type || 'application/octet-stream' },
+    body: blob,
+  });
+  if (!r.ok) throw new Error('bridge /save ' + r.status);
+  return (await r.json()).saved;
+}
+
+/* Génère un job. "scene" = image (t2i) PUIS vidéo (image→vidéo) pour garder la cohérence. */
+async function generateInLumina(job) {
+  const opts = { aspect: job.aspect, duration: job.duration };
+
+  if (job.kind === 'image') {
+    return [{ url: await grokSubmit(job.prompt, 'image', opts), out: job.out }];
+  }
+  if (job.kind === 'video') {
+    return [{ url: await grokSubmit(job.prompt, 'video', opts), out: job.out }];
+  }
+  if (job.kind === 'scene') {
+    const imgUrl = await grokSubmit(job.prompt_image || job.prompt, 'image', opts);
+    const out = [];
+    if (job.out_image) out.push({ url: imgUrl, out: job.out_image });
+    const vidUrl = await grokSubmit(job.prompt_video || job.prompt, 'video', { ...opts, startUrl: imgUrl });
+    out.push({ url: vidUrl, out: job.out_video || job.out });
+    return out;
+  }
+  throw new Error('job.kind inconnu : ' + job.kind);
+}
+
+/* Tire <batchSize> jobs "grok", génère, enregistre, marque "done".
+ * Bind sur un bouton "Lancer" de l'onglet File → onclick = () => runLuminaQueue(1). */
+async function runLuminaQueue(batchSize = 1) {
+  const { jobs } = await (await fetch(`${BRIDGE}/queue?claim=${batchSize}&engine=grok`)).json();
+  if (!jobs.length) { log('File vide.'); return 0; }
+
+  for (const job of jobs) {
+    try {
+      const outputs = await generateInLumina(job);
+      let last;
+      for (const o of outputs) last = await saveToBridge(o.url, o.out);
+      await fetch(`${BRIDGE}/done`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: job.id, out: last }),
+      });
+      log(`OK ${job.scene || job.id} → ${last}`);
+    } catch (e) {
+      log(`Échec job ${job.id} : ${e.message}`); // reste "in_flight" → relançable via Correction rapide
+    }
+  }
+  return jobs.length;
+}
+
+window.runLuminaQueue = runLuminaQueue;
+
 renderAll();

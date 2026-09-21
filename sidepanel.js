@@ -1967,6 +1967,9 @@ async function runLuminaQueue(batchSize = 1) {
   return jobs.length;
 }
 
+
 window.runLuminaQueue = runLuminaQueue;
+
+$("#run-queue")?.addEventListener("click", () => void runLuminaQueue(1));
 
 renderAll();

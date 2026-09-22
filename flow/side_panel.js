@@ -1085,8 +1085,10 @@ function initZoom() {
   if (!zoomSelect) return;
 
   function applyZoom(val) {
-    document.documentElement.style.setProperty('--ui-zoom', val);
-    document.documentElement.style.zoom = val;
+    if (document?.documentElement?.style) {
+      document.documentElement.style.setProperty('--ui-zoom', val);
+      document.documentElement.style.zoom = val;
+    }
     if (window.chrome?.storage?.local) {
       window.chrome.storage.local.set({ luminaZoom: val });
     }

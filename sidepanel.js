@@ -1839,8 +1839,10 @@ play(0);
 // ── Zoom Controller ──────────────────────────────────────────
 const zoomSelect = $("#global-zoom-select");
 function applyLuminaZoom(val) {
-  document.documentElement.style.setProperty("--ui-zoom", val);
-  document.documentElement.style.zoom = val;
+  if (document?.documentElement?.style) {
+    document.documentElement.style.setProperty("--ui-zoom", val);
+    document.documentElement.style.zoom = val;
+  }
   if (chromeApi?.storage?.local) {
     chromeApi.storage.local.set({ luminaZoom: val });
   }
@@ -1968,7 +1970,11 @@ async function runLuminaQueue(batchSize = 1) {
 }
 
 
-window.runLuminaQueue = runLuminaQueue;
+if (typeof window !== "undefined") {
+  window.runLuminaQueue = runLuminaQueue;
+} else {
+  globalThis.runLuminaQueue = runLuminaQueue;
+}
 
 $("#run-queue")?.addEventListener("click", () => void runLuminaQueue(1));
 

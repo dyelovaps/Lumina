@@ -6,6 +6,6 @@
   "description": "Lumina Chrome extension — load unpacked, no build step.",
   "scripts": {
     "pack": "echo ready",
-    "test": "node tests/batch-modes.test.cjs && node tests/video-routing.test.cjs && node tests/image-import.test.cjs && node tests/attachment-roles.test.cjs && node tests/flow-integration.test.cjs"
+    "test": "node tests/batch-modes.test.cjs && node tests/video-routing.test.cjs && node tests/image-import.test.cjs && node tests/attachment-roles.test.cjs && node tests/flow-integration.test.cjs && node tests/flow-tab-functional.test.cjs"
   }
 }

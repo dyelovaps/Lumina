@@ -348,14 +348,26 @@ function renderIngredientTiles(containerId, category, btnId) {
   ingredients[category].forEach((item) => {
     const tile = document.createElement('div');
     tile.className = 'tile selectable' + (item.included ? ' sel' : '');
+    tile.style.position = 'relative'; // pour positionner le ✕
     tile.title = item.included ? 'Cliquer pour exclure de la prochaine génération' : 'Cliquer pour inclure comme référence';
     tile.innerHTML = `
       <span class="tile-check">✓</span>
+      <button type="button" class="tile-del" title="Retirer" aria-label="Retirer"
+        style="position:absolute;top:4px;right:4px;z-index:2;width:20px;height:20px;line-height:18px;padding:0;border:none;border-radius:50%;cursor:pointer;background:rgba(0,0,0,.6);color:#fff;font-size:12px;">✕</button>
       <img src="${item.dataUrl}" alt="${escHtml(item.name)}" />
       <input type="text" value="${escHtml(item.name)}" readonly />
     `;
+    // Retirer la référence
+    tile.querySelector('.tile-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const i = ingredients[category].indexOf(item);
+      if (i >= 0) ingredients[category].splice(i, 1);
+      renderIngredientTiles(containerId, category, btnId);
+      updateRefCount();
+    });
+    // Inclure / exclure (clic sur la vignette, hors input et hors ✕)
     tile.addEventListener('click', (e) => {
-      if (e.target.tagName === 'INPUT') return;
+      if (e.target.tagName === 'INPUT' || e.target.closest('.tile-del')) return;
       item.included = !item.included;
       renderIngredientTiles(containerId, category, btnId);
       updateRefCount();
@@ -612,10 +624,11 @@ function finishVideoResult(card, { url, error }) {
 // /flow/check-status). Both are real batch-operation shapes from the agent;
 // see agent/services/flow_client.py and agent/services/omni_flash.py.
 
-async function pollVideoResult(submitted, projectId, { shouldContinue = () => true, onTick, intervalMs = 4000, timeoutMs = 300000 } = {}) {
+async function pollVideoResult(submitted, projectId, { shouldContinue = () => true, onTick, intervalMs = 5000, timeoutMs = 900000 } = {}) {
   let workflows = submitted && submitted.workflows;
   let operations = submitted && submitted.operations;
   if ((!workflows || !workflows.length) && (!operations || !operations.length)) {
+    console.warn('[poll] réponse de soumission sans workflow ni opération :', submitted);
     throw new Error('Réponse de génération inattendue (ni opération ni workflow à surveiller).');
   }
 
@@ -623,18 +636,20 @@ async function pollVideoResult(submitted, projectId, { shouldContinue = () => tr
   while (Date.now() - start < timeoutMs) {
     if (!shouldContinue()) throw new Error('Arrêté par l’utilisateur.');
     await sleep(intervalMs);
-    if (onTick) onTick(Math.round((Date.now() - start) / 1000));
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    if (onTick) onTick(elapsed);
 
     if (workflows && workflows.length) {
       const res = await flowPost('/flow/check-omni-status', {
         workflows, project_id: projectId, include_encoded_video: false,
       });
       const list = (res && res.workflows) || [];
+      console.log(`[poll ${elapsed}s] omni:`, list.map((w) => w.status || (w.done ? 'done' : 'pending')));
       if (list.length) {
         workflows = list.map((w) => ({ name: w.name, primary_media_id: w.primary_media_id, project_id: w.project_id }));
       }
       const failed = list.find((w) => w.status === 'FAILED' || w.error);
-      if (failed) throw new Error(failed.error || 'Échec de la génération vidéo.');
+      if (failed) throw new Error(failed.error || 'Échec de la génération vidéo (bloquée ou refusée par Flow).');
       if (list.length && list.every((w) => w.done)) {
         const url = list[0]?.media?.url;
         if (url) return { url };
@@ -643,6 +658,7 @@ async function pollVideoResult(submitted, projectId, { shouldContinue = () => tr
     } else {
       const res = await flowPost('/flow/check-status', { operations });
       const list = (res && res.operations) || [];
+      console.log(`[poll ${elapsed}s] op:`, list.map((o) => o.status));
       if (list.length) operations = list;
       const op = list[0];
       if (op && op.status === 'MEDIA_GENERATION_STATUS_SUCCESSFUL') {
@@ -1011,6 +1027,54 @@ async function detectActiveProject() {
   statusEl.style.color = 'var(--muted)';
 }
 
+// ── Bulk download (Télécharger tout 2K / 4K) ──────────────────
+
+async function downloadAllImages(quality) {
+  const cards = [...document.querySelectorAll('#flow-results .result-card')]
+    .filter((c) => c.dataset.kind === 'image' && c.dataset.mediaId);
+  if (!cards.length) { alert('Aucune image exportable dans les résultats.'); return; }
+
+  for (const card of cards) {
+    const mediaId = card.dataset.mediaId;
+    const projectId = card.dataset.projectId;
+    try {
+      const res = await fetch(`${FLOW_API}/flow/export-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ media_id: mediaId, project_id: projectId, quality }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `flow-${mediaId}-${quality}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      await sleep(400); // évite de saturer le navigateur / l'agent
+    } catch (e) {
+      console.warn(`Export ${quality} échoué pour ${mediaId} :`, e.message);
+    }
+  }
+}
+
+function initBulkDownload() {
+  const clearBtn = document.getElementById('flow-results-clear');
+  if (!clearBtn || document.getElementById('flow-dl-all-2k')) return;
+  const mk = (id, label, q) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = id;
+    b.textContent = label;
+    b.addEventListener('click', () => downloadAllImages(q));
+    return b;
+  };
+  clearBtn.parentNode.insertBefore(mk('flow-dl-all-2k', 'Télécharger tout (2K)', '2k'), clearBtn);
+  clearBtn.parentNode.insertBefore(mk('flow-dl-all-4k', 'Télécharger tout (4K)', '4k'), clearBtn);
+}
+
 // ── Results toolbar ────────────────────────────────────────────
 
 function initResultsToolbar() {
@@ -1121,5 +1185,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initVideoPanel();
   initProjectIdField();
   initResultsToolbar();
+  initBulkDownload();
   detectActiveProject();
 });

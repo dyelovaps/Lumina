@@ -3,15 +3,62 @@
   <head>
     <meta charset="utf-8" />
     <title>Lumina</title>
-    <link rel="stylesheet" href="sidepanel.css" />
     <style>
-      body { width: 280px; min-height: 220px; }
+      :root {
+        --bg: #0b0c0e;
+        --bg-2: #141518;
+        --bg-3: #1b1d21;
+        --fg: #f2f1ec;
+        --muted: #9aa3b2;
+        --line: rgba(242, 241, 236, 0.12);
+        --paper: #e8e6df;
+        --ink: #0b0c0e;
+        --sage: #9ec99b;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--fg); color-scheme: dark; }
+      body {
+        width: 300px;
+        font: 400 13px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+        letter-spacing: -0.01em;
+      }
+      .popup { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+
+      .brand { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+      .brand svg { color: var(--paper); flex: none; }
+      .brand div { display: flex; flex-direction: column; min-width: 0; }
+      .brand strong { font-size: 16px; font-weight: 650; letter-spacing: -0.02em; }
+      .brand span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+      .brand em { margin-left: auto; font-style: normal; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+
+      button {
+        font: inherit; color: inherit; cursor: pointer; width: 100%;
+        display: flex; align-items: center; gap: 10px; text-align: left;
+        border-radius: 12px; border: 1px solid var(--line); background: var(--bg-2);
+        padding: 9px 12px; transition: background 0.15s, border-color 0.15s, transform 0.05s;
+      }
+      button:hover { background: var(--bg-3); border-color: rgba(242, 241, 236, 0.24); }
+      button:active { transform: translateY(1px); }
+      button:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+      button .ico { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 8px; background: rgba(242, 241, 236, 0.06); font-size: 15px; }
+      button .txt { display: flex; flex-direction: column; min-width: 0; }
+      button .txt b { font-weight: 600; font-size: 13px; }
+      button .txt small { color: var(--muted); font-size: 11px; line-height: 1.3; }
+
+      button.primary { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+      button.primary:hover { background: #fff; }
+      button.primary .ico { background: rgba(11, 12, 14, 0.08); }
+      button.primary .txt small { color: #4a4d55; }
+
+      .brand em:empty { display: none; }
+      .label { margin: 4px 2px -2px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+      .hint { margin: 2px 2px 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
     </style>
   </head>
   <body>
     <div class="popup">
       <div class="brand">
-        <svg viewBox="0 0 32 32" width="28" height="28" fill="none" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="30" height="30" fill="none" aria-hidden="true">
           <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.25" />
           <circle cx="16" cy="16" r="7.5" stroke="currentColor" stroke-width="1.25" />
           <circle cx="16" cy="16" r="2.4" fill="currentColor" />
@@ -19,13 +66,31 @@
         </svg>
         <div>
           <strong>Lumina</strong>
-          <span>Grok & Google Flow</span>
+          <span>Grok · Agnes · Flow</span>
         </div>
+        <em id="ver"></em>
       </div>
-      <button id="open-panel" type="button">Ouvrir le panneau</button>
-      <button id="open-imagine" type="button" class="ghost">Ouvrir grok.com/imagine</button>
-      <button id="open-flow" type="button" class="ghost">Ouvrir Google Flow</button>
-      <p class="hint">Windows 11 · chargez le dossier non empaqueté. La file vit dans le panneau latéral.</p>
+
+      <button id="open-panel" type="button" class="primary">
+        <span class="ico">▤</span>
+        <span class="txt"><b>Ouvrir le panneau</b><small>Lots Grok, file, pilote auto</small></span>
+      </button>
+
+      <p class="label">Outils</p>
+      <button id="open-agnes" type="button">
+        <span class="ico">✦</span>
+        <span class="txt"><b>Agnes Studio</b><small>Écriture, storyboard, montage</small></span>
+      </button>
+      <button id="open-imagine" type="button">
+        <span class="ico">◐</span>
+        <span class="txt"><b>grok.com/imagine</b><small>Onglet de génération Grok</small></span>
+      </button>
+      <button id="open-flow" type="button">
+        <span class="ico">◇</span>
+        <span class="txt"><b>Google Flow</b><small>Vidéo via FlowKit</small></span>
+      </button>
+
+      <p class="hint">Gardez l’onglet Grok ouvert pendant les générations. Après une mise à jour : rechargez Lumina dans chrome://extensions.</p>
     </div>
     <script src="popup.js"></script>
   </body>

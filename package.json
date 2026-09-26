@@ -1,11 +1,12 @@
 {
   "name": "lumina-extension",
   "private": true,
-  "version": "1.9.0",
+  "version": "1.13.0",
   "packageManager": "pnpm@9.15.4",
   "description": "Lumina Chrome extension — load unpacked, no build step.",
   "scripts": {
     "pack": "echo ready",
-    "test": "node tests/batch-modes.test.cjs && node tests/video-routing.test.cjs && node tests/image-import.test.cjs && node tests/attachment-roles.test.cjs && node tests/flow-integration.test.cjs && node tests/flow-tab-functional.test.cjs"
+    "test": "node tests/batch-modes.test.cjs && node tests/video-routing.test.cjs && node tests/image-import.test.cjs && node tests/attachment-roles.test.cjs && node tests/flow-integration.test.cjs && node tests/flow-tab-functional.test.cjs && node tests/agnes-bridge.test.cjs",
+    "sync:agnes": "node scripts/sync-agnes.cjs"
   }
 }

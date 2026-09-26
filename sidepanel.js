@@ -1214,6 +1214,7 @@ async function runBatch(rebuild, opts = {}) {
           savePath: s.savePath || "",
           duration: clipDur(s),
           framePair: "startOnly",
+          agnes: s.agnes,
         };
       });
     } else if (state.mode === "pipeline") {
@@ -1241,6 +1242,8 @@ async function runBatch(rebuild, opts = {}) {
             sourcePairId: p.id,
             pairId,
             pairIndex: i,
+            agnes: p.agnes,
+            clipNum: p.num,
             title: p.title || "",
             stem,
             status: "queued",
@@ -1257,6 +1260,8 @@ async function runBatch(rebuild, opts = {}) {
             sourcePairId: p.id,
             pairId,
             pairIndex: i,
+            agnes: p.agnes,
+            clipNum: p.num,
             title: p.title || "",
             stem,
             parentId: pass === "videos" ? undefined : imageId,
@@ -1555,6 +1560,8 @@ async function worker() {
         }
       }
       log(`${kind === "video" ? "Clip" : "Image"} ${stem}.${ext}`);
+      // Plan venu d'Agnes : le rendu devient une prise du plan (agnes-bridge.js).
+      if (job.agnes && typeof onAgnesJobDone === "function") void onAgnesJobDone(job, kind);
     }
     persist();
     renderJobs();
@@ -2366,9 +2373,11 @@ async function pilotTick() {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: demande.id, ...body }),
   }).catch(() => {});
   try {
-    log(`Pilote auto : ${demande.serie} ${demande.ep}${demande.only?.length ? " (clips " + demande.only.join(", ") + ")" : ""}`);
-    if (state.mode !== "montage") setMode("montage");
-    const err = await importEpisode(demande);
+    log(`Pilote auto : ${demande.agnes ? "Agnes « " + (demande.agnes.projet || "projet ouvert") + " »" : demande.serie + " " + demande.ep}${demande.only?.length ? " (clips " + demande.only.join(", ") + ")" : ""}`);
+    // Demande « lancer-agnes » : les plans viennent du projet Agnes (agnes-bridge.js), pas d'un épisode du pont.
+    const fromAgnes = demande.agnes && typeof importFromAgnes === "function";
+    if (!fromAgnes && state.mode !== "montage") setMode("montage");
+    const err = fromAgnes ? await importFromAgnes({ ...demande.agnes, pilot: true }) : await importEpisode(demande);
     if (err) return void (await report({ erreur: err, clips: [] }));
     const step = state.settings.step;
     state.settings.step = false; // jamais de pause « Scène suivante » en pilote

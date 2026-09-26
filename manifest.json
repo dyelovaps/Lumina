@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Lumina — Grok & Google Flow",
-  "version": "1.12.0",
-  "description": "Studio Grok Imagine et connexion Google Flow via FlowKit : scènes, références et suivi des générations.",
+  "version": "1.13.0",
+  "description": "Studio Grok Imagine, Agnes Studio Pro et connexion Google Flow via FlowKit : scènes, références et suivi des générations.",
   "permissions": ["storage", "unlimitedStorage", "downloads", "sidePanel", "tabs", "scripting", "alarms", "webRequest", "declarativeNetRequest"],
   "host_permissions": [
     "https://grok.com/*",

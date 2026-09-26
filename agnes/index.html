@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="fr" translate="no">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="google" content="notranslate">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Agnes Studio Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Space+Grotesk:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="css/studio.css">
+</head>
+
+<body>
+  <div class="shell">
+
+    <header class="top">
+      <div class="brand">
+        <h1>Agnes Studio Pro</h1>
+        <p>Production par plans — série IA, court métrage, YouTube.</p>
+      </div>
+      <div class="top-actions">
+        <select id="projectSelect" aria-label="Projet actif"></select>
+        <button class="icon-btn" id="newProjectBtn" title="Nouveau projet" aria-label="Nouveau projet">＋</button>
+        <button class="icon-btn" id="openSettings" title="Réglages API" aria-label="Réglages API">⚙</button>
+      </div>
+    </header>
+
+    <div class="tabs" role="tablist" id="tabBar">
+      <button class="tab" data-view="viewStoryboard" role="tab" aria-selected="true">Storyboard</button>
+      <button class="tab" data-view="viewBatch" role="tab" aria-selected="false">Le lot</button>
+      <button class="tab" data-view="viewSkills" role="tab" aria-selected="false">Skills</button>
+      <button class="tab" data-view="viewLibrary" role="tab" aria-selected="false">Bibliothèque</button>
+      <button class="tab" data-view="viewQueue" role="tab" aria-selected="false">Liste d'attente<span class="count" id="queueBadge"></span></button>
+      <button class="tab" data-view="viewMontage" role="tab" aria-selected="false">Assemblage</button>
+      <button class="tab" data-view="viewProject" role="tab" aria-selected="false">Projet</button>
+    </div>
+
+    <!-- ================= STORYBOARD ================= -->
+    <section class="view active" id="viewStoryboard">
+      <div class="card">
+        <h2>Découpage du scénario</h2>
+        <div class="field">
+          <label for="scriptInput">Collez le scénario — un plan par paragraphe (séparez par une ligne vide)</label>
+          <textarea id="scriptInput" style="min-height:110px"
+            placeholder="Plan 1 : plan large sur l'appartement au crépuscule, lumière chaude…&#10;&#10;Plan 2 : gros plan sur Léa qui referme la fenêtre…"></textarea>
+        </div>
+        <div class="row-inline">
+          <label style="margin:0;">Mode par défaut</label>
+          <select id="breakdownMode" style="width:auto;"></select>
+          <button class="primary-btn" id="breakdownBtn">Découper en plans</button>
+        </div>
+        <p class="hint">Chaque paragraphe devient un plan. Format, durée, nombre de sorties et style viennent des réglages du
+          projet — modifiables ensuite plan par plan ou par sélection.</p>
+      </div>
+
+      <div class="card">
+        <div class="queue-bar">
+          <h2 style="margin:0;">Plans <span id="shotCount" class="hint" style="display:inline;"></span></h2>
+          <div class="row-inline" id="storyboardToolbar">
+            <button class="small-btn" id="addShotBtn">+ Plan</button>
+            <button class="small-btn" id="selectAllBtn">Tout sélectionner</button>
+            <button class="primary-btn" id="runQueueBtn">Tout mettre en file</button>
+          </div>
+        </div>
+        <div class="queue-stats" id="queueStats"></div>
+        <div class="progress-track">
+          <div class="progress-fill" id="queueProgressFill" style="width:0%"></div>
+        </div>
+
+        <div class="sel-bar" id="selBar">
+          <span class="count" id="selCount"></span>
+          <select id="selMode" aria-label="Mode"></select>
+          <select id="selAspect" aria-label="Format"></select>
+          <select id="selRes" aria-label="Résolution"></select>
+          <input type="number" id="selDuration" min="1" max="30" placeholder="Durée (s)" style="width:96px" aria-label="Durée">
+          <input type="number" id="selOutputs" min="1" max="4" placeholder="Sorties" style="width:84px" aria-label="Sorties">
+          <select id="selSkill" aria-label="Ajouter un skill"></select>
+          <button class="small-btn" id="selApplyBtn">Appliquer</button>
+          <button class="primary-btn" id="selRunBtn">Générer la sélection</button>
+          <button class="small-btn" id="selDupBtn">Dupliquer</button>
+          <button class="small-btn" id="selDelBtn">Supprimer</button>
+          <button class="small-btn" id="selClearBtn">Désélectionner</button>
+        </div>
+
+        <div class="shot-list" id="shotList" style="margin-top:16px;"></div>
+        <div class="empty-state" id="shotEmpty" style="margin-top:16px;">Aucun plan pour l'instant — découpez un
+          scénario ci-dessus, ajoutez un plan, ou passez par l'onglet « Le lot ».</div>
+      </div>
+    </section>
+
+    <!-- ================= LE LOT ================= -->
+    <section class="view" id="viewBatch">
+      <div class="card">
+        <h2>Traitement par lot</h2>
+        <div class="grid2">
+          <div class="field">
+            <label for="batchOp">Que voulez-vous faire ?</label>
+            <select id="batchOp">
+              <option value="script" selected>Script numéroté — prompts IMAGE + VIDÉO par numéro (01, 02…)</option>
+              <option value="i2v">Image → Vidéo (un plan par image, même prompt)</option>
+              <option value="i2i">Image → Image (un plan par image, même prompt)</option>
+              <option value="frames">Première + dernière frame (images 01+02, 03+04…)</option>
+              <option value="ingredient">Ajouter comme ingrédients (bibliothèque)</option>
+              <option value="v2ingredient">Vidéo → ingrédients (première + dernière image)</option>
+              <option value="v2next">Vidéo → suite (dernière image → nouveau plan vidéo)</option>
+            </select>
+          </div>
+          <div class="field" id="batchKindField">
+            <label for="batchKind">Type d'ingrédient</label>
+            <select id="batchKind"></select>
+          </div>
+        </div>
+        <p class="hint" id="batchOpHint" style="margin-top:-4px;"></p>
+
+        <div id="batchScriptBox">
+          <label for="batchScript" style="margin-top:6px;">1. Le script</label>
+          <p class="hint" style="margin-top:0;">Un bloc par plan : le <b>numéro</b>, puis une ligne <b>IMAGE :</b> et/ou une ligne <b>VIDÉO :</b>.
+            Ajoutez <b>RÉF :</b> Léa, Marc pour choisir les références du plan (sinon, les noms de la Bibliothèque cités dans le prompt sont repris).
+            Formats acceptés aussi : « 01 IMAGE : … », tableau Markdown (N° | Image | Vidéo | Réf), CSV, JSON.</p>
+          <textarea id="batchScript" rows="10" placeholder="01 — Arrivée&#10;IMAGE : Léa entre dans un hall administratif, néons froids&#10;VIDÉO : Elle avance lentement vers le comptoir&#10;&#10;02&#10;IMAGE : Gros plan d'un agent derrière son écran&#10;VIDÉO : Il lève les yeux sans se lever"></textarea>
+          <div class="row-inline" style="margin-top:8px;">
+            <label class="small-btn" style="cursor:pointer;">Importer un script (.txt, .md, .csv, .json)<input type="file" id="batchScriptFile" accept=".txt,.md,.markdown,.csv,.tsv,.json" hidden></label>
+            <button class="small-btn" id="batchScriptExample" type="button">Voir un exemple</button>
+          </div>
+          <label style="margin-top:14px;">2. Vos images (facultatif)</label>
+          <p class="hint" style="margin-top:0;">Déjà faites ailleurs (ChatGPT, Midjourney…) ? Nommez-les <b>01.png, 02.png…</b> : chacune est animée avec le prompt VIDÉO de son numéro, sans générer d'image.
+            <b>05a.png + 05b.png</b> = plan début + fin.</p>
+        </div>
+
+        <div class="dropzone" id="batchDrop">Glissez vos images / vidéos ici, ou cliquez pour les choisir
+          <input type="file" id="batchFiles" accept="image/*,video/*" multiple hidden>
+        </div>
+        <div class="batch-grid" id="batchGrid"></div>
+      </div>
+
+      <div class="card" id="batchReviewCard" style="display:none;">
+        <h3>3. Vérification — dans l'ordre des numéros</h3>
+        <div class="hint" id="batchSummary" style="margin-top:0;"></div>
+        <p class="hint">Vous pouvez corriger un prompt ici ou décocher un plan. Modifier le script au-dessus remet la liste à jour (et efface ces corrections).</p>
+        <div id="batchRows"></div>
+      </div>
+
+      <div class="card">
+        <h3 id="batchSettingsTitle">Réglages</h3>
+        <div id="batchScriptOpts">
+          <div class="grid2">
+            <div class="field">
+              <label for="batchChain">Plans Texte → Image → Vidéo</label>
+              <select id="batchChain">
+                <option value="validate" selected>Générer l'image, puis attendre ma validation (conseillé)</option>
+                <option value="auto">Animer automatiquement dès que l'image est prête</option>
+              </select>
+            </div>
+            <div class="field"><label for="batchImgOutputs">Variantes par image générée</label><input type="number" id="batchImgOutputs" min="1" max="4" value="2"></div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label for="batchStrategy">Tenue de la scène (vidéo)</label><select id="batchStrategy"></select></div>
+            <div class="field"><label for="batchMotion">Mouvement</label><select id="batchMotion"></select></div>
+            <div class="field"><label class="inline" style="margin-top:26px;"><input type="checkbox" id="batchLock" checked> Verrou d'identité</label></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="batchPrompt" id="batchPromptLabel">Prompt commun — {nom} est remplacé par le nom du fichier</label>
+          <textarea id="batchPrompt" style="min-height:52px" placeholder="Ex. léger mouvement de caméra, le personnage respire, cheveux dans le vent"></textarea>
+        </div>
+        <div class="grid3">
+          <div class="field"><label for="batchAspect">Format</label><select id="batchAspect"></select></div>
+          <div class="field"><label for="batchRes">Résolution</label><select id="batchRes"></select></div>
+          <div class="field"><label for="batchDuration">Durée vidéo (s)</label><input type="number" id="batchDuration" min="1" max="18" value="5"></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label for="batchOutputs">Sorties par plan vidéo</label><input type="number" id="batchOutputs" min="1" max="4" value="1"></div>
+          <div class="field"><label for="batchSkill">Skill appliqué</label><select id="batchSkill"></select></div>
+          <div class="field"><label class="inline" style="margin-top:26px;"><input type="checkbox" id="batchRunNow" checked> Mettre en file tout de suite</label></div>
+        </div>
+        <div class="row-inline">
+          <button class="primary-btn" id="batchCreateBtn">Créer le lot</button>
+          <button class="small-btn" id="batchClearBtn">Vider</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SKILLS ================= -->
+    <section class="view" id="viewSkills">
+      <div class="skills-layout">
+        <div class="card" style="margin:0;">
+          <h2>Skills</h2>
+          <p class="hint" style="margin-top:-6px;">Un skill = un nom visible + une action cachée ajoutée au prompt final.
+            Survolez un skill pour lire son explication.</p>
+          <div class="row-inline">
+            <select id="skillCatFilter" style="width:auto;"></select>
+            <input type="text" id="skillSearch" placeholder="Rechercher…" style="flex:1; min-width:140px;">
+          </div>
+          <p class="hint" id="skillCount" style="margin:8px 0 0"></p>
+          <div class="skill-list" id="skillList"></div>
+          <div class="row-inline" style="margin-top:12px;">
+            <button class="small-btn" id="skillExportBtn">Exporter en JSON</button>
+            <button class="small-btn" id="skillGoImport" type="button">Importer en masse ↓</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin:0;">
+          <h2 id="skillEditorTitle">Nouveau skill</h2>
+          <div class="field"><label for="skTitle">Nom visible</label><input type="text" id="skTitle" placeholder="Ex. Travelling avant lent"></div>
+          <div class="field"><label for="skCats">Catégories (séparées par des virgules)</label><input type="text" id="skCats" placeholder="Ex. Caméra, Mouvement"></div>
+          <div class="field"><label for="skDesc">Explication (infobulle, pour les novices)</label><textarea id="skDesc" style="min-height:54px"></textarea></div>
+          <div class="field"><label for="skAction">Action cachée (texte ajouté au prompt)</label><textarea id="skAction" style="min-height:74px" placeholder="Ex. slow dolly-in camera move toward the subject, smooth and steady"></textarea></div>
+          <div class="field"><label for="skTarget">S'applique à</label>
+            <select id="skTarget"><option value="both">Image et vidéo</option><option value="video">Vidéo seulement</option><option value="image">Image seulement</option></select></div>
+          <div class="row-inline">
+            <button class="primary-btn" id="skSaveBtn">Enregistrer le skill</button>
+            <button class="small-btn" id="skNewBtn">Nouveau</button>
+            <button class="small-btn" id="skDupBtn">Dupliquer</button>
+            <button class="small-btn" id="skDelBtn">Supprimer</button>
+          </div>
+
+          <div class="sk-import" id="skImportBox">
+            <h3>Importer en masse</h3>
+            <p class="hint" style="margin-top:0">Plusieurs skills par fichier : <b>.md / .txt</b> (un titre <code>##</code> par skill), <b>.csv</b> (une ligne par skill) ou <b>.json</b>. Vous voyez la liste avant d'importer.</p>
+            <div class="field"><label>Packs prêts à l'emploi</label><div class="chips" id="skPacks"></div></div>
+            <div class="dropzone" id="skDrop" tabindex="0" role="button">Glissez vos fichiers de skills ici — ou cliquez pour les choisir<input type="file" id="skillImport" accept=".json,.md,.markdown,.txt,.csv,.tsv" multiple hidden></div>
+            <details style="margin-top:8px"><summary class="hint" style="cursor:pointer">…ou collez du texte</summary>
+              <textarea id="skPaste" rows="6" style="margin-top:6px" placeholder="# Position spatiale&#10;## Dans une voiture&#10;Explication : le personnage conduit.&#10;Action : the character sits in the driver's seat of a car"></textarea>
+              <button class="small-btn" id="skPasteBtn" type="button" style="margin-top:6px">Analyser le texte</button></details>
+            <div class="grid2" style="margin-top:10px">
+              <div class="field"><label for="skImpCat">Catégorie ajoutée à tous (facultatif)</label><input type="text" id="skImpCat" list="skCatList" placeholder="Ex. Position spatiale"><datalist id="skCatList"></datalist></div>
+              <div class="field"><label for="skImpDup">Si un skill du même nom existe</label><select id="skImpDup"><option value="skip">Le garder tel quel (ignorer l'import)</option><option value="update">Le mettre à jour</option><option value="add">Ajouter quand même (copie)</option></select></div>
+            </div>
+            <div class="row-inline"><label class="inline"><input type="checkbox" id="skImpReplace"> Remplacer les catégories des fichiers par celle-ci</label></div>
+            <div class="row-inline" style="margin-top:8px"><button class="small-btn" id="skTplMd" type="button">Modèle .md</button><button class="small-btn" id="skTplCsv" type="button">Modèle .csv</button></div>
+            <div id="skPreview"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Skill → Clip</h2>
+        <p class="hint" style="margin-top:-6px;">Cochez un ou plusieurs skills, décrivez le sujet : l'app fabrique le(s) plan(s).
+          « Un clip par skill » sert à comparer plusieurs mouvements de caméra sur la même scène.</p>
+        <div class="skill-pick" id="s2cPick"></div>
+        <div class="field" style="margin-top:12px;">
+          <label for="s2cSubject">Sujet / scène</label>
+          <textarea id="s2cSubject" style="min-height:64px" placeholder="Ex. Orangella traverse le hall de la préfecture, néons froids, foule floue"></textarea>
+        </div>
+        <div class="grid3">
+          <div class="field"><label for="s2cMode">Mode</label><select id="s2cMode"></select></div>
+          <div class="field"><label for="s2cSource">Image source (si Image → …)</label><select id="s2cSource"></select></div>
+          <div class="field"><label for="s2cSplit">Répartition</label>
+            <select id="s2cSplit"><option value="combine">Un clip combinant les skills</option><option value="each">Un clip par skill</option></select></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label for="s2cAspect">Format</label><select id="s2cAspect"></select></div>
+          <div class="field"><label for="s2cDuration">Durée (s)</label><input type="number" id="s2cDuration" min="1" max="30" value="5"></div>
+          <div class="field"><label for="s2cOutputs">Sorties</label><input type="number" id="s2cOutputs" min="1" max="4" value="1"></div>
+        </div>
+        <div class="row-inline">
+          <label class="inline"><input type="checkbox" id="s2cRunNow" checked> Mettre en file tout de suite</label>
+          <button class="primary-btn" id="s2cCreateBtn">Créer le(s) clip(s)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BIBLIOTHÈQUE ================= -->
+    <section class="view" id="viewLibrary">
+      <div class="card">
+        <h2>Ajouter un ingrédient</h2>
+        <p class="hint" style="margin-top:-6px;">Personnages, décors, objets, styles. Depuis une image (recadrage possible)
+          ou depuis une vidéo (capturez l'image voulue). Les fichiers restent enregistrés dans le navigateur.</p>
+        <div class="field">
+          <label for="libFile">Image ou vidéo</label>
+          <input type="file" id="libFile" accept="image/*,video/*">
+        </div>
+        <div class="import-stage" id="videoStage">
+          <div class="video-grab"><video id="grabVideo" controls playsinline muted></video></div>
+          <div class="row-inline" style="margin-top:8px;">
+            <button class="small-btn" id="grabFirstBtn">Première image</button>
+            <button class="small-btn" id="grabNowBtn">Image affichée</button>
+            <button class="small-btn" id="grabLastBtn">Dernière image</button>
+          </div>
+        </div>
+        <div class="import-stage" id="cropStage">
+          <p class="hint">Tracez un rectangle pour ne garder qu'une partie (ex. isoler un personnage). Sans rectangle, l'image entière est gardée.</p>
+          <div class="crop-wrap"><canvas id="cropCanvas"></canvas></div>
+          <div class="row-inline" style="margin-top:8px;"><button class="small-btn" id="cropResetBtn">Annuler le recadrage</button></div>
+        </div>
+        <div class="grid3" style="margin-top:12px;">
+          <div class="field"><label for="libName">Nom</label><input type="text" id="libName" placeholder="Ex. Léa (personnage)"></div>
+          <div class="field"><label for="libKind">Type</label><select id="libKind"></select></div>
+          <div class="field"><label for="libSeed">Seed associé (optionnel)</label><input type="number" id="libSeed"></div>
+        </div>
+        <div class="field">
+          <label for="libUrl">URL publique de l'image (optionnel — sinon envoyée telle quelle ou via l'hébergeur configuré)</label>
+          <input type="text" id="libUrl" placeholder="https://…">
+        </div>
+        <div class="row-inline">
+          <label class="inline"><input type="checkbox" id="libSheet"> Générer aussi une fiche personnage IA (face / profil / dos)</label>
+          <button class="primary-btn" id="libAddBtn">Ajouter à la bibliothèque</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Bibliothèque</h2>
+        <div class="lib-filter" id="libFilter"></div>
+        <div class="lib-grid" id="libGrid"></div>
+        <div class="empty-state" id="libEmpty" style="margin-top:14px;">Bibliothèque vide — importez une image ou une vidéo ci-dessus, ou envoyez une prise depuis le storyboard.</div>
+      </div>
+    </section>
+
+    <!-- ================= LISTE D'ATTENTE ================= -->
+    <section class="view" id="viewQueue">
+      <div class="card">
+        <h2>Liste d'attente</h2>
+        <div class="q-controls">
+          <button class="primary-btn" id="qPauseBtn">Mettre en pause</button>
+          <label class="inline">Générations simultanées
+            <input type="number" id="qConcurrency" min="1" max="4" style="width:64px"></label>
+          <button class="small-btn" id="qRetryErrBtn">Relancer les échecs</button>
+          <button class="small-btn" id="qClearBtn">Retirer les tâches finies</button>
+          <button class="small-btn" id="qCancelAllBtn">Tout annuler</button>
+        </div>
+        <div class="queue-stats" id="qStats"></div>
+        <div id="qList"></div>
+        <div class="empty-state" id="qEmpty">Aucune tâche. Cliquez « Générer » sur un plan ou « Tout mettre en file ».</div>
+      </div>
+    </section>
+
+    <!-- ================= ASSEMBLAGE ================= -->
+    <section class="view" id="viewMontage">
+      <div class="card">
+        <h2>Assemblage</h2>
+        <p class="hint" style="margin-top:-6px;">Les plans terminés, dans l'ordre du storyboard, avec leur prise sélectionnée.
+          Le rendu se fait dans le navigateur en temps réel : gardez l'onglet visible pendant l'assemblage.</p>
+        <div class="grid3">
+          <div class="field"><label for="mxAspect">Format de sortie</label><select id="mxAspect"></select></div>
+          <div class="field"><label for="mxRes">Résolution</label><select id="mxRes"></select></div>
+          <div class="field"><label for="mxUp" title="Les vidéos Agnes 2.5 Flash sortent en 720P : en 1080p, elles sont agrandies">Agrandissement (720P → 1080p)</label><select id="mxUp"></select></div>
+          <div class="field"><label for="mxFps">Images / seconde</label><input type="number" id="mxFps" min="12" max="60" value="30"></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label for="mxFit">Cadrage</label>
+            <select id="mxFit"><option value="cover">Remplir (recadre)</option><option value="contain">Adapter (bandes noires)</option></select></div>
+          <div class="field"><label for="mxTrans">Transition par défaut</label>
+            <select id="mxTrans"><option value="cut">Cut</option><option value="fade">Fondu enchaîné</option><option value="black">Fondu au noir</option></select></div>
+          <div class="field"><label for="mxStill">Durée des images fixes (s)</label><input type="number" id="mxStill" min="0.5" max="30" step="0.5" value="3"></div>
+        </div>
+        <div class="row-inline">
+          <label class="inline"><input type="checkbox" id="mxAudio" checked> Garder le son des clips</label>
+          <label class="inline"><input type="checkbox" id="mxKen" checked> Léger zoom sur les images fixes</label>
+          <label class="inline">Piste audio (voix-off, ambiance) <input type="file" id="mxTrack" accept="audio/*" style="width:200px"></label>
+        </div>
+        <div id="mxList" style="margin-top:12px;"></div>
+        <div class="empty-state" id="mxEmpty">Aucun plan terminé à assembler pour l'instant.</div>
+        <div class="row-inline" style="margin-top:14px;" id="montageToolbar">
+          <button class="primary-btn" id="mxRenderBtn">Assembler le film</button>
+          <button class="small-btn" id="mxStopBtn" style="display:none;">Arrêter</button>
+          <span class="hint" id="mxStatus" style="margin:0;"></span>
+        </div>
+        <div class="progress-track" style="margin-top:10px;"><div class="progress-fill" id="mxProgress" style="width:0%"></div></div>
+        <video class="canvas-preview" id="mxPreview" muted playsinline></video>
+        <div class="render-out" id="mxOut"></div>
+      </div>
+    </section>
+
+    <!-- ================= PROJET ================= -->
+    <section class="view" id="viewProject">
+      <div class="card">
+        <h2>Réglages du projet</h2>
+        <div class="field"><label for="projName">Nom du projet</label>
+          <input type="text" id="projName" placeholder="Ex. Série — Les Heures Bleues, épisode 3"></div>
+        <div class="field"><label for="projStyle">Style de base (ajouté à chaque plan)</label>
+          <textarea id="projStyle" style="min-height:64px" placeholder="Ex. style cinématographique, grain film léger, palette teal &amp; orange, éclairage naturel"></textarea></div>
+        <div class="field"><label for="projNegative">Prompt négatif par défaut (optionnel)</label>
+          <input type="text" id="projNegative" placeholder="Ex. texte à l'écran, sous-titres, filigrane, visage déformé"></div>
+        <div class="grid3">
+          <div class="field"><label for="projAspect">Format par défaut</label><select id="projAspect"></select></div>
+          <div class="field"><label for="projRes">Résolution par défaut</label><select id="projRes"></select></div>
+          <div class="field"><label for="projSeed">Seed du projet (optionnel)</label><input type="number" id="projSeed"></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label for="projDuration">Durée vidéo par défaut (s)</label><input type="number" id="projDuration" min="1" max="30"></div>
+          <div class="field"><label for="projOutputs">Sorties par défaut</label><input type="number" id="projOutputs" min="1" max="4"></div>
+          <div class="field"><label for="projFps">Images / seconde (vidéo)</label><input type="number" id="projFps" min="8" max="60"></div>
+        </div>
+        <div class="field" style="max-width:220px;"><label for="projConcurrency">Générations simultanées</label>
+          <input type="number" id="projConcurrency" min="1" max="4"></div>
+        <button class="primary-btn" id="saveProjectBtn">Enregistrer le projet</button>
+      </div>
+
+      <div class="card" id="exportCard">
+        <h2>Export</h2>
+        <p class="hint" style="margin-top:-6px;">Un .zip avec les fichiers numérotés dans l'ordre, <code>projet.json</code>
+          (tous les prompts) et <code>montage.txt</code> (ordre et durées pour votre monteur).</p>
+        <div class="row-inline">
+          <label class="inline"><input type="checkbox" id="exportAllTakes"> Inclure toutes les prises (pas seulement la sélectionnée)</label>
+          <button class="primary-btn" id="exportZipBtn">Exporter le projet en .zip</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Stockage</h2>
+        <p class="hint" id="storageInfo" style="margin-top:-6px;"></p>
+        <div class="row-inline">
+          <button class="small-btn" id="persistBtn">Protéger le stockage contre le nettoyage du navigateur</button>
+          <button class="small-btn" id="cleanOrphansBtn">Supprimer les médias orphelins</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Tous les projets</h2>
+        <div id="projectManageList"></div>
+        <div class="row-inline" style="margin-top:12px;">
+          <button class="small-btn" id="duplicateProjectBtn">Dupliquer le projet actif</button>
+          <button class="small-btn" id="deleteProjectBtn">Supprimer le projet actif</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= RÉGLAGES API ================= -->
+  <div class="overlay" id="settingsOverlay">
+    <div class="settings-sheet">
+      <div class="close-row"><button class="icon-btn" id="closeSettings" aria-label="Fermer">✕</button></div>
+      <h2>Réglages API</h2>
+      <p class="sub">La clé est enregistrée uniquement dans ce navigateur et n'est envoyée qu'à l'API configurée ci-dessous.</p>
+
+      <div class="field">
+        <label for="apiKeyInput">Clé API Agnes</label>
+        <div class="key-row">
+          <input type="password" id="apiKeyInput" placeholder="sk-...">
+          <button class="icon-btn" id="toggleKeyVisibility" type="button" aria-label="Afficher la clé">👁</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="imgbbKeyInput">Clé imgbb (hébergement des images de référence — optionnel)</label>
+        <input type="password" id="imgbbKeyInput" placeholder="Obtenez-la gratuitement sur api.imgbb.com">
+        <p class="hint">Agnes attend des URL publiques pour Image → Image, Image → Vidéo, frames et ingrédients. Avec cette clé,
+          vos images locales sont mises en ligne automatiquement. Sans elle, l'image est envoyée intégrée (data URL), ce que
+          certaines API refusent.</p>
+      </div>
+
+      <div class="card">
+        <h3>Extensions du Studio</h3>
+        <div id="extensionsList"></div>
+      </div>
+
+      <button class="adv-toggle" id="advToggle" type="button">Options avancées (URL et paramètres) ▾</button>
+      <div class="adv-fields" id="advFields">
+        <div class="field"><label for="baseUrlInput">URL de base de l'API</label><input type="text" id="baseUrlInput"></div>
+        <div class="field"><label for="imageModelInput">Modèle image</label><input type="text" id="imageModelInput" list="imageModelList"><datalist id="imageModelList"></datalist></div>
+        <div class="field"><label for="imagePathInput">Chemin de génération d'image</label><input type="text" id="imagePathInput"></div>
+        <div class="field"><label for="videoModelInput">Modèle vidéo</label><input type="text" id="videoModelInput" list="videoModelList"><datalist id="videoModelList"></datalist>
+          <p class="hint" id="videoModelHint"></p></div>
+        <div class="field"><label for="videoCreatePathInput">Chemin de création vidéo</label><input type="text" id="videoCreatePathInput"></div>
+        <div class="field"><label for="videoStatusPathInput">Chemin de suivi vidéo ({id} = video_id ; {model} = modèle ; « ~/ » = racine du domaine)</label><input type="text" id="videoStatusPathInput"></div>
+        <div class="field"><label for="videoLegacyPathInput">Chemin de suivi de secours ({id} = task_id)</label><input type="text" id="videoLegacyPathInput"></div>
+        <div class="field"><label for="videoParamStyleInput">Format des paramètres vidéo</label>
+          <select id="videoParamStyleInput">
+            <option value="auto">Automatique d'après le modèle (recommandé)</option>
+            <option value="agnes25">Agnes Video 2.5 (mode / seconds / size / aspect_ratio)</option>
+            <option value="agnes">Agnes Video v2.0 (width / height / num_frames / frame_rate)</option>
+            <option value="generic">Générique (size / duration / aspect_ratio)</option>
+          </select></div>
+        <label class="inline" style="margin-bottom:8px;"><input type="checkbox" id="extraBodyInput"> Placer les images multiples dans extra_body (doc Agnes)</label>
+        <label class="inline" style="margin-bottom:8px;"><input type="checkbox" id="img2imgTagInput"> Ajouter tags: ["img2img"] (modèle agnes-image-2.0)</label>
+        <label class="inline" style="margin-bottom:8px;"><input type="checkbox" id="sendNegativeInput"> Envoyer le prompt négatif</label>
+        <div class="field"><label for="maxRefsInput">Nombre max d'ingrédients par requête</label><input type="number" id="maxRefsInput" min="1" max="10"></div>
+        <p class="hint">Valeurs par défaut d'après la documentation d'Agnes Video 2.5 Flash / Image 2.5 Flash (septembre 2026). En cas d'échec, la réponse
+          brute s'affiche sous le plan concerné.</p>
+      </div>
+
+      <div class="save-row">
+        <div class="card diag-card">
+          <h3 style="margin-top:0">🧪 Tester la génération vidéo</h3>
+          <p class="hint" style="margin-top:0">Envoie à Agnes des requêtes minimales, copiées des exemples officiels, et note chaque réponse.
+            Test 1 : texte seul. Test 2 : image de départ (mode keyframe, nécessite imgbb). Offre gratuite : 1 vidéo par minute, le test 2 attend donc un peu.
+            Aucune clé n'apparaît dans le rapport.</p>
+          <div class="row-inline">
+            <button class="small-btn" id="diagRunBtn" type="button">Lancer le test</button>
+            <label class="inline"><input type="checkbox" id="diagKeyframe" checked> Inclure le test image → vidéo</label>
+            <button class="small-btn" id="diagCopyBtn" type="button" disabled>Copier le rapport</button>
+            <button class="small-btn" id="diagStopBtn" type="button" style="display:none">Arrêter</button>
+          </div>
+          <pre id="diagLog" class="diag-log" style="display:none"></pre>
+        </div>
+        <button class="primary-btn" id="saveSettingsBtn" type="button">Enregistrer</button>
+        <button class="small-btn" id="resetSettingsBtn" type="button">Réinitialiser</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Visionneuse -->
+  <div class="lightbox" id="lightbox">
+    <button class="icon-btn close-lb" id="lightboxClose" aria-label="Fermer">✕</button>
+    <div id="lightboxBody"></div>
+  </div>
+  <div class="toast-float" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="vendor/jszip.min.js"></script>
+  <script src="js/plugin-manager.js"></script>
+  <script src="js/agnes-core.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app-state.js"></script>
+  <script src="js/app-api.js"></script>
+  <script src="js/app-queue.js"></script>
+  <script src="js/app-ui.js"></script>
+  <script src="js/app-library.js"></script>
+  <script src="js/skill-packs.js"></script>
+  <script src="js/app-skills-batch.js"></script>
+  <script src="js/app-batch.js"></script>
+  <script src="js/upscale.js"></script>
+  <script src="js/app-diag.js"></script>
+  <script src="js/app-montage.js"></script>
+  <script src="js/app-init.js"></script>
+  <script src="Module-reglage/active-module.js"></script>
+</body>
+
+</html>

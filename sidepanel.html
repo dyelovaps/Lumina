@@ -618,9 +618,9 @@ ol li { margin: 8px 0; }
         </svg>
         <div>
           <strong>Lumina</strong>
-          <span>studio · Grok & Google Flow</span>
+          <span>studio · Grok, Agnes & Google Flow</span>
         </div>
-        <em class="ver">1.9.0</em>
+        <em class="ver">1.13.0</em>
         <div class="zoom-ctrl" style="margin-left: auto;">
           <span style="font-size:11px; color:var(--muted); text-transform:uppercase;">Zoom</span>
           <select id="global-zoom-select" title="Taille d'affichage">
@@ -633,6 +633,7 @@ ol li { margin: 8px 0; }
       </header>
       <nav class="tabs">
         <button type="button" data-tab="control" class="on">Grok</button>
+        <button type="button" data-tab="agnes">Agnes</button>
         <button type="button" data-tab="flow">Google Flow</button>
         <button type="button" data-tab="queue">File</button>
         <button type="button" data-tab="settings">Réglages</button>
@@ -645,6 +646,65 @@ ol li { margin: 8px 0; }
           <p class="note"><a href="flow/setup.html" target="_blank" rel="noopener">Installation et utilisation de Google Flow</a></p>
         </article>
         <iframe src="flow/side_panel.html" title="Connexion et suivi Google Flow" style="width:100%;height:calc(100vh - 180px);min-height:550px;border:none;border-radius:12px"></iframe>
+      </section>
+      <section id="agnes" class="page">
+        <article class="glass">
+          <p class="k">Agnes Studio Pro</p>
+          <p class="note">Écriture, Bible, storyboard et montage dans Agnes ; images et clips générés sur Grok par Lumina. Chaque rendu revient dans Agnes comme une prise du plan.</p>
+          <div class="row">
+            <button type="button" class="primary" id="agnes-open" style="margin-top:0">Ouvrir Agnes Studio</button>
+          </div>
+          <p class="note" id="agnes-status" role="status">Agnes n’est pas ouverte.</p>
+        </article>
+
+        <article class="glass">
+          <p class="k">Plans Agnes → lot Grok</p>
+          <div class="field">
+            <label for="agnes-project">Projet</label>
+            <select id="agnes-project"><option value="">Projet ouvert dans Agnes</option></select>
+          </div>
+          <div class="field">
+            <label for="agnes-scope">Plans</label>
+            <select id="agnes-scope">
+              <option value="selected">Plans cochés dans Agnes (sinon tous)</option>
+              <option value="all">Tous les plans du projet</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="agnes-mode">Mode Lumina</label>
+            <select id="agnes-mode">
+              <option value="auto">Automatique : Stills → Clips si les plans ont leur image, sinon Lot mixte</option>
+              <option value="montage">Stills → Clips (image validée ou image source du plan)</option>
+              <option value="pipeline">Lot mixte (Grok fait l’image, puis le clip)</option>
+            </select>
+          </div>
+          <label class="switch">
+            <span>
+              ADN Bible, skills et style du projet
+              <small>Envoie le prompt final d’Agnes (sans ses consignes propres à Agnes Video : Lumina ajoute ses règles qualité).</small>
+            </span>
+            <input id="agnes-dna" type="checkbox" checked />
+          </label>
+          <label class="switch">
+            <span>
+              Renvoyer les rendus dans Agnes
+              <small>Image générée → image validée du plan ; clip → nouvelle prise sélectionnée, prête pour l’Assemblage.</small>
+            </span>
+            <input id="agnes-return" type="checkbox" checked />
+          </label>
+          <div class="row">
+            <button type="button" class="primary" id="agnes-import" style="margin-top:0">Importer dans le lot</button>
+            <button type="button" class="ghost" id="agnes-import-run">Importer et lancer</button>
+          </div>
+          <p class="k" id="agnes-hint" role="status" hidden></p>
+          <p class="note">Depuis Agnes : bouton « ⇢ Grok (Lumina) » du Storyboard, ou « ⇢ Grok » sur une carte. Les références (personnages, décors, objets) des plans rejoignent celles de Lumina sous le même nom.</p>
+        </article>
+
+        <article class="glass">
+          <p class="k">Transférer vos projets</p>
+          <p class="note">Agnes dans Lumina a son propre stockage : vos projets de l’index.html ouvert directement n’y sont pas encore. Dans l’ancienne Agnes : onglet Projet → « 💾 Sauvegarde complète (.zip) ». Ici : Ouvrir Agnes Studio → Projet → « ↺ Restaurer une sauvegarde… ».</p>
+          <p class="note">Pilote auto (prod-fruits) : <code>python pilote.py lancer-agnes "nom du projet"</code> fait générer le projet Agnes par Lumina, sans clic.</p>
+        </article>
       </section>
       <div id="step-bar" hidden>
         <span id="step-label">Scène terminée</span>
@@ -969,5 +1029,6 @@ ol li { margin: 8px 0; }
       </section>
     </div>
     <script src="sidepanel.js"></script>
+    <script src="agnes-bridge.js"></script>
   </body>
 </html>

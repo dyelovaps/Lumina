@@ -3,7 +3,7 @@
   window.__luminaBound = true;
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const SKIP = /chat|nouveau|new conversation|history|historique|login|sign|settings|menu|profil|account/i;
+  const SKIP = /chat|nouveau|new conversation|history|historique|login|sign|settings|menu|profil|account|projet|project/i;
   let aborted = false;
   let submitting = false;
 
@@ -240,15 +240,28 @@
       return;
     }
 
-    const opener = findClickable([
-      (el) => /ajouter|add image|upload|joindre|parcourir/i.test(textOf(el)),
-      (el) => /upload|attach|add image|ajouter|joindre/i.test(el.getAttribute("aria-label") || ""),
-    ]);
-    opener?.click();
-    await sleep(200);
-    const input = document.querySelector('input[type="file"]');
-    if (!input) throw new Error("Import d’image introuvable dans Imagine. Aucune génération lancée.");
-    await setInputFiles(input, files);
+    // Import dans le champ fichier DU FORMULAIRE, une image à la fois (références) :
+    // jamais de bouton « ajouter » cherché dans toute la page (celui de la barre
+    // latérale est « Ajouter un projet » et ouvre « Créer un projet »).
+    for (const [i, file] of files.entries()) {
+      if (aborted) throw new Error("Arrêté");
+      let input = composerFileInput();
+      if (!input) {
+        const form = findPromptBox()?.closest("form");
+        const opener = form && [...form.querySelectorAll("button, [role='button']")].find((el) =>
+          visible(el) && /importer|upload|attach|joindre|add image/i.test(textOf(el) + " " + (el.getAttribute("aria-label") || "")));
+        opener?.click();
+        for (let j = 0; j < 10 && !input; j++) { await sleep(200); input = composerFileInput(); }
+      }
+      if (!input) throw new Error("Import d’image introuvable dans Imagine. Aucune génération lancée.");
+      const before = composerImages().length;
+      input.value = "";
+      await setInputFiles(input, [file]);
+      for (let j = 0; j < 40 && composerImages().length <= before && !aborted; j++) await sleep(250);
+      if (composerImages().length <= before) {
+        throw new Error(aborted ? "Arrêté" : `Import de l’image ${i + 1}/${files.length} non confirmé dans le formulaire. Aucune génération lancée.`);
+      }
+    }
     await sleep(250);
   }
 
@@ -266,38 +279,117 @@
     return [];
   }
 
-  function roleOption(role) {
-    const re = {
-      first: /^(premi[eè]re image|first (image|frame)|start (image|frame))(?=\s|$)/i,
-      last: /^(derni[eè]re image|last (image|frame)|end (image|frame))(?=\s|$)/i,
-      reference: /^(r[ée]f[ée]rence|reference)(?=\s|$)/i,
-    }[role];
-    const menus = [...document.querySelectorAll('[role="menu"], [role="listbox"], [data-radix-menu-content]')].filter(visible);
-    const candidates = menus.length ? menus.flatMap((menu) => [...menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], button')])
+  // Grok words its thumbnail menu differently across versions/languages: match on the
+  // option's first line only (the description line of "Référence" mentions "première image").
+  const ROLE_RE = {
+    first: /premi[eè]re|first|start|d[ée]but/i,
+    last: /derni[eè]re|last|\bend\b|\bfin\b/i,
+    reference: /r[ée]f[ée]rence|reference|ingr[ée]dient|ingredient|guide|personnage|character/i,
+  };
+
+  // Grok's current composer shows the roles in a hover card (Radix popper, plain
+  // buttons with aria-pressed) that opens when the thumbnail is hovered, not clicked.
+  function menuCandidates() {
+    const menus = [
+      ...document.querySelectorAll('[role="menu"], [role="listbox"], [data-radix-menu-content]'),
+      ...[...document.querySelectorAll("[data-radix-popper-content-wrapper]")].filter((w) => !w.closest?.("#onetrust-consent-sdk")),
+    ].filter(visible);
+    const items = menus.length ? menus.flatMap((menu) => [...menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], button')])
       : [...document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"]')];
-    return candidates.filter(visible).find((el) => !el.disabled && el.getAttribute("aria-disabled") !== "true" && re?.test(textOf(el)));
+    return items.filter(visible);
+  }
+
+  function hoverThumb(img, leave = false) {
+    if (!img.dispatchEvent || typeof MouseEvent === "undefined") return;
+    const r = img.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, composed: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
+    const Ptr = typeof PointerEvent === "undefined" ? MouseEvent : PointerEvent;
+    const types = leave ? ["pointerout", "pointerleave", "mouseout", "mouseleave"]
+      : ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"];
+    for (const t of types) {
+      img.dispatchEvent(t.startsWith("pointer") ? new Ptr(t, { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true }) : new MouseEvent(t, at));
+    }
+  }
+
+  const isSelected = (el) => ["aria-checked", "aria-selected", "aria-pressed"].some((a) => el.getAttribute(a) === "true") ||
+    el.getAttribute("data-state") === "checked" ||
+    el.querySelector('[data-state="checked"], [data-state="on"], [data-icon="check"], .lucide-check');
+
+  const firstLine = (el) => textOf(el).split("\n")[0].trim();
+
+  function roleOption(role) {
+    const re = ROLE_RE[role];
+    return menuCandidates().find((el) => !el.disabled && el.getAttribute("aria-disabled") !== "true" && re?.test(firstLine(el)));
+  }
+
+  // Possible openers of a thumbnail's role menu, most specific first.
+  function roleTriggers(img) {
+    const out = [];
+    const add = (el) => { if (el && !out.includes(el)) out.push(el); };
+    add(img.closest?.('[aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'));
+    for (let root = img.parentElement, depth = 0; root && depth < 3; root = root.parentElement, depth++) {
+      add(root.querySelector?.('[aria-haspopup="menu"], [aria-haspopup="listbox"], [aria-haspopup="true"]'));
+    }
+    add(img.closest?.('button, [role="button"]'));
+    add(img);
+    return out;
   }
 
   async function assignImageRole(img, role, name) {
-    const trigger = img.closest('button, [role="button"], [aria-haspopup="menu"]') ||
-      img.parentElement?.querySelector('[aria-haspopup="menu"], [aria-haspopup="listbox"]') || img;
-    trigger.click();
-    let option;
-    for (let i = 0; i < 20 && !aborted; i++) {
+    let option, trigger;
+    const seen = new Set();
+    // 1) Survol de la vignette (menu « carte au survol » de Grok actuel).
+    hoverThumb(img, true);
+    hoverThumb(img);
+    for (let i = 0; i < 8 && !aborted && !option; i++) {
       option = roleOption(role);
-      if (option) break;
-      await sleep(200);
+      if (!option) await sleep(150);
     }
-    if (!option || aborted) throw new Error(aborted ? "Arrêté" : `Rôle ${role} introuvable pour « ${name} ». Aucun prompt envoyé.`);
+    if (option) trigger = "hover";
+    // 2) Sinon, clic sur les déclencheurs possibles (anciennes versions).
+    for (const t of option ? [] : roleTriggers(img)) {
+      if (aborted) break;
+      t.dispatchEvent?.(new MouseEvent("mouseover", { bubbles: true }));
+      t.click();
+      for (let i = 0; i < 10 && !aborted; i++) {
+        option = roleOption(role);
+        if (option) break;
+        await sleep(200);
+      }
+      if (option) { trigger = t; break; }
+      for (const el of menuCandidates()) if (firstLine(el)) seen.add(firstLine(el));
+      document.activeElement?.dispatchEvent?.(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      await sleep(150);
+    }
+    if (!option || aborted) {
+      const vu = seen.size ? ` Options vues dans le menu Grok : ${[...seen].slice(0, 8).map((x) => `« ${x} »`).join(", ")}.`
+        : " Aucun menu ne s’est ouvert sur la vignette.";
+      const err = new Error(aborted ? "Arrêté" : `Rôle ${role} introuvable pour « ${name} ».${vu} Aucun prompt envoyé.`);
+      err.noMenu = !aborted && !seen.size;
+      throw err;
+    }
+    if (isSelected(option)) {
+      // Déjà le bon rôle : refermer le menu pour que l'image suivante n'hérite pas de celui-ci.
+      if (trigger === "hover") hoverThumb(img, true);
+      else option.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      return;
+    }
     option.click();
     await sleep(250);
     // Reopen the same menu to verify selection instead of assuming a click worked.
-    trigger.click();
-    for (let i = 0; i < 20 && !aborted; i++) {
+    // The hover card only reopens after the pointer has left the thumbnail.
+    // Grok re-renders the thumbnail after a role change: find the live one by its source.
+    const src = img.currentSrc || img.src;
+    const liveImg = () => composerImages().find((el) => (el.currentSrc || el.src) === src) || img;
+    // Radix hover cards open after ~700 ms: leave, pause, re-enter, then poll ~2 s before retrying.
+    const rehover = async () => { hoverThumb(liveImg(), true); await sleep(400); hoverThumb(liveImg()); };
+    if (trigger === "hover") await rehover(); else trigger.click();
+    for (let i = 0; i < 30 && !aborted; i++) {
+      if (trigger === "hover" && i && i % 10 === 0) await rehover();
       const selected = roleOption(role);
-      if (selected && (selected.getAttribute("aria-checked") === "true" || selected.getAttribute("aria-selected") === "true" ||
-        selected.getAttribute("data-state") === "checked" || selected.querySelector('[data-state="checked"], [data-state="on"], [data-icon="check"], .lucide-check'))) {
-        selected.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      if (selected && isSelected(selected)) {
+        if (trigger === "hover") hoverThumb(liveImg(), true);
+        else selected.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
         return;
       }
       await sleep(200);
@@ -305,8 +397,24 @@
     throw new Error(aborted ? "Arrêté" : `Le rôle de « ${name} » n’a pas pu être confirmé. Vérifiez son menu dans Imagine.`);
   }
 
+  // Prefer the composer's own file input: the first one in the page (outside the form)
+  // opens a standalone image-edit post instead of attaching to the video composer.
+  function composerFileInput() {
+    const ok = (el) => !el.disabled && (!el.accept || /image|\.png|\.jpg|\.webp/i.test(el.accept));
+    const form = findPromptBox()?.closest("form");
+    const scoped = form ? [...form.querySelectorAll('input[type="file"]')].filter(ok) : [];
+    return scoped[0] || [...document.querySelectorAll('input[type="file"]')].find(ok);
+  }
+
+  const refLabel = (attachment, i) => attachment.role === "first" ? "the opening frame of this shot"
+    : String(attachment.name || `Image ${i + 1}`).replace(/\.[a-z0-9]{2,4}$/i, "");
+
+  /* Attaches the images in order. Returns { mentions } : with Grok's current composer
+   * (no per-thumbnail role menu), several images are all references, bound to their
+   * meaning by "@Image N" mentions that submitPrompt appends to the prompt. */
   async function attachVideoImages(attachments) {
-    if (!attachments.length) return;
+    if (!attachments.length) return { mentions: [] };
+    let mentionMode = false;
     while (composerImages().length) {
       if (aborted) throw new Error("Arrêté");
       const current = composerImages();
@@ -328,12 +436,12 @@
       const before = new Set(composerImages());
       const previousSources = new Set([...before].map((img) => img.currentSrc || img.src));
       const file = await fileToItem(attachment.url, i);
-      let input = [...document.querySelectorAll('input[type="file"]')].find((el) => !el.disabled && (!el.accept || /image|\.png|\.jpg|\.webp/i.test(el.accept)));
+      let input = composerFileInput();
       if (!input) {
         await clickLabel(/importer des m[ée]dias|upload|attach|importer|add image|joindre/i);
         for (let j = 0; j < 20 && !input && !aborted; j++) {
           await sleep(200);
-          input = [...document.querySelectorAll('input[type="file"]')].find((el) => !el.disabled && (!el.accept || /image|\.png|\.jpg|\.webp/i.test(el.accept)));
+          input = composerFileInput();
         }
       }
       if (!input) throw new Error("Import d’image introuvable. Aucun prompt envoyé.");
@@ -348,9 +456,50 @@
         await sleep(250);
       }
       if (!added) throw new Error(aborted ? "Arrêté" : `Import de « ${attachment.name} » non confirmé dans le formulaire. Aucun prompt envoyé.`);
-      await assignImageRole(added, attachment.role, attachment.name || `Image ${i + 1}`);
+      if (!mentionMode) {
+        try {
+          await assignImageRole(added, attachment.role, attachment.name || `Image ${i + 1}`);
+        } catch (e) {
+          if (!e.noMenu) throw e;
+          mentionMode = true; // Grok sans menu de rôle : on passera par les mentions @Image N.
+        }
+      }
     }
     if (composerImages().length !== attachments.length) throw new Error("Le nombre d’images jointes a changé. Aucun prompt envoyé.");
+    if (!mentionMode) return { mentions: [] };
+    if (attachments.some((a) => a.role === "last")) {
+      throw new Error("Début + fin : cette version de Grok n’a plus de menu de rôle. Utilisez son bouton « Ajouter la dernière image ». Aucun prompt envoyé.");
+    }
+    if (attachments.length === 1) {
+      // Une image seule devient la première image de la vidéo : correct pour une scène,
+      // jamais pour une référence de personnage.
+      if (attachments[0].role === "reference") {
+        throw new Error(`« ${refLabel(attachments[0], 0)} » serait utilisée comme première image (Grok, image seule). Ajoutez l’image de scène ou une 2e référence. Aucun prompt envoyé.`);
+      }
+      return { mentions: [] };
+    }
+    return { mentions: attachments.map((a, i) => ({ n: i + 1, label: refLabel(a, i) })) };
+  }
+
+  // Appends "@Image N = label." chips at the end of the prompt (Grok's mention picker).
+  async function appendImageMentions(mentions) {
+    for (const { n, label } of mentions) {
+      if (aborted) return;
+      document.execCommand("insertText", false, " @");
+      let pick;
+      for (let i = 0; i < 20 && !pick && !aborted; i++) {
+        await sleep(150);
+        pick = [...document.querySelectorAll("button")].find((b) => visible(b) && textOf(b) === `Image ${n}`);
+      }
+      if (pick) {
+        pick.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+        pick.click();
+        await sleep(200);
+        document.execCommand("insertText", false, ` = ${label}.`);
+      } else {
+        document.execCommand("insertText", false, `Image ${n} = ${label}.`);
+      }
+    }
   }
 
   function collectVideos() {
@@ -382,8 +531,37 @@
     return [...urls];
   }
 
+  // Grok actuel : durée, résolution et proportions sont des menus déroulants (Radix) du
+  // formulaire, ouverts au pointerdown, avec des options menuitemradio. Renvoie null si le
+  // menu n'existe pas (ancienne interface), true si l'option est appliquée, false sinon.
+  async function pickComposerMenu(labelRe, optionRe) {
+    const form = findPromptBox()?.closest("form") || document;
+    const trigger = [...form.querySelectorAll('[aria-haspopup="menu"]')]
+      .find((el) => labelRe.test(el.getAttribute("aria-label") || ""));
+    if (!trigger) return null;
+    if (optionRe.test(textOf(trigger))) return true;
+    const Ptr = typeof PointerEvent === "undefined" ? MouseEvent : PointerEvent;
+    trigger.dispatchEvent(new Ptr("pointerdown", { bubbles: true, cancelable: true, composed: true, pointerId: 1, pointerType: "mouse", isPrimary: true, button: 0 }));
+    let item;
+    for (let i = 0; i < 15 && !item && !aborted; i++) {
+      await sleep(100);
+      item = [...document.querySelectorAll('[role="menu"] [role^="menuitem"]')]
+        .find((el) => visible(el) && optionRe.test(textOf(el)) && el.getAttribute("aria-disabled") !== "true");
+    }
+    if (!item) {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      return false;
+    }
+    item.click();
+    for (let i = 0; i < 10 && !optionRe.test(textOf(trigger)); i++) await sleep(100);
+    return optionRe.test(textOf(trigger));
+  }
+
   async function clickAspect(ratio) {
     if (!ratio) return;
+    const menu = await pickComposerMenu(/proportion|aspect|ratio|format/i, new RegExp(`^${ratio.replace(/\s/g, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    if (menu === false) throw new Error(`Proportions ${ratio} introuvables dans le menu Grok. Aucun prompt envoyé.`);
+    if (menu) return;
     const compact = ratio.replace(/\s/g, "");
     const btn = findClickable([
       (el) => textOf(el).replace(/\s/g, "") === compact,
@@ -412,6 +590,9 @@
   async function clickDuration(sec) {
     if (!sec) return;
     const n = String(sec);
+    const menu = await pickComposerMenu(/dur[ée]e|duration/i, new RegExp(`^${n}\\s*s`, "i"));
+    if (menu === false) throw new Error(`Durée ${n} s indisponible dans le menu Grok. Aucun prompt envoyé.`);
+    if (menu) return;
     const btn = findClickable([
       (el) => new RegExp(`^${n}\\s*s(ec(ondes?)?)?$`, "i").test(textOf(el).trim()),
       (el) => textOf(el).trim() === n && el.closest("[class*='duration'], [class*='time'], fieldset, [role='radiogroup']"),
@@ -433,6 +614,11 @@
 
   async function clickResolution(res) {
     if (!res) return;
+    // Résolution non disponible (ex. 1080p selon l'abonnement) : on garde celle de Grok.
+    const picked = await pickComposerMenu(/r[ée]solution/i, new RegExp(`^${String(res).replace(/\s/g, "")}`, "i"));
+    // 1080p absent de l'abonnement : on prend 720p plutôt que de laisser la résolution affichée.
+    if (picked === false && /1080/.test(String(res))) await pickComposerMenu(/r[ée]solution/i, /^720p/i);
+    if (picked !== null) return;
     const compact = String(res).replace(/\s/g, "").toLowerCase();
     const num = compact.replace(/p$/, "");
     const btn = findClickable([
@@ -476,7 +662,8 @@
       return { ok: false, error: "Début + fin nécessite exactement deux images." };
     }
     await clickMode(kind, payload.grokMode);
-    if (attachments.length) await attachVideoImages(attachments);
+    let mentions = [];
+    if (attachments.length) mentions = (await attachVideoImages(attachments))?.mentions || [];
     else if (payload.images?.length) await attachImages(payload.images, payload.framePair);
     else if (payload.useLatestImage) await clickLatestStill();
     if (aborted) return { ok: false, error: "Arrêté" };
@@ -524,6 +711,7 @@
     box.focus();
     setNativeValue(box, payload.prompt);
     await sleep(200);
+    if (mentions.length) await appendImageMentions(mentions);
     if (aborted) return { ok: false, error: "Arrêté" };
     if (wantVideo && looksLikeImageEdit()) {
       return {

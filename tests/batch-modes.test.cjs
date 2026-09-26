@@ -35,9 +35,12 @@ function panel() {
     globalThis.state = state;
     globalThis.run = runBatch;
     globalThis.setMode = setMode;
+    globalThis.lintPrompt = lintPrompt;
+    globalThis.promptForGrok = promptForGrok;
   `), context);
   context.state.settings.delay = 0;
   context.state.settings.step = false;
+  context.state.settings.lint = false; // ces tests couvrent l'envoi ; le contrôle a ses propres tests
   node('#prompts').value = 'First scene\n\nSecond scene';
   return { ...context, context, sent, node, maxActive: () => maxActive };
 }
@@ -124,6 +127,7 @@ test('Incomplete frame pairs are rejected before submission', async () => {
 test('Start, end and library references are distinct attachments without truncation', async () => {
   const p = panel();
   p.state.mode = 'frame2v';
+  p.state.settings.referenceSelection = 'all';
   p.state.images = images.slice(0, 2);
   p.state.refs = ['char', 'loc', 'prop'].map(kind => ({ kind, name: kind, dataUrl: kind }));
   await p.run(true);
@@ -135,6 +139,7 @@ test('Stills and mixed-lot videos include the reference library alongside the sc
   for (const mode of ['montage', 'pipeline']) {
     const p = panel();
     p.state.mode = mode;
+    p.state.settings.referenceSelection = 'all';
     p.state.refs = [{ name: 'Person', dataUrl: 'REF' }];
     p.state.stills = [{ id: 's', videoPrompt: 'Move', dataUrl: 'SCENE' }];
     p.state.pairs = [{ id: 'p', imagePrompt: 'Photo', videoPrompt: 'Move' }];
@@ -173,4 +178,113 @@ test('Pass and frame controls are only shown for their applicable modes', () => 
     assert.equal(p.node('#frame-pills').hidden, mode !== 'frame2v');
     assert.equal(p.node('#video-settings').hidden, ['t2i', 'i2i'].includes(mode));
   }
+});
+
+const PLAN = `## Scène 02 — La démission (6s)
+@orangella @cassiano @commissariat
+IMAGE: OVER-THE-SHOULDER on Orangella. Orangella, her head is a realistic orange. Cassiano, his head is a blackcurrant. Orangella looks directly at Cassiano. No text, no subtitles.
+VIDEO:
+Orangella, her head is a realistic orange. Cassiano, his head is a blackcurrant. Orangella looks directly at Cassiano and says: « On a envoyé ma démission. » Cassiano listens, eyes on her. Only Orangella speaks in this shot. No music.`;
+
+test('@tags pick the references (location named by tag), and never reach Grok', async () => {
+  const p = panel();
+  p.state.mode = 'pipeline';
+  p.state.settings.pass = 'images';
+  p.state.refs = ['Orangella', 'Cassiano', 'Papayino', 'Commissariat', 'Quai'].map((name) =>
+    ({ name, kind: name === 'Commissariat' || name === 'Quai' ? 'location' : 'character', dataUrl: name }));
+  const [head, video] = PLAN.split('VIDEO:');
+  p.state.pairs = [{ id: 'p1', imagePrompt: head.split('\n').slice(1).join('\n'), videoPrompt: video.trim() }];
+  await p.run(true);
+  const img = p.sent.find((s) => s.mediaKind === 'image');
+  assert.deepEqual(Array.from(img.images).sort(), ['Cassiano', 'Commissariat', 'Orangella']);
+  assert.ok(!/@orangella|IMAGE:/.test(img.prompt));
+});
+
+test('Image prompts lose their dialogue and gain a no-text clause', () => {
+  const p = panel();
+  const out = p.promptForGrok('@a\nIMAGE: Orangella at the counter, and says in a tired voice: « Bonjour. » Soft light.', 'image');
+  assert.ok(!/«|Bonjour|says/.test(out));
+  assert.match(out, /No text, no letters, no subtitles/);
+});
+
+test('The prompt check flags long dialogue, two speakers and missing eyelines', () => {
+  const p = panel();
+  const bad = 'Orangella, the adult orange woman. Cassiano, the adult blackcurrant man. Orangella says: « Donc vous pouvez savoir qui l a envoyé ? » Cassiano answers: « On demandera les logs. Mais ceux qui font ça, madame, ils se servent souvent du compte d un autre. »';
+  const issues = Array.from(p.lintPrompt(bad, 'video', 6, ['orangella', 'cassiano'])).join(' | ');
+  assert.match(issues, /trop long/);
+  assert.match(issues, /2 locuteurs/);
+  assert.match(issues, /regards/);
+  assert.match(issues, /No music/);
+  const good = PLAN.split('VIDEO:')[1];
+  assert.deepEqual(Array.from(p.lintPrompt(good, 'video', 6, ['orangella', 'cassiano'])), []);
+});
+
+test('A flagged lot needs a second click on « Lancer le lot »', async () => {
+  const p = panel();
+  p.state.settings.lint = true;
+  p.state.mode = 't2v';
+  p.node('#prompts').value = 'Orangella, the adult orange woman, says: « Un deux trois quatre cinq six sept huit neuf dix onze douze treize quatorze. »';
+  await p.run(true);
+  assert.equal(p.sent.length, 0);
+  await p.run(true);
+  assert.equal(p.sent.filter((s) => s.mediaKind === 'video').length, 1);
+});
+
+test('Stills → clips: a [suite] clip starts from the last frame of the previous clip, and clips are filed via the bridge', async () => {
+  const p = panel();
+  p.state.mode = 'montage';
+  p.state.settings.referenceSelection = 'none';
+  const saved = [];
+  p.context.fetch = async () => ({ ok: true, blob: async () => 'VIDEO-BLOB' });
+  p.context.lastFrameOf = async (blob) => (blob === 'VIDEO-BLOB' ? 'LAST-FRAME' : 'WRONG');
+  p.context.saveToBridge = async (url, path) => { saved.push(path); return path; };
+  p.state.stills = [
+    { id: 'a', stem: '01-a', title: '01', videoPrompt: 'Move A. No music.', dataUrl: 'MASTER', savePath: 'EP/3-clips/01-a.mp4' },
+    { id: 'b', stem: '02-b', title: '02', videoPrompt: 'Move B. No music.', dataUrl: null, chainPrev: true, savePath: 'EP/3-clips/02-b.mp4' },
+  ];
+  await p.run(true);
+  const videos = p.sent.filter((s) => s.mediaKind === 'video');
+  assert.equal(videos.length, 2);
+  assert.equal(videos[0].attachments[0].url, 'MASTER');
+  assert.equal(videos[1].attachments[0].url, 'LAST-FRAME');
+  assert.equal(videos[1].attachments[0].role, 'first');
+  assert.deepEqual(saved, ['EP/3-clips/01-a.mp4', 'EP/3-clips/02-b.mp4']);
+});
+
+test('Pilote auto: takes the bridge request, imports the episode, runs without clicks and reports each clip', async () => {
+  const p = panel();
+  p.state.settings.pilot = true;
+  p.state.settings.referenceSelection = 'none';
+  const posted = [];
+  const episode = { code: 'EP01', titre: 'La plainte', images_manquantes: [], clips: [
+    { num: 1, titre: 'Lettre', duree: 6, suite: false, image: 'D:/ep/2-images/01.png', prompt: 'Move 1. No music.', save: 'D:/ep/3-clips/01.mp4' },
+    { num: 2, titre: 'Demission', duree: 6, suite: true, image: null, prompt: 'Move 2. No music.', save: 'D:/ep/3-clips/02.mp4' },
+  ] };
+  p.context.fetch = async (url, init) => {
+    if (url.includes('/pilote/prendre')) return { ok: true, json: async () => ({ demande: { id: 'p1', serie: 'fdf', ep: 'ep1', only: [] } }) };
+    if (url.includes('/pilote/fini')) { posted.push(JSON.parse(init.body)); return { ok: true, json: async () => ({}) }; }
+    if (url.includes('/episode')) return { ok: true, json: async () => episode };
+    return { ok: true, blob: async () => 'BLOB' };
+  };
+  p.context.resizeFile = async () => 'STILL';
+  p.context.lastFrameOf = async () => 'LAST';
+  p.context.saveToBridge = async (u, path) => path;
+  await p.context.pilotTick();
+  const videos = p.sent.filter((s) => s.mediaKind === 'video');
+  assert.deepEqual(videos.map((v) => v.attachments[0].url), ['STILL', 'LAST']);
+  assert.equal(posted.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[0].clips)), [{ num: 1, ok: true, erreur: null }, { num: 2, ok: true, erreur: null }]);
+});
+
+test('Permanent rules are appended once: subtle human acting, sharp image, no music', () => {
+  const p = panel();
+  const v = p.context.promptForGrok('Orangella says: « Bonjour. »', 'video');
+  assert.match(v, /subtle restrained acting/);
+  assert.match(v, /no film grain/);
+  assert.match(v, /No music/);
+  const already = 'Subtle acting. Tack-sharp, no film grain. No music.';
+  assert.equal(p.context.promptForGrok(already, 'video'), already);
+  const img = p.context.promptForGrok('A still of the counter.', 'image');
+  assert.match(img, /no film grain/);
+  assert.doesNotMatch(img, /No music/);
 });

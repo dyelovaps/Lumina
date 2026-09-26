@@ -697,7 +697,21 @@ ol li { margin: 8px 0; }
 
         <article class="glass" id="montage-box" hidden>
           <p class="k">Montage stills → clips</p>
-          <p class="note">1. Dépose toutes tes images (01, 02, 03…). 2. Colle les prompts vidéo. 3. Lumina relie image n ↔ prompt n. Même nom de fichier pour le clip.</p>
+          <p class="k tight">Épisode préparé (prod-fruits)</p>
+          <div class="row" id="episode-import">
+            <input id="ep-serie" type="text" placeholder="série, ex. fruit-drama-france" />
+            <input id="ep-num" type="text" placeholder="ep1" style="max-width:80px" />
+            <button type="button" class="primary" id="ep-import" style="width:auto;margin-top:0">Importer l’épisode</button>
+          </div>
+          <label class="switch">
+            <span>
+              Pilote auto
+              <small>Lumina lance seule les épisodes envoyés par Claude (import + lot, sans pause) et lui rend le résultat. Laisse l’onglet grok.com/imagine ouvert.</small>
+            </span>
+            <input id="pilot" type="checkbox" />
+          </label>
+          <p class="note">Via le pont : images de 2-images + prompts des CLIP, dans l’ordre (les « suite » partent de la dernière image du clip précédent). Les clips sont enregistrés dans 3-clips.</p>
+          <p class="note">Ou à la main : 1. Dépose toutes tes images (01, 02, 03…). 2. Colle les prompts vidéo. 3. Lumina relie image n ↔ prompt n. Même nom de fichier pour le clip.</p>
           <div class="tiles" id="still-tiles"></div>
           <input id="still-files" type="file" accept="image/*" multiple hidden />
           <div id="clip-text-wrap">
@@ -785,6 +799,7 @@ ol li { margin: 8px 0; }
           <div class="seg" id="dur-pills">
             <button type="button" data-dur="6" class="on">6 s</button>
             <button type="button" data-dur="10">10 s</button>
+            <button type="button" data-dur="15">15 s</button>
           </div>
           <p class="note">Défaut pour les nouveaux clips. Sur chaque carte tu choisis 6 s ou 10 s.</p>
           <button type="button" class="ghost" id="dur-all">Appliquer cette durée à tous les clips</button>
@@ -829,6 +844,7 @@ ol li { margin: 8px 0; }
           <button type="button" class="ghost" id="assemble-btn">Assembler Video complete</button>
         </div>
         <button type="button" class="primary" id="run">Lancer le lot</button>
+        <p class="k" id="run-hint" role="status" hidden></p>
       </section>
 
       <section id="queue" class="page">
@@ -839,6 +855,7 @@ ol li { margin: 8px 0; }
           <button type="button" class="ghost" id="sheet-btn-q">Planche</button>
           <button type="button" class="ghost" id="assemble-btn-q">Assembler</button>
           <button type="button" class="ghost" id="run-queue">Lancer</button>
+          <button type="button" class="ghost" id="requeue" title="Remet en attente les jobs en échec ou bloqués">Relancer échecs</button>
         </div>
         <div id="jobs" class="empty">Aucun job. Composez un lot, puis lancez.</div>
         <p class="k">Journal</p>
@@ -856,6 +873,27 @@ ol li { margin: 8px 0; }
           <div class="top"><span>Délai (ms)</span><span id="d-label">1500</span></div>
           <input id="delay" type="range" min="0" max="8000" step="250" value="1500" />
         </div>
+        <label class="switch">
+          <span>
+            Contrôler les prompts avant le lot
+            <small>Dialogue trop long pour la durée, dialogue dans l’image, regards non indiqués, plusieurs locuteurs, perso sans référence.</small>
+          </span>
+          <input id="lint" type="checkbox" />
+        </label>
+        <label class="switch">
+          <span>
+            Règles qualité automatiques
+            <small>Ajoute aux prompts qui ne l’ont pas : jeu humain et subtil, regard vers l’interlocuteur, image nette sans grain, pas de musique.</small>
+          </span>
+          <input id="append-rules" type="checkbox" />
+        </label>
+        <label class="switch">
+          <span>
+            Nettoyer le prompt image
+            <small>Retire les répliques et ajoute « no text, no subtitles » : évite les sous-titres incrustés.</small>
+          </span>
+          <input id="clean-image" type="checkbox" />
+        </label>
         <label class="switch">
           <span>
             Continuité de séquence

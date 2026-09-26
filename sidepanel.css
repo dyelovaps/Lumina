@@ -626,3 +626,7 @@ input[type="range"] { width: 100%; accent-color: var(--paper); }
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* Stills → clips : clip « suite » (sans image, part de la dernière image du clip précédent) */
+.still-suite{display:flex;align-items:center;justify-content:center;min-height:120px;border:1px dashed currentColor;border-radius:10px;opacity:.6;font-size:12px;text-align:center;padding:8px}
+#episode-import input{flex:1;min-width:0}

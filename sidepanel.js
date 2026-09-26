@@ -55,7 +55,7 @@ const state = {
   settings: {
     concurrent: 1,
     delay: 1500,
-    aspect: "16:9",
+    aspect: "9:16",
     folder: "lumina",
     continuity: false,
     outputs: 1,
@@ -63,12 +63,16 @@ const state = {
     speed: true,
     pass: "both",
     step: false,
-    force480p: true,
+    force480p: false,
     duration: 6,
     quality: "speed",
-    resolution: "480p",
+    resolution: "1080p",
+    appendRules: true,
     framePair: "startEnd",
-    referenceSelection: "all",
+    referenceSelection: "matching",
+    refSelV2: true,
+    lint: true,
+    cleanImage: true,
     copyComplete: false,
     dirImages: "Images",
     dirClips: "Clip video",
@@ -95,6 +99,19 @@ if (chromeApi?.storage?.local) {
       }
       state.settings.concurrent = 1;
       state.settings.continuity = false;
+      if (!saved.settings?.fmtV4) {
+        // Règles de tous les projets : vidéo 9:16, 1080p si Grok le permet (sinon 720p automatiquement).
+        state.settings.aspect = "9:16";
+        state.settings.resolution = "1080p";
+        state.settings.force480p = false;
+        state.settings.appendRules = true;
+        state.settings.fmtV4 = true;
+      }
+      if (!saved.settings?.refSelV2) {
+        // v2 : par défaut, seules les références des persos/lieux cités partent avec chaque plan.
+        state.settings.referenceSelection = "matching";
+        state.settings.refSelV2 = true;
+      }
       if (Array.isArray(saved.pairs) && saved.pairs.length) state.pairs = saved.pairs;
       if (Array.isArray(saved.refs)) state.refs = saved.refs;
       if (Array.isArray(saved.images)) state.images = saved.images;
@@ -116,6 +133,12 @@ if (chromeApi?.storage?.local) {
       $("#step").checked = Boolean(state.settings.step);
       $("#force480p").checked = (state.settings.resolution || "480p") === "480p";
       $("#copy-complete").checked = Boolean(state.settings.copyComplete);
+      if ($("#lint")) $("#lint").checked = state.settings.lint !== false;
+      if ($("#clean-image")) $("#clean-image").checked = state.settings.cleanImage !== false;
+      if ($("#append-rules")) $("#append-rules").checked = state.settings.appendRules !== false;
+      if ($("#ep-serie")) $("#ep-serie").value = state.settings.lastSerie || "";
+      if ($("#ep-num")) $("#ep-num").value = state.settings.lastEp || "";
+      if ($("#pilot")) $("#pilot").checked = Boolean(state.settings.pilot);
       $("#dir-images").value = state.settings.dirImages || "Images";
       $("#dir-clips").value = state.settings.dirClips || "Clip video";
       $("#dir-complete").value = state.settings.dirComplete || "Video complete";
@@ -137,9 +160,9 @@ function persist() {
         mode: state.mode,
         settings: state.settings,
         pairs: state.pairs,
-        refs: state.refs.slice(0, 12),
+        refs: state.refs.slice(0, 24),
         images: state.images.slice(0, 8),
-        stills: (state.stills || []).slice(0, 20).map((s) => ({
+        stills: (state.stills || []).slice(0, 40).map((s) => ({
           ...s,
           dataUrl: s.dataUrl,
         })),
@@ -165,7 +188,7 @@ function blankPair() {
 
 function clipDur(item) {
   const n = Number(item?.duration);
-  if (n === 6 || n === 10) return n;
+  if (n === 6 || n === 10 || n === 15) return n;
   return Number(state.settings?.duration) || 6;
 }
 
@@ -174,6 +197,7 @@ function durPillsHtml(item) {
   return `<div class="seg mini-dur">
     <button type="button" data-dur="6" class="${d === 6 ? "on" : ""}">6 s</button>
     <button type="button" data-dur="10" class="${d === 10 ? "on" : ""}">10 s</button>
+    <button type="button" data-dur="15" class="${d === 15 ? "on" : ""}">15 s</button>
   </div>`;
 }
 
@@ -275,6 +299,18 @@ $("#force480p")?.addEventListener("change", (e) => {
   state.settings.resolution = e.target.checked ? "480p" : "720p";
   persist();
   paintClipPills();
+});
+$("#lint")?.addEventListener("change", (e) => {
+  state.settings.lint = e.target.checked;
+  persist();
+});
+$("#append-rules")?.addEventListener("change", (e) => {
+  state.settings.appendRules = e.target.checked;
+  persist();
+});
+$("#clean-image")?.addEventListener("change", (e) => {
+  state.settings.cleanImage = e.target.checked;
+  persist();
 });
 $("#copy-complete")?.addEventListener("change", (e) => {
   state.settings.copyComplete = e.target.checked;
@@ -662,7 +698,7 @@ async function stopBatch() {
 
 async function addRefFiles(kind, files) {
   if (!files?.length) return;
-  for (const file of [...files].slice(0, 6)) {
+  for (const file of [...files].slice(0, 16)) {
     if (!file.type.startsWith("image/")) continue;
     const dataUrl = await resizeFile(file);
     state.refs.push({
@@ -672,23 +708,23 @@ async function addRefFiles(kind, files) {
       dataUrl,
     });
   }
-  state.refs = state.refs.slice(0, 8);
+  state.refs = state.refs.slice(0, 24);
   persist();
   renderRefs();
 }
 
-function resizeFile(file) {
+function resizeFile(file, max = 720) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        const scale = Math.min(1, 720 / Math.max(img.width, img.height));
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
         const c = document.createElement("canvas");
         c.width = Math.max(1, Math.round(img.width * scale));
         c.height = Math.max(1, Math.round(img.height * scale));
         c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-        resolve(c.toDataURL("image/jpeg", 0.8));
+        resolve(c.toDataURL("image/jpeg", max > 720 ? 0.92 : 0.8));
       };
       img.src = String(reader.result);
     };
@@ -725,7 +761,7 @@ async function addStillFiles(files) {
   const list = [...files].filter((f) => f.type.startsWith("image/"));
   list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
   for (const file of list.slice(0, 40)) {
-    const dataUrl = await resizeFile(file);
+    const dataUrl = await resizeFile(file, 1920);
     const base = file.name.replace(/\.[^.]+$/, "");
     state.stills.push({
       id: "st" + Math.random().toString(36).slice(2, 8),
@@ -797,7 +833,7 @@ function applyClipPairs(pairs, how) {
 }
 
 function readyStills() {
-  return (state.stills || []).filter((s) => !s.skip && s.videoPrompt.trim() && s.dataUrl);
+  return (state.stills || []).filter((s) => !s.skip && s.videoPrompt.trim() && (s.dataUrl || s.chainPrev));
 }
 
 function renderStills() {
@@ -806,12 +842,12 @@ function renderStills() {
   if (!tiles || !cards) return;
   tiles.innerHTML =
     (state.stills || [])
-      .map((s) => `<div class="tile"><img src="${s.dataUrl}" alt="" /></div>`)
+      .map((s) => `<div class="tile">${s.dataUrl ? `<img src="${s.dataUrl}" alt="" />` : "<span>↪ suite</span>"}</div>`)
       .join("") + `<button type="button" class="tile-add">Ajouter les images</button>`;
   cards.innerHTML = (state.stills || [])
     .map(
       (s, i) => `<article class="still-card${s.skip ? " skipped" : ""}" data-id="${s.id}">
-      <img src="${s.dataUrl}" alt="" />
+      ${s.dataUrl ? `<img src="${s.dataUrl}" alt="" />` : `<div class="still-suite">↪ dernière image du clip précédent</div>`}
       <div>
         <div class="still-meta">
           <span>${String(i + 1).padStart(2, "0")} · ${escapeHtml(s.title || s.stem)}</span>
@@ -1029,6 +1065,17 @@ function looksLikeJson(raw) {
   return (s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"));
 }
 
+// Prompts d'un mode simple : un script « ## Scène » donne ses prompts vidéo (modes vidéo)
+// ou image (modes image) au lieu de faire échouer le lancement.
+function promptsFromSource(raw) {
+  const src = ingestPromptSource(raw);
+  if (src.kind !== "pairs") return src.prompts || [];
+  const video = ["t2v", "frame2v", "ingredients", "montage"].includes(state.mode);
+  return src.pairs.filter((p) => !p.skip)
+    .map((p) => (video ? p.videoPrompt || p.imagePrompt : p.imagePrompt || p.videoPrompt))
+    .filter(Boolean);
+}
+
 function ingestPromptSource(raw) {
   const t = raw.trim();
   if (!t) return { kind: "prompts", prompts: [] };
@@ -1119,14 +1166,36 @@ function applyIngest(ingested) {
   persist();
 }
 
-async function runBatch(rebuild) {
-  if (state.running || batchActive) return;
+// Explique pourquoi « Lancer le lot » ne démarre pas (au lieu d'un bouton qui semble inactif).
+function runHint(msg) {
+  if (msg) log(msg);
+  const el = $("#run-hint");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.hidden = !msg;
+}
+
+async function runBatch(rebuild, opts = {}) {
+  runHint("");
+  if (state.running || batchActive) {
+    // Pause pas à pas restée ouverte alors qu'il ne reste rien à faire : on la clôt et on relance.
+    if (state.paused && !state.jobs.some((j) => j.status === "queued")) {
+      state.paused = false;
+      for (let i = 0; i < 20 && batchActive; i++) await wait(150);
+    }
+    if (state.running || batchActive) {
+      runHint(state.paused
+        ? "Un lot est en pause : clique « Scène suivante » ou « Arrêter » (onglet File) avant d’en lancer un autre."
+        : "Un lot est déjà en cours : attends la fin ou clique « Arrêter » (onglet File).");
+      return;
+    }
+  }
   const hasQueued = state.jobs.some((j) => j.status === "queued");
   if (rebuild || !hasQueued) {
     const previousJobs = state.jobs;
     if (state.mode === "montage") {
       const stills = readyStills().slice(0, Math.max(1, state.settings.maxScenes || 15));
-      if (!stills.length) return;
+      if (!stills.length) return runHint("Stills → vidéo : aucun still prêt (il faut une image et un prompt vidéo).");
       state.jobs = stills.map((s) => {
         const i = Math.max(0, state.stills.indexOf(s));
         return {
@@ -1140,18 +1209,21 @@ async function runBatch(rebuild) {
           progress: 0,
           urls: [],
           attach: s.dataUrl ? [s.dataUrl] : [],
+          clipNum: s.num ?? i + 1,
+          chainPrev: Boolean(s.chainPrev && !s.dataUrl),
+          savePath: s.savePath || "",
           duration: clipDur(s),
           framePair: "startOnly",
         };
       });
     } else if (state.mode === "pipeline") {
       const pairs = filledPairs().slice(0, Math.max(1, state.settings.maxScenes || 10));
-      if (!pairs.length) return;
+      if (!pairs.length) return runHint("Aucune paire image/vidéo remplie.");
       const pass = state.settings.pass || "both";
       if (pass === "videos" && pairs.some((p) => !previousJobs.some((j) =>
         j.role === "image" && j.status === "done" && j.urls?.length &&
         j.sourcePairId === p.id && j.prompt === p.imagePrompt))) {
-        log("Vidéos seules : générez d’abord les images de ces paires avec « Images seules ».");
+        runHint("Vidéos seules : générez d’abord les images de ces paires avec « Images seules ».");
         return;
       }
       state.jobs = pairs.flatMap((p) => {
@@ -1201,17 +1273,16 @@ async function runBatch(rebuild) {
         return jobs;
       });
     } else if (state.mode === "frame2v") {
-      const prompts = ingestPromptSource($("#prompts").value).prompts;
-      if (!prompts.length || !state.images.length) return;
+      const prompts = promptsFromSource($("#prompts").value);
+      if (!prompts.length) return runHint("Image → Vidéo : écris au moins un prompt.");
+      if (!state.images.length) return runHint("Image → Vidéo : ajoute au moins une image de départ.");
       const startEnd = (state.settings.framePair || "startEnd") === "startEnd";
       const count = Math.min(prompts.length, Math.max(1, state.settings.maxScenes || 15));
       if (startEnd && (state.images.length < 2 || (state.images.length !== 2 && state.images.length < count * 2))) {
-        log("Début + fin : fournissez deux images communes, ou deux images par prompt.");
-        return;
+        return runHint("Début + fin : fournissez deux images communes, ou deux images par prompt.");
       }
       if (!startEnd && state.images.length !== 1 && state.images.length < count) {
-        log("Image → Vidéo : fournissez une image commune, ou une image par prompt.");
-        return;
+        return runHint("Image → Vidéo : fournissez une image commune, ou une image par prompt.");
       }
       if (startEnd && prompts.length === 1) {
         state.jobs = [
@@ -1259,12 +1330,11 @@ async function runBatch(rebuild) {
         }));
       }
     } else {
-      const prompts = ingestPromptSource($("#prompts").value).prompts;
-      if (!prompts.length) return;
-      if (needsImages(state.mode) && state.mode !== "ingredients" && !state.images.length) return;
+      const prompts = promptsFromSource($("#prompts").value);
+      if (!prompts.length) return runHint("Aucun prompt : écris ou colle au moins un prompt.");
+      if (needsImages(state.mode) && state.mode !== "ingredients" && !state.images.length) return runHint("Ce mode nécessite au moins une image.");
       if (state.mode === "i2i" && state.images.length !== 1 && state.images.length < Math.min(prompts.length, state.settings.maxScenes || 10)) {
-        log("Image → Image : fournissez une image commune, ou une image par prompt.");
-        return;
+        return runHint("Image → Image : fournissez une image commune, ou une image par prompt.");
       }
       state.jobs = prompts.slice(0, Math.max(1, state.settings.maxScenes || 10)).map((prompt, i) => ({
         id: `j${Date.now()}_${i}`,
@@ -1289,13 +1359,28 @@ async function runBatch(rebuild) {
       job.settings = { ...state.settings };
       job.role ||= ["t2v", "frame2v", "ingredients", "montage"].includes(state.mode) ? "video" : "image";
       job.duration = clipDur(job);
-      const selection = state.settings.referenceSelection || "all";
+      // Mode Ingrédients : les références SONT la matière du clip, on les envoie toutes.
+      const selection = state.mode === "ingredients" && state.settings.referenceSelection !== "none"
+        ? "all" : state.settings.referenceSelection || "matching";
       job.references = (selection === "none" ? [] : selection === "matching"
         ? refsForPrompt(job.prompt + "\n" + (job.pairedPrompt || "")) : state.refs)
         .filter((r) => r.dataUrl).map(({ name, kind, dataUrl }) => ({ name, kind, dataUrl }));
     }
   }
-  if (!state.jobs.some((j) => j.status === "queued")) return;
+  if (!state.jobs.some((j) => j.status === "queued")) return runHint("Rien à lancer.");
+  if (rebuild && state.settings.lint !== false && !opts.pilot) {
+    const issues = lintJobs(state.jobs.filter((j) => j.status === "queued"));
+    const sig = JSON.stringify(issues);
+    if (issues.length && lintAcknowledged !== sig) {
+      lintAcknowledged = sig;
+      runHint(`Contrôle : ${issues.length} point(s) à vérifier — ` +
+        issues.slice(0, 5).map((x) => `${x.stem} : ${x.msg}`).join(" · ") +
+        (issues.length > 5 ? " …" : "") + " — Corrige, ou clique à nouveau sur « Lancer le lot » pour lancer quand même.");
+      for (const x of issues) log(`⚠ ${x.stem} : ${x.msg}`);
+      return;
+    }
+  }
+  lintAcknowledged = "";
   state.running = true;
   state.paused = false;
   batchActive = true;
@@ -1392,6 +1477,19 @@ async function worker() {
           ? "frame2v"
           : mode;
     const parent = job.parentId ? state.jobs.find((j) => j.id === job.parentId) : null;
+    if (job.chainPrev) {
+      const prev = state.jobs[state.jobs.indexOf(job) - 1];
+      try {
+        if (!prev || prev.status !== "done" || !prev.urls?.length) throw new Error("le clip précédent n’a pas été généré");
+        job.attach = [await lastFrameOf(await (await fetch(prev.urls[0])).blob())];
+      } catch (err) {
+        job.status = "error";
+        job.error = "Suite : " + err.message;
+        persist();
+        renderJobs();
+        continue;
+      }
+    }
     const images = parent ? parent.urls.slice(0, 1) : (job.attach || []);
     const references = job.references || [];
     const attachments = kind === "video" ? [
@@ -1404,7 +1502,7 @@ async function worker() {
       type: "SEND_TO_TAB",
       payload: {
         type: "SUBMIT_PROMPT",
-        prompt: job.prompt,
+        prompt: promptForGrok(job.prompt, kind),
         mediaKind: kind,
         grokMode,
         aspectRatio: settings.aspect,
@@ -1449,11 +1547,19 @@ async function worker() {
           await saveDownload(url, state.settings.dirComplete || "Video complete", stem, ext);
         }
       }
+      if (job.savePath && job.urls[0]) {
+        try {
+          log("Rangé → " + (await saveToBridge(job.urls[0], job.savePath)));
+        } catch (err) {
+          log(`Pont : ${stem} non rangé dans l’épisode (${err.message}) — copie dans Téléchargements seulement.`);
+        }
+      }
       log(`${kind === "video" ? "Clip" : "Image"} ${stem}.${ext}`);
     }
     persist();
     renderJobs();
-    if (state.running && state.settings.step) {
+    // Pas à pas : pause entre deux scènes seulement (jamais après la dernière, sinon le lot reste bloqué).
+    if (state.running && state.settings.step && state.jobs.some((j) => j.status === "queued")) {
       state.paused = true;
       persist();
       renderJobs();
@@ -1656,7 +1762,7 @@ function wait(ms) {
 }
 
 function parseDurToken(text) {
-  const m = String(text || "").match(/\b(6|10)\s*s(?:ec(?:ondes?)?)?\b/i);
+  const m = String(text || "").match(/\b(6|10|15)\s*s(?:ec(?:ondes?)?)?\b/i);
   return m ? Number(m[1]) : undefined;
 }
 
@@ -1688,7 +1794,117 @@ function parseSceneScript(raw) {
   }).filter((p) => p.title || p.imagePrompt || p.videoPrompt);
 }
 
+// ── Contrôle qualité des prompts (mêmes règles que prod-fruits/controle.py) ──
+let lintAcknowledged = "";
+const WORD_BUDGET = { 6: 12, 10: 22, 15: 33 };
+
+function lintJobs(jobs) {
+  const chars = state.refs.filter((r) => r.kind === "character").map((r) => refKey(r.name)).filter(Boolean);
+  const out = [];
+  for (const job of jobs) {
+    const stem = job.stem || "scène";
+    for (const msg of lintPrompt(job.prompt, job.role === "video" ? "video" : "image", clipDur(job), chars)) {
+      out.push({ stem, msg });
+    }
+    if (job.role !== "video" || !job.references || job.attach?.length || job.chainPrev) continue;
+    const sent = new Set(job.references.map((r) => refKey(r.name)));
+    const seen = visibleCharacters(String(job.prompt).toLowerCase(), chars);
+    const missing = seen.filter((k) => !sent.has(k));
+    if (missing.length) out.push({ stem, msg: "sans référence envoyée : " + missing.join(", ") });
+  }
+  return out;
+}
+
+function visibleCharacters(low, chars) {
+  const norm = refKey(low).replace(/-/g, " ");
+  const withDna = chars.filter((k) => new RegExp(`\\b${k.replace(/-/g, " ")}, (the adult|her head|his head)`).test(norm));
+  if (withDna.length) return withDna;
+  return chars.filter((k) => new RegExp(`\\b${k.replace(/-/g, " ")}\\b`).test(norm) &&
+    !new RegExp(`\\b${k.replace(/-/g, " ")}\\b[^.]{0,40}off[- ]screen`).test(norm));
+}
+
+function lintPrompt(prompt, kind, duration, chars) {
+  const text = String(prompt || "");
+  const low = text.toLowerCase();
+  const issues = [];
+  const lines = [...text.matchAll(/«([\s\S]*?)»/g)].map((m) => m[1]);
+  if (kind === "image") {
+    if (lines.length && state.settings.cleanImage === false) issues.push("dialogue dans le prompt image (sous-titres incrustés)");
+    return issues;
+  }
+  const words = lines.reduce((n, l) => n + (l.match(/[\wÀ-ÿ'’-]+/g) || []).length, 0);
+  const budget = WORD_BUDGET[duration] || Math.round(duration * 2.2);
+  if (words > budget) issues.push(`dialogue trop long : ${words} mots pour ${duration} s (max ${budget})`);
+  const seen = visibleCharacters(low, chars);
+  const speakers = new Set();
+  for (const m of text.matchAll(/«/g)) {
+    const before = low.slice(Math.max(0, m.index - 220), m.index);
+    let best = null, at = -1;
+    for (const k of seen) {
+      const i = before.lastIndexOf(k.replace(/-/g, " "));
+      if (i > at) { at = i; best = k; }
+    }
+    if (best) speakers.add(best);
+  }
+  if (speakers.size > 1) issues.push(`${speakers.size} locuteurs (${[...speakers].join(", ")}) : un seul par plan`);
+  if (seen.length >= 2 && !/looks? (directly )?at|eyes on|facing each other|gazes? at|eyeline/i.test(text)) {
+    issues.push("regards non indiqués (« looks directly at… », « eyes on… »)");
+  }
+  if (seen.length >= 2 && lines.length && !/only \w+ speaks|does not speak|listens/i.test(text)) {
+    issues.push("préciser qui écoute (« X listens… », « Only X speaks »)");
+  }
+  if (!/no music/i.test(text)) issues.push("« No music » absent");
+  return issues;
+}
+
+// Clé de référence : sans accents, minuscules, sans extension, espaces/_ → tirets
+// (« France Travail », « France-Travail.png », « @france-travail » → « france-travail »).
+function refKey(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/\.(png|jpe?g|webp|gif)$/, "").trim().replace(/[\s_]+/g, "-");
+}
+
+const TAG_LINE_RE = /^[ \t]*(?:@[\w-]+[ \t]*)+$/gm;
+
+function promptTags(text) {
+  return (String(text || "").match(TAG_LINE_RE) || []).flatMap((l) => l.match(/@[\w-]+/g) || []).map((t) => refKey(t.slice(1)));
+}
+
+// Texte réellement envoyé à Grok : sans ligne @tags ni étiquette « IMAGE: ».
+function promptForGrok(text, kind) {
+  let t = String(text || "").replace(TAG_LINE_RE, "").replace(/^\s*image\s*:\s*/i, "").trim();
+  if (kind === "image" && state.settings.cleanImage !== false) t = imageWithoutDialogue(t);
+  if (state.settings.appendRules !== false) t = withPermanentRules(t, kind);
+  return t;
+}
+
+// Règles de tous les projets, ajoutées si le prompt ne les contient pas déjà :
+// jeu humain et subtil, regards vers l'interlocuteur, image nette sans grain, pas de musique.
+function withPermanentRules(text, kind) {
+  const add = [];
+  if (!/subtle/i.test(text)) {
+    add.push(kind === "video"
+      ? "Natural human behaviour, subtle restrained acting, calm natural conversational voices, no exaggerated expressions; whoever speaks looks at the person they are talking to."
+      : "Human, natural body language, subtle restrained expression.");
+  }
+  if (!/no film grain/i.test(text)) add.push("Tack-sharp, crisp image, no film grain, no noise.");
+  if (kind === "video" && !/no music/i.test(text)) add.push("No music. No song. Ambient sound only.");
+  return add.length ? `${text} ${add.join(" ")}` : text;
+}
+
+// Une image ne doit contenir ni réplique ni texte : sinon Grok incruste des sous-titres.
+function imageWithoutDialogue(text) {
+  let t = String(text).replace(/«[\s\S]*?»/g, "")
+    .replace(/,?\s*and (says|speaks|asks|replies|whispers|answers)[^.:]*:\s*/gi, ". ")
+    .replace(/[ \t]+/g, " ").replace(/\s+([.,])/g, "$1").trim();
+  if (!/no (on-screen )?text|no subtitles/i.test(t)) {
+    t += " No text, no letters, no subtitles, no captions; any signage is blurred and unreadable.";
+  }
+  return t;
+}
+
 function refsForPrompt(text) {
+  const tags = promptTags(text);
   const names = [];
   try {
     const j = JSON.parse(text);
@@ -1700,10 +1916,15 @@ function refsForPrompt(text) {
     /* plain text */
   }
   const blob = String(text).toLowerCase();
+  const keyBlob = refKey(blob);
   return state.refs.filter((r) => {
     const n = (r.name || "").toLowerCase().trim();
-    if (!n) return false;
-    return names.includes(n) || blob.includes(n);
+    const k = refKey(r.name);
+    if (!k) return false;
+    if (names.includes(n) || names.map(refKey).includes(k)) return true;
+    // Avec une ligne @tags, elle fait foi (les lieux décrits en périphrase y sont nommés).
+    if (tags.length) return tags.includes(k);
+    return blob.includes(n) || keyBlob.includes(k);
   });
 }
 
@@ -1864,14 +2085,32 @@ if (zoomSelect) {
   });
 }
 
-/* Lumina — runner de file (moteur GROK IMAGINE).
- * À APPENDRE à la fin de sidepanel.js (même scope : utilise chromeApi, state, log).
+/* Runner de file pilotée par Claude Code (moteur GROK IMAGINE).
  *
- * Tire les jobs "grok" déposés par Claude Code dans le pont, génère via l'onglet
- * grok.com/imagine (SUBMIT_PROMPT → res.urls), et enregistre le média dans le
- * dossier projet via le pont (dossier LIBRE, plus Téléchargements).
+ * Tire les jobs "grok" déposés dans le pont local (prod-fruits/lumina_bridge.py),
+ * génère via l'onglet grok.com/imagine (SUBMIT_PROMPT → res.urls), et enregistre
+ * le média dans le dossier projet via le pont (plus via Téléchargements).
  */
-const BRIDGE = 'http://127.0.0.1:8177'; // ou 8100 si tu replies /queue,/save,/done dans FlowKit
+const BRIDGE = 'http://127.0.0.1:8177';
+
+async function bridgeFetch(path, init) {
+  let r;
+  try {
+    r = await fetch(BRIDGE + path, init);
+  } catch (e) {
+    throw new Error('Pont injoignable sur ' + BRIDGE + ' (lance lumina_bridge.py).');
+  }
+  if (!r.ok) throw new Error('pont ' + path + ' → HTTP ' + r.status);
+  return r.json();
+}
+
+function bridgePost(path, body) {
+  return bridgeFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
 
 /* Envoie UN prompt à Grok et renvoie l'URL du rendu.
  * opts = { startUrl?, aspect?, duration? } — startUrl = image de départ (image→vidéo). */
@@ -1882,7 +2121,8 @@ async function grokSubmit(prompt, kind, opts = {}) {
   const s = state.settings;
   const startUrl = opts.startUrl || null;
   const grokMode = kind === 'video' ? (startUrl ? 'frame2v' : 't2v') : 't2i';
-  const images = startUrl ? [startUrl] : [];
+  // Image : les références des persos/lieux du plan partent avec le prompt (identité fruit).
+  const images = startUrl ? [startUrl] : kind === 'image' ? (opts.refs || []) : [];
   const attachments = (kind === 'video' && startUrl)
     ? [{ url: startUrl, role: 'first', name: 'Scène 1' }] : [];
 
@@ -1914,19 +2154,50 @@ async function grokSubmit(prompt, kind, opts = {}) {
 
 /* Récupère les octets (host_permissions couvrent grok/x.ai/twimg) et les envoie au pont. */
 async function saveToBridge(url, relPath) {
+  if (!relPath) throw new Error('job sans chemin de sortie (out / out_video).');
   const blob = await (await fetch(url)).blob();
-  const r = await fetch(`${BRIDGE}/save`, {
+  const saved = await bridgeFetch('/save', {
     method: 'POST',
-    headers: { 'X-Save-Path': relPath, 'Content-Type': blob.type || 'application/octet-stream' },
+    headers: { 'X-Save-Path': encodeURIComponent(relPath), 'Content-Type': blob.type || 'application/octet-stream' },
     body: blob,
   });
-  if (!r.ok) throw new Error('bridge /save ' + r.status);
-  return (await r.json()).saved;
+  return saved.saved;
+}
+
+/* Références importées dans Lumina correspondant aux clés @ du job (ou aux noms du prompt). */
+function refsForQueueJob(job) {
+  const keys = (job.refs || []).map(refKey);
+  const refs = keys.length ? state.refs.filter((r) => keys.includes(refKey(r.name)))
+    : refsForPrompt(job.prompt_image || job.prompt || '');
+  const missing = keys.filter((k) => !state.refs.some((r) => refKey(r.name) === k));
+  if (missing.length) log(`${job.scene || job.id} : pas de référence importée pour ${missing.join(', ')}`);
+  return refs.filter((r) => r.dataUrl).slice(0, 7).map((r) => r.dataUrl);
+}
+
+/* Dernière image d'un clip (continuité « (suite) ») → data URL JPEG. */
+async function lastFrameOf(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const v = document.createElement('video');
+    v.muted = true;
+    v.preload = 'auto';
+    v.src = url;
+    await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('clip précédent illisible')); });
+    v.currentTime = Math.max(0, v.duration - 0.05);
+    await new Promise((ok) => { v.onseeked = ok; });
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    return c.toDataURL('image/jpeg', 0.92);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /* Génère un job. "scene" = image (t2i) PUIS vidéo (image→vidéo) pour garder la cohérence. */
 async function generateInLumina(job) {
-  const opts = { aspect: job.aspect, duration: job.duration };
+  const opts = { aspect: job.aspect, duration: job.duration, refs: refsForQueueJob(job) };
 
   if (job.kind === 'image') {
     return [{ url: await grokSubmit(job.prompt, 'image', opts), out: job.out }];
@@ -1935,7 +2206,15 @@ async function generateInLumina(job) {
     return [{ url: await grokSubmit(job.prompt, 'video', opts), out: job.out }];
   }
   if (job.kind === 'scene') {
-    const imgUrl = await grokSubmit(job.prompt_image || job.prompt, 'image', opts);
+    let imgUrl;
+    if (job.chain_from) {
+      // Continuité : on repart de la dernière image du clip précédent (déjà enregistré par le pont).
+      const r = await fetch(`${BRIDGE}/file?path=${encodeURIComponent(job.chain_from)}`);
+      if (!r.ok) throw new Error(`clip précédent introuvable (${job.chain_from}) : génère d’abord la scène précédente.`);
+      imgUrl = await lastFrameOf(await r.blob());
+    } else {
+      imgUrl = await grokSubmit(job.prompt_image || job.prompt, 'image', opts);
+    }
     const out = [];
     if (job.out_image) out.push({ url: imgUrl, out: job.out_image });
     const vidUrl = await grokSubmit(job.prompt_video || job.prompt, 'video', { ...opts, startUrl: imgUrl });
@@ -1945,30 +2224,49 @@ async function generateInLumina(job) {
   throw new Error('job.kind inconnu : ' + job.kind);
 }
 
-/* Tire <batchSize> jobs "grok", génère, enregistre, marque "done".
- * Bind sur un bouton "Lancer" de l'onglet File → onclick = () => runLuminaQueue(1). */
-async function runLuminaQueue(batchSize = 1) {
-  const { jobs } = await (await fetch(`${BRIDGE}/queue?claim=${batchSize}&engine=grok`)).json();
-  if (!jobs.length) { log('File vide.'); return 0; }
+let queueRunning = false;
 
-  for (const job of jobs) {
-    try {
-      const outputs = await generateInLumina(job);
-      let last;
-      for (const o of outputs) last = await saveToBridge(o.url, o.out);
-      await fetch(`${BRIDGE}/done`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: job.id, out: last }),
-      });
-      log(`OK ${job.scene || job.id} → ${last}`);
-    } catch (e) {
-      log(`Échec job ${job.id} : ${e.message}`); // reste "in_flight" → relançable via Correction rapide
+/* Tire <batchSize> jobs "grok", génère, enregistre, marque "done" (ou "error"). */
+async function runLuminaQueue(batchSize = 1) {
+  if (queueRunning) { log('File : génération déjà en cours.'); return 0; }
+  queueRunning = true;
+  const btn = $('#run-queue');
+  if (btn) btn.disabled = true;
+  try {
+    const { jobs } = await bridgeFetch(`/queue?claim=${batchSize}&engine=grok`);
+    if (!jobs.length) { log('File vide.'); return 0; }
+
+    for (const job of jobs) {
+      try {
+        const outputs = await generateInLumina(job);
+        let last;
+        for (const o of outputs) last = await saveToBridge(o.url, o.out);
+        await bridgePost('/done', { id: job.id, out: last });
+        log(`OK ${job.scene || job.id} → ${last}`);
+      } catch (e) {
+        log(`Échec job ${job.id} : ${e.message}`);
+        // Marque "error" côté pont → « Relancer échecs » le remet en file.
+        await bridgePost('/fail', { id: job.id, error: e.message }).catch(() => {});
+      }
     }
+    return jobs.length;
+  } catch (e) {
+    log('File : ' + e.message);
+    return 0;
+  } finally {
+    queueRunning = false;
+    if (btn) btn.disabled = false;
   }
-  return jobs.length;
 }
 
+async function requeueLuminaFailures() {
+  try {
+    const r = await bridgePost('/requeue', {});
+    log(`File : ${r.requeued} job(s) remis en attente.`);
+  } catch (e) {
+    log('File : ' + e.message);
+  }
+}
 
 if (typeof window !== "undefined") {
   window.runLuminaQueue = runLuminaQueue;
@@ -1977,5 +2275,125 @@ if (typeof window !== "undefined") {
 }
 
 $("#run-queue")?.addEventListener("click", () => void runLuminaQueue(1));
+$("#requeue")?.addEventListener("click", () => void requeueLuminaFailures());
+
+/* Étape 3 : épisode préparé dans prod-fruits → cartes Stills → clips, dans l'ordre.
+ * req = { serie, ep, only? } (pilote auto) ; sinon lit les champs du panneau.
+ * Renvoie "" si l'import a réussi, sinon le message d'erreur (aussi affiché sous « Lancer le lot »). */
+async function importEpisode(req) {
+  const serie = req?.serie || $("#ep-serie")?.value.trim();
+  const ep = req?.ep || $("#ep-num")?.value.trim();
+  const fail = (msg) => { runHint(msg); return msg; };
+  if (!serie || !ep) return fail("Indique la série et l’épisode (ex. fruit-drama-france et ep1).");
+  state.settings.lastSerie = serie;
+  state.settings.lastEp = ep;
+  if ($("#ep-serie")) $("#ep-serie").value = serie;
+  if ($("#ep-num")) $("#ep-num").value = ep;
+  const only = (req?.only || []).join(",");
+  let data;
+  try {
+    const r = await fetch(`${BRIDGE}/episode?serie=${encodeURIComponent(serie)}&ep=${encodeURIComponent(ep)}` +
+      (only ? `&only=${only}` : ""));
+    data = await r.json();
+    if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+  } catch (e) {
+    return fail("Import : " + (/fetch/i.test(e.message) ? "pont injoignable (lance lancer_pont.bat)" : e.message));
+  }
+  if (data.images_manquantes?.length) {
+    return fail(`Images manquantes dans 2-images : ${data.images_manquantes.map((n) => "IMG " + String(n).padStart(2, "0")).join(", ")}. Génère-les (codex_images.py) puis réimporte.`);
+  }
+  const cache = {};
+  const stills = [];
+  for (const c of data.clips) {
+    let dataUrl = null;
+    try {
+      if (c.image) {
+        if (!cache[c.image]) {
+          const r = await fetch(`${BRIDGE}/file?path=${encodeURIComponent(c.image)}`);
+          if (!r.ok) throw new Error(`image illisible : ${c.image}`);
+          cache[c.image] = await resizeFile(await r.blob(), 1920);
+        }
+        dataUrl = cache[c.image];
+      } else if (c.suite && c.chain_file) {
+        // Reprise d'un « suite » seul : dernière image du clip précédent déjà enregistré.
+        const r = await fetch(`${BRIDGE}/file?path=${encodeURIComponent(c.chain_file)}`);
+        if (!r.ok) throw new Error(`clip précédent introuvable : ${c.chain_file}`);
+        dataUrl = await lastFrameOf(await r.blob());
+      }
+    } catch (e) {
+      return fail("Import : " + e.message);
+    }
+    const nn = String(c.num).padStart(2, "0");
+    stills.push({
+      id: "st" + Math.random().toString(36).slice(2, 8),
+      num: c.num,
+      file: c.image || "",
+      stem: slug(`${nn}-${c.titre}`),
+      title: `${nn} — ${c.titre}${c.suite ? " (suite)" : ""}`,
+      videoPrompt: c.prompt,
+      skip: false,
+      duration: clipDur({ duration: c.duree }),
+      dataUrl,
+      chainPrev: Boolean(c.suite && !dataUrl),
+      savePath: c.save,
+    });
+  }
+  state.stills = stills;
+  persist();
+  renderStills();
+  runHint(`${data.code} — ${data.titre} importé : ${stills.length} clips (${stills.filter((s) => s.chainPrev).length} en suite).` +
+    (req ? "" : " Clique « Lancer le lot »."));
+  return "";
+}
+$("#ep-import")?.addEventListener("click", () => void importEpisode());
+if ($("#ep-serie")) $("#ep-serie").value = state.settings.lastSerie || "";
+if ($("#ep-num")) $("#ep-num").value = state.settings.lastEp || "";
+
+/* Pilote auto : Lumina surveille le pont ; quand Claude (pilote.py) dépose une demande, elle importe
+ * l'épisode, lance le lot sans clic ni pause, puis rend le résultat clip par clip au pont. */
+let pilotBusy = false;
+async function pilotTick() {
+  if (!state.settings.pilot || pilotBusy || state.running || batchActive) return;
+  let demande;
+  try {
+    demande = (await (await fetch(`${BRIDGE}/pilote/prendre`)).json()).demande;
+  } catch {
+    return; // pont éteint : on réessaie au prochain tour
+  }
+  if (!demande) return;
+  pilotBusy = true;
+  const report = (body) => fetch(`${BRIDGE}/pilote/fini`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: demande.id, ...body }),
+  }).catch(() => {});
+  try {
+    log(`Pilote auto : ${demande.serie} ${demande.ep}${demande.only?.length ? " (clips " + demande.only.join(", ") + ")" : ""}`);
+    if (state.mode !== "montage") setMode("montage");
+    const err = await importEpisode(demande);
+    if (err) return void (await report({ erreur: err, clips: [] }));
+    const step = state.settings.step;
+    state.settings.step = false; // jamais de pause « Scène suivante » en pilote
+    state.jobs = []; // le compte rendu ne doit jamais reprendre un ancien lot
+    try {
+      await runBatch(true, { pilot: true });
+    } finally {
+      state.settings.step = step;
+    }
+    const clips = state.jobs.map((j) => ({
+      num: j.clipNum, ok: j.status === "done", erreur: j.status === "done" ? null : j.error || j.status,
+    }));
+    await report({ clips });
+    log(`Pilote auto : terminé — ${clips.filter((c) => c.ok).length}/${clips.length} clips réussis.`);
+  } catch (e) {
+    await report({ erreur: e.message, clips: [] });
+  } finally {
+    pilotBusy = false;
+  }
+}
+if (typeof setInterval === "function" && typeof window !== "undefined") setInterval(() => void pilotTick(), 8000);
+$("#pilot")?.addEventListener("change", (e) => {
+  state.settings.pilot = e.target.checked;
+  persist();
+  runHint(e.target.checked ? "Pilote auto activé : laisse l’onglet grok.com/imagine ouvert, Lumina lancera les épisodes envoyés par Claude." : "");
+});
 
 renderAll();

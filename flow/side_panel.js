@@ -305,6 +305,53 @@ async function getSelectedReferenceMediaIds(projectId, { max } = {}) {
   return ids;
 }
 
+// ── Références AUTO par scène ──────────────────────────────────
+// Choisit les bonnes références selon la scène, sans clic manuel :
+//  1) balises @nom en tête de prompt   2) noms trouvés dans le texte   3) repli manuel.
+
+function refKey(s) {
+  return String(s || '').replace(/\.[^.]+$/, '').trim().toLowerCase();
+}
+
+// Récupère les @tags d'un prompt et renvoie le prompt nettoyé (sans les @tags).
+function parseSceneRefTags(prompt) {
+  const tags = [];
+  const re = /@([a-z0-9_-]+)/gi;
+  let m;
+  while ((m = re.exec(prompt)) !== null) tags.push(m[1].toLowerCase());
+  const clean = String(prompt)
+    .replace(/@([a-z0-9_-]+)/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { tags: [...new Set(tags)], clean };
+}
+
+// Noms de références présents dans le texte du prompt (repli si pas de @tags).
+function detectRefsInText(prompt) {
+  const blob = String(prompt).toLowerCase();
+  return allIngredientItems()
+    .map((it) => refKey(it.name))
+    .filter((k) => k && blob.includes(k));
+}
+
+// Résout une liste de noms -> media_ids (upload une seule fois via ensureIngredientUploaded).
+async function resolveRefsForScene(names, projectId, { max = 7 } = {}) {
+  const wanted = [...new Set((names || []).map(refKey).filter(Boolean))];
+  if (!wanted.length) return [];
+  const items = allIngredientItems();
+  const picked = [];
+  for (const w of wanted) {
+    const it = items.find((x) => refKey(x.name) === w);
+    if (it && !picked.includes(it)) picked.push(it);
+  }
+  const ids = [];
+  for (const it of picked.slice(0, max)) {
+    ids.push(await ensureIngredientUploaded(it, projectId));
+  }
+  return ids;
+}
+
 function setupIngredientInput(btnId, fileInputId, containerId, category) {
   const btn = document.getElementById(btnId);
   const fileInput = document.getElementById(fileInputId);
@@ -358,7 +405,7 @@ function renderIngredientTiles(containerId, category, btnId) {
       <input type="text" value="${escHtml(item.name)}" readonly />
     `;
     // Retirer la référence
-    tile.querySelector('.tile-del').addEventListener('click', (e) => {
+    tile.querySelector('.tile-del')?.addEventListener('click', (e) => {
       e.stopPropagation();
       const i = ingredients[category].indexOf(item);
       if (i >= 0) ingredients[category].splice(i, 1);
@@ -505,6 +552,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // ── Results gallery ────────────────────────────────────────────
 
 let resultSeq = 0;
+let imageSeq = 0; // numérotation des images générées (01, 02, …) pour le nommage
 
 function showResultsSection() {
   const el = document.getElementById('flow-results-section');
@@ -540,7 +588,8 @@ function wireResultActions(card, { mediaId, projectId }) {
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = blobUrl;
-        a.download = `flow-${mediaId}-${quality}.jpg`;
+        const seq = card.dataset.seq;
+        a.download = seq ? `${seq}.jpg` : `flow-${mediaId}-${quality}.jpg`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -580,8 +629,9 @@ function addResult({ kind, prompt, url, mediaId, projectId, error, pending }) {
         <p class="rc-status" style="color: var(--danger);">${escHtml(error)}</p>
       </div>`;
   } else {
+    if (kind === 'image' && mediaId) { imageSeq += 1; card.dataset.seq = String(imageSeq).padStart(2, '0'); }
     const dlButtons = kind === 'image' && mediaId
-      ? `<button type="button" data-dl="2k">2K</button><button type="button" data-dl="4k">4K</button>`
+      ? `<button type="button" data-dl="2k">2K</button><button type="button" data-dl="4k">4K</button><button type="button" data-tovideo>Convertir en vidéo</button>`
       : '';
     card.innerHTML = renderResultMedia(kind, url) + `
       <div class="rc-body">
@@ -592,6 +642,8 @@ function addResult({ kind, prompt, url, mediaId, projectId, error, pending }) {
         </div>
       </div>`;
     wireResultActions(card, { mediaId, projectId });
+    const toVid = card.querySelector('[data-tovideo]');
+    if (toVid) toVid.addEventListener('click', () => addToVideoQueue({ mediaId, projectId, thumbUrl: url, prompt: card.dataset.prompt || '' }));
   }
 
   grid.prepend(card);
@@ -741,16 +793,33 @@ async function runImageBatch() {
       sourceMediaId = await imageBaseSlot.ensureUploaded(projectId);
     }
 
-    let refIds = [];
-    if (selectedIngredientItems().length) {
-      progressEl.textContent = 'Import des références sélectionnées…';
-      refIds = await getSelectedReferenceMediaIds(projectId);
-    }
+    // Repli : sélection manuelle des vignettes cochées (calculée à la demande seulement).
+    let _manualRefIds = null;
+    const getManualRefIds = async () => {
+      if (_manualRefIds === null) {
+        _manualRefIds = selectedIngredientItems().length
+          ? await getSelectedReferenceMediaIds(projectId) : [];
+      }
+      return _manualRefIds;
+    };
 
     for (let i = 0; i < prompts.length && imageRunning; i++) {
-      const prompt = prompts[i];
+      const rawPrompt = prompts[i];
+      const { tags, clean } = parseSceneRefTags(rawPrompt);
+      const prompt = clean || rawPrompt;               // prompt envoyé au modèle, sans les @tags
       progressEl.textContent = `Image ${i + 1}/${prompts.length} — envoi…`;
       const seed = baseSeed !== null ? baseSeed + i * 97 : undefined;
+
+      // Sélection AUTO des références pour CETTE scène
+      let sceneRefIds;
+      if (tags.length) {
+        sceneRefIds = await resolveRefsForScene(tags, projectId);          // 1) @tags explicites
+      } else {
+        const detected = detectRefsInText(prompt);
+        sceneRefIds = detected.length
+          ? await resolveRefsForScene(detected, projectId)                 // 2) noms trouvés dans le texte
+          : await getManualRefIds();                                       // 3) repli : vignettes cochées
+      }
 
       try {
         const body = {
@@ -760,7 +829,7 @@ async function runImageBatch() {
           image_model: model,
           count,
           seed,
-          reference_media_ids: refIds.length ? refIds : undefined,
+          reference_media_ids: sceneRefIds.length ? sceneRefIds : undefined,
         };
         const data = imageMode === 'i2i'
           ? await flowPost('/flow/edit-image', { ...body, source_media_id: sourceMediaId })
@@ -1031,12 +1100,14 @@ async function detectActiveProject() {
 
 async function downloadAllImages(quality) {
   const cards = [...document.querySelectorAll('#flow-results .result-card')]
-    .filter((c) => c.dataset.kind === 'image' && c.dataset.mediaId);
+    .filter((c) => c.dataset.kind === 'image' && c.dataset.mediaId)
+    .sort((a, b) => (a.dataset.seq || '').localeCompare(b.dataset.seq || '')); // ordre 01, 02, …
   if (!cards.length) { alert('Aucune image exportable dans les résultats.'); return; }
 
   for (const card of cards) {
     const mediaId = card.dataset.mediaId;
     const projectId = card.dataset.projectId;
+    const seq = card.dataset.seq;
     try {
       const res = await fetch(`${FLOW_API}/flow/export-image`, {
         method: 'POST',
@@ -1048,7 +1119,7 @@ async function downloadAllImages(quality) {
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `flow-${mediaId}-${quality}.jpg`;
+      a.download = seq ? `${seq}.jpg` : `flow-${mediaId}-${quality}.jpg`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1080,7 +1151,179 @@ function initBulkDownload() {
 function initResultsToolbar() {
   const btn = document.getElementById('flow-results-clear');
   const grid = document.getElementById('flow-results');
-  if (btn && grid) btn.addEventListener('click', () => { grid.innerHTML = ''; });
+  if (btn && grid) btn.addEventListener('click', () => { grid.innerHTML = ''; imageSeq = 0; });
+}
+
+// ── File vidéo (image → vidéo, à la demande, persistée) ───────
+// Chaque carte image peut être envoyée ici via « Convertir en vidéo ». La file
+// survit à la fermeture du panneau (chrome.storage.local). Reliement par titre :
+// supprimer une image ratée ne décale rien.
+
+const VQ_KEY = 'luminaFlowVideoQueue';
+let videoQueue = [];
+let videoQueueRunning = false;
+
+function vqLoad() {
+  try {
+    chrome.storage.local.get([VQ_KEY], (bag) => {
+      videoQueue = Array.isArray(bag && bag[VQ_KEY]) ? bag[VQ_KEY] : [];
+      renderVideoQueue();
+    });
+  } catch { renderVideoQueue(); }
+}
+function vqSave() {
+  try { chrome.storage.local.set({ [VQ_KEY]: videoQueue }); } catch { /* ignore */ }
+}
+
+// Titre auto figé : max numérique existant + 1, formaté 01, 02…
+function vqNextTitle() {
+  let max = 0;
+  for (const e of videoQueue) {
+    const n = parseInt(e.title, 10);
+    if (!isNaN(n) && n > max) max = n;
+  }
+  return String(max + 1).padStart(2, '0');
+}
+
+function addToVideoQueue({ mediaId, projectId, thumbUrl, prompt }) {
+  if (!mediaId) { alert('Cette image n’a pas d’identifiant Flow réutilisable.'); return; }
+  videoQueue.push({
+    id: 'vq-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    mediaId,
+    projectId: projectId || readProjectId(),
+    thumbUrl: thumbUrl || '',
+    title: vqNextTitle(),     // auto, éditable
+    prompt: prompt || '',     // pré-rempli depuis l'image, éditable
+    duration: 6,
+  });
+  vqSave();
+  renderVideoQueue();
+  ensureVideoQueueSection().style.display = '';
+}
+
+function ensureVideoQueueSection() {
+  let sec = document.getElementById('flow-video-queue-section');
+  if (sec) return sec;
+  sec = document.createElement('section');
+  sec.id = 'flow-video-queue-section';
+  sec.style.marginTop = '16px';
+  sec.innerHTML = `
+    <h3 style="margin:0 0 6px;">File vidéo (image → vidéo)</h3>
+    <p style="font-size:12px;color:var(--amber,#c90);margin:0 0 10px;">
+      Chaque lancement consomme des crédits Flow — n’envoie que tes images validées, lance par petits paquets.</p>
+    <div id="flow-video-queue"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+      <button type="button" id="flow-vq-run">Lancer la file vidéo</button>
+      <button type="button" id="flow-vq-clear">Vider la file</button>
+      <span id="flow-vq-progress" style="font-size:12px;color:var(--muted);"></span>
+    </div>`;
+  const results = document.getElementById('flow-results-section');
+  if (results && results.parentNode) results.parentNode.insertBefore(sec, results.nextSibling);
+  else document.body.appendChild(sec);
+  sec.querySelector('#flow-vq-run').addEventListener('click', () => { if (!videoQueueRunning) runVideoQueue(); });
+  sec.querySelector('#flow-vq-clear').addEventListener('click', () => {
+    if (videoQueueRunning) return;
+    videoQueue = []; vqSave(); renderVideoQueue();
+  });
+  return sec;
+}
+
+function renderVideoQueue() {
+  const host = ensureVideoQueueSection().querySelector('#flow-video-queue');
+  if (!host) return;
+  if (!videoQueue.length) {
+    host.innerHTML = '<p style="font-size:12px;color:var(--muted);">File vide. Sur une image, clique « Convertir en vidéo ».</p>';
+    return;
+  }
+  host.innerHTML = videoQueue.map((e) => `
+    <div class="vq-card" data-id="${e.id}" style="display:flex;gap:10px;padding:8px;border:1px solid var(--line,#333);border-radius:8px;margin-bottom:8px;">
+      <img src="${escHtml(e.thumbUrl)}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex:0 0 auto;" />
+      <div style="flex:1;min-width:0;">
+        <input data-f="title" value="${escHtml(e.title)}" placeholder="titre" style="width:100%;margin-bottom:4px;" />
+        <textarea data-f="prompt" placeholder="Prompt vidéo" style="width:100%;min-height:48px;">${escHtml(e.prompt)}</textarea>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+          <button type="button" data-dur="6" class="${e.duration === 6 ? 'on' : ''}">6 s</button>
+          <button type="button" data-dur="10" class="${e.duration === 10 ? 'on' : ''}">10 s</button>
+          <button type="button" data-act="del" style="margin-left:auto;">Retirer</button>
+        </div>
+        <p class="vq-status" style="font-size:11px;color:var(--muted);margin:4px 0 0;">${e.done ? '✓ Fait' : ''}</p>
+      </div>
+    </div>`).join('');
+
+  host.querySelectorAll('.vq-card').forEach((card) => {
+    const e = videoQueue.find((x) => x.id === card.dataset.id);
+    if (!e) return;
+    card.querySelector('[data-f="title"]').addEventListener('input', (ev) => { e.title = ev.target.value; vqSave(); });
+    card.querySelector('[data-f="prompt"]').addEventListener('input', (ev) => { e.prompt = ev.target.value; vqSave(); });
+    card.querySelectorAll('[data-dur]').forEach((b) => b.addEventListener('click', () => {
+      e.duration = Number(b.dataset.dur) || 6; vqSave(); renderVideoQueue();
+    }));
+    card.querySelector('[data-act="del"]').addEventListener('click', () => {
+      if (videoQueueRunning) return;
+      const i = videoQueue.findIndex((x) => x.id === e.id);
+      if (i >= 0) videoQueue.splice(i, 1);
+      vqSave(); renderVideoQueue();
+    });
+  });
+}
+
+function vqSetStatus(id, msg) {
+  const el = document.querySelector(`.vq-card[data-id="${id}"] .vq-status`);
+  if (el) el.textContent = msg;
+}
+
+async function runVideoQueue() {
+  if (!videoQueue.length) { alert('File vidéo vide.'); return; }
+  videoQueueRunning = true;
+  const runBtn = document.getElementById('flow-vq-run');
+  const prog = document.getElementById('flow-vq-progress');
+  if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Génération…'; }
+
+  for (let i = 0; i < videoQueue.length; i++) {
+    const e = videoQueue[i];
+    if (prog) prog.textContent = `Clip ${i + 1}/${videoQueue.length}…`;
+    vqSetStatus(e.id, 'Envoi…');
+    try {
+      const submitted = await flowPost('/flow/generate-video', {
+        start_image_media_id: e.mediaId,
+        prompt: e.prompt,
+        project_id: e.projectId,
+        scene_id: `vq-${e.id}`,
+        aspect_ratio: VIDEO_ASPECT_MAP['9:16'],
+        model_family: 'omni_flash',
+        duration_s: e.duration || 6,
+        resolution: '720p',
+      });
+      vqSetStatus(e.id, 'Génération en cours…');
+      const { url } = await pollVideoResult(submitted, e.projectId, {
+        onTick: (s) => vqSetStatus(e.id, `Génération… ${s}s`),
+      });
+      vqSetStatus(e.id, 'Téléchargement…');
+      await downloadVideo(url, e.title || String(i + 1).padStart(2, '0'));
+      vqSetStatus(e.id, '✓ Fait');
+      e.done = true; vqSave();
+    } catch (err) {
+      vqSetStatus(e.id, '✗ ' + (err.message || err));
+    }
+  }
+
+  videoQueueRunning = false;
+  if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Lancer la file vidéo'; }
+  if (prog) prog.textContent = 'Terminé.';
+}
+
+async function downloadVideo(url, title) {
+  const name = `${title}.mp4`;
+  try {
+    const blob = await (await fetch(url)).blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+  } catch {
+    window.open(url, '_blank'); // CORS : ouverture pour téléchargement manuel
+  }
 }
 
 // ── Initial Fetch & Background Listeners ─────────────────────
@@ -1186,5 +1429,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initProjectIdField();
   initResultsToolbar();
   initBulkDownload();
+  vqLoad();
   detectActiveProject();
 });

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function importer({ endControl = true, firstControl = true, multiple = true } = {}) {
+function importer({ endControl = true, firstControl = true, multiple = true, sidebar = false } = {}) {
   const writes = [];
   let slot = 'first';
   const input = { multiple, dispatchEvent(e) {
@@ -15,6 +15,7 @@ function importer({ endControl = true, firstControl = true, multiple = true } = 
   const buttons = [
     ...(firstControl ? [button('First frame', () => { slot = 'first'; })] : []),
     ...(endControl ? [button('Last frame', () => { slot = 'last'; })] : []),
+    ...(sidebar ? [{ ...button('', () => { writes.push({ slot: 'PROJECT DIALOG', files: [] }); }), getAttribute: a => a === 'aria-label' ? 'Ajouter un projet' : '' }] : []),
   ];
   const context = {
     window: {}, location: { pathname: '/imagine', hash: '' },
@@ -35,6 +36,8 @@ function importer({ endControl = true, firstControl = true, multiple = true } = 
   };
   const source = fs.readFileSync(path.join(__dirname, '..', 'content.js'), 'utf8');
   vm.runInNewContext(source.replace(/\}\)\(\);\s*$/, `
+    const realComposerImages = composerImages;
+    composerImages = () => globalThis.thumbs ? globalThis.thumbs() : realComposerImages();
     globalThis.attach = attachImages;
     globalThis.file = fileToItem;
   })();`), context);
@@ -60,10 +63,17 @@ test('Missing start-frame control stops before importing', async () => {
   assert.equal(writes.length, 0);
 });
 
-test('Multi-image imports do not silently drop ingredients on a single-file field', async () => {
-  const { context, writes } = importer({ multiple: false });
-  await assert.rejects(context.attach(['A', 'B', 'C'], ''), /qu’une image/);
-  assert.equal(writes.length, 0);
+test('Reference images go one at a time into the composer field, never via the sidebar "Ajouter un projet"', async () => {
+  const { context, writes } = importer({ multiple: false, sidebar: true });
+  context.thumbs = () => writes.filter(w => w.files.length).map(() => ({}));
+  await context.attach(['A', 'B', 'C'], '');
+  assert.deepEqual(writes.map(w => w.files.map(f => f.name)), [['lumina-1.png'], ['lumina-2.png'], ['lumina-3.png']]);
+});
+
+test('An image that never shows up in the composer stops the job', async () => {
+  const { context } = importer();
+  context.thumbs = () => [];
+  await assert.rejects(context.attach(['A'], ''), /non confirmé/);
 });
 
 test('An HTTP failure is rejected instead of uploading its error page', async () => {

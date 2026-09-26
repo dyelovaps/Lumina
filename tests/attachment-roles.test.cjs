@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
-function page({ missingRole = '', confirm = true, dropUpload = false } = {}) {
+function page({ missingRole = '', confirm = true, dropUpload = false, noMenu = false } = {}) {
   const thumbnails = [];
   let open = null;
   const visibleNode = (text = '') => ({ innerText: text,
@@ -33,7 +33,7 @@ function page({ missingRole = '', confirm = true, dropUpload = false } = {}) {
     thumbs: () => [...thumbnails],
     upload(file) {
       if (dropUpload) return;
-      const img = { ...visibleNode(), src: file.url, role: 'first', click() { open = img; }, closest: () => null };
+      const img = { ...visibleNode(), src: file.url, role: 'first', click() { if (!noMenu) open = img; }, closest: () => null };
       const remove = { ...visibleNode('Remove image'), click() { thumbnails.splice(thumbnails.indexOf(img), 1); } };
       img.parentElement = { parentElement: null, querySelector: () => null,
         querySelectorAll: selector => selector === 'img' ? [img] : [remove] };
@@ -69,6 +69,12 @@ test('Missing reference role aborts rather than using a first-frame default', as
   await assert.rejects(ctx.attach([{ url: 'REF', role: 'reference', name: 'Character' }]), /Rôle reference introuvable/);
 });
 
+test('A missing role reports the menu options Grok actually showed', async () => {
+  const { ctx } = page({ missingRole: 'reference' });
+  await assert.rejects(ctx.attach([{ url: 'REF', role: 'reference', name: 'Character' }]),
+    /Options vues dans le menu Grok : « Première image », « Dernière image »/);
+});
+
 test('Unconfirmed role selection aborts the upload workflow', async () => {
   const { ctx } = page({ confirm: false });
   await assert.rejects(ctx.attach([{ url: 'REF', role: 'reference', name: 'Character' }]), /n’a pas pu être confirmé/);
@@ -77,4 +83,23 @@ test('Unconfirmed role selection aborts the upload workflow', async () => {
 test('A silently rejected upload is reported before any role can be assigned', async () => {
   const { ctx } = page({ dropUpload: true });
   await assert.rejects(ctx.attach([{ url: 'REF', role: 'reference', name: 'Character' }]), /non confirmé/);
+});
+
+test('Grok without role menu: several images become @Image N mentions instead of failing', async () => {
+  const { ctx, thumbnails } = page({ noMenu: true });
+  const res = await ctx.attach([{ url: 'S', role: 'first', name: 'Scène 1' }, { url: 'R', role: 'reference', name: 'Fraisandro.png' }]);
+  assert.equal(thumbnails.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(res.mentions)), [
+    { n: 1, label: 'the opening frame of this shot' }, { n: 2, label: 'Fraisandro' }]);
+});
+
+test('Grok without role menu: a lone character reference is refused (it would become the first frame)', async () => {
+  const { ctx } = page({ noMenu: true });
+  await assert.rejects(ctx.attach([{ url: 'R', role: 'reference', name: 'Fraisandro' }]), /serait utilisée comme première image/);
+});
+
+test('Grok without role menu: a lone scene image needs no mention', async () => {
+  const { ctx } = page({ noMenu: true });
+  const res = await ctx.attach([{ url: 'S', role: 'first', name: 'Scène 1' }]);
+  assert.equal(res.mentions.length, 0);
 });

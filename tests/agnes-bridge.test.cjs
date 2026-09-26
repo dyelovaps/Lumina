@@ -107,7 +107,22 @@ test('Plans avec image validée → Stills → Clips, références jointes par n
     [['s1', 'video', 'P1', 'BLOB:https://grok.test/1.mp4'], ['s2', 'video', 'P1', 'BLOB:https://grok.test/2.mp4']]);
 });
 
+test("Grok vidéo uniquement (défaut) : un plan sans image n'est jamais confié à Grok, il est signalé", async () => {
+  const p = panel({ project, shots: [
+    { shotId: "s1", num: 1, title: "Rue", imagePrompt: "Rue de nuit", videoPrompt: "Elle marche", duration: 6, still: null, refs: [] },
+    { shotId: "s2", num: 2, title: "Porte", imagePrompt: "", videoPrompt: "La porte", duration: 6, still: "IMG", refs: [] },
+  ], refs: [], skipped: [] });
+  const err = await p.context.importFromAgnes({});
+  assert.equal(err, "");
+  assert.equal(p.state.mode, "montage");
+  eq(p.state.stills.map((s) => s.agnes.shotId), ["s2"]);
+  p.state.settings.step = false;
+  await p.run(true);
+  eq(p.sent.map((s) => s.mediaKind), ["video"]);
+});
+
 test('Plans sans image → Lot mixte : Grok fait l’image puis le clip, les deux reviennent dans Agnes', async () => {
+  // (règle désactivée pour ce test : Lot mixte autorisé)
   const p = panel({
     project,
     shots: [
@@ -117,6 +132,7 @@ test('Plans sans image → Lot mixte : Grok fait l’image puis le clip, les deu
     refs: [lea],
     skipped: [],
   });
+  p.state.settings.grokVideoOnly = false;
   await p.context.importFromAgnes({});
   assert.equal(p.state.mode, 'pipeline');
   assert.equal(p.state.settings.pass, 'both');

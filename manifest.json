@@ -13,6 +13,9 @@
     "https://flow-content.google/*",
     "https://labs.google/*",
     "https://aisandbox-pa.googleapis.com/*",
+    "https://*.agnes-ai.space/*",
+    "https://*.agnes-ai.com/*",
+    "https://i.ibb.co/*",
     "http://127.0.0.1:8100/*",
     "http://127.0.0.1:8177/*"
   ],

@@ -59,7 +59,7 @@ AgnesPlugins.register("lumina", {
   // (verrou d'identité, anti-invention) : Lumina ajoute ses propres règles qualité.
   finalPrompt: function (shot, proj, mode, prompt, withDna) {
     if (!withDna) return String(prompt || "").trim();
-    return this.A.buildPrompt(Object.assign({}, shot, { mode: mode, prompt: prompt || "", lock: false }), proj);
+    return this.A.buildPrompt(Object.assign({}, shot, { mode: mode, prompt: prompt || "", lock: false, _export: true }), proj);
   },
 
   libBlob: function (proj, id) {

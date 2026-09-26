@@ -756,7 +756,15 @@
         return { ok: false, error: "La page a quitté Imagine. Rouvrez grok.com/imagine." };
       }
       const now = snapshot().filter((u) => !before.has(u));
-      if (now.length >= wanted) return { ok: true, urls: now.slice(0, wanted) };
+      if (now.length >= wanted) {
+        // Garde-fou : Grok a déjà lancé plusieurs générations pour un seul envoi (interface changée, mode automatique…).
+        // On surveille encore 15 s ; le surplus est signalé pour que Lumina / Agnes arrêtent d'envoyer.
+        if (wantVideo) {
+          for (let i = 0; i < 30 && !aborted; i++) await sleep(500);
+        }
+        const all = snapshot().filter((u) => !before.has(u));
+        return { ok: true, urls: now.slice(0, wanted), surplus: Math.max(0, all.length - wanted) };
+      }
       const err = [...document.querySelectorAll("div, p, span")].find(
         (el) => /rate limit|trop de requêtes|try again|quota|upgrade/i.test(textOf(el)) && visible(el),
       );

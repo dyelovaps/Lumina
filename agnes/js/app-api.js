@@ -197,7 +197,7 @@
       var images = (refs.source ? [refs.source] : []).concat(refs.ingredients || []);
       function once(n) {
         requests++;
-        var body = { model: A.settings.imageModel, prompt: A.buildPrompt(shot, proj), size: imageTier(shot.resolution), ratio: nearestRatio(shot.aspect, IMAGE_RATIOS), n: n,
+        var body = { model: A.settings.imageModel, prompt: A.buildPrompt(shot, proj), size: imageTier(shot.resolution), ratio: nearestRatio(shot.aspect, IMAGE_RATIOS), n: 1,   // Agnes Image 2.5 Flash : « n must be 1 » → une requête par variante (boucle ci-dessous)
           extra_body: { response_format: "url" } };
         applyCommon(body, shot, proj);
         if (images.length) {

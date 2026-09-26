@@ -175,7 +175,11 @@ AgnesPlugins.register("atelier", {
     "(format vertical TikTok/Reels ; images par Agnes Image 2.5 ou ChatGPT, vidéos de 4 à 12 s par Agnes Video 2.5 ou Grok). " +
     "Réponds en français, sauf pour les prompts et l'ADN visuel, en anglais. Travaille uniquement à partir des ENTRÉES fournies : " +
     "n'invente pas de personnage, de lieu ou de fait qui contredirait les étapes précédentes. Si une entrée manque, dis-le en une phrase puis fais au mieux. " +
-    "Pas de texte, sous-titres ni musique dans les prompts d'image ou de vidéo (dialogues, musique et titres sont gérés à part).",
+    "Pas de texte, sous-titres ni musique dans les prompts d'image ou de vidéo (dialogues, musique et titres sont gérés à part). " +
+    "Structure des prompts (anglais), dans cet ordre : IMAGE = sujet (qui, action figée, place dans l'image) + décor et moment + style + lumière + composition (angle, cadrage) + exigences de qualité (textures, netteté) ; " +
+    "VIDÉO = sujet et décor de départ + action et évolution au fil des secondes + mouvement de caméra + style visuel + exigences de cohérence (ce qui ne doit pas changer : visages, tenues, décor). " +
+    "Jeu humain et subtil ; celui qui parle regarde son interlocuteur. " +
+    "RÉPLIQUES (dialogues en français, entre « » dans les prompts vidéo) : phrases courtes, sans caractères spéciaux (pas de tiret —, pas de ; ni de :, pas de guillemets à l'intérieur), aucun espace avant ? ou !, et des points de suspension … (le caractère …) à la place d'un point qui couperait la réplique en deux phrases (le point final de la réplique reste) : ces caractères coupent la parole des personnages, surtout quand ils sont deux.",
   DEFAULT_AGENTS: [
     { id: "a1", num: "1", name: "Développeur de Concept", inputs: [], context: [], dest: "none",
       desc: "Analyse une idée brute et en extrait un concept solide et vendable : thème, promesse émotionnelle, conflit moral, moteur de la série.",

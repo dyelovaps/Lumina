@@ -20,6 +20,28 @@ AgnesPlugins.register("moteurs", {
     this.core = core; this.A = A;
     this.cfg = core.pluginSettings("moteurs", { image: "agnes", video: "agnes", pont: "http://127.0.0.1:8177", grokRes: "720p", grokQuality: "quality" });
     this.grokQueue = Promise.resolve();   // un seul onglet Grok : une vidéo à la fois
+    // Références envoyées à Agnes allégées (1024 px, JPEG) : suffisant pour un visage et une tenue, et les requêtes
+    // lourdes expirent souvent côté serveur (HTTP 504) en offre gratuite.
+    A.libItemToApiUrl = function (item, proj) {
+      if (item.publicUrl) return Promise.resolve(item.publicUrl);
+      return AgnesStore.getBlob("lib:" + item.id).then(function (b) {
+        if (!b) throw { display: "L'image « " + item.name + " » n'est plus disponible — réimportez-la dans la Bibliothèque." };
+        return A.shrinkBlob(b, 1024).then(function (s) {
+          if (s === b && b.size > 400000) {   // déjà petite en pixels mais lourde (PNG) : ré-encodée en JPEG
+            return A.loadImage(URL.createObjectURL(b)).then(function (img) {
+              var c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight;
+              c.getContext("2d").drawImage(img, 0, 0); return A.canvasToBlob(c, "image/jpeg", 0.88);
+            });
+          }
+          return s;
+        }).then(A.blobToApiUrl).then(function (url) {
+          if (/^https?:/i.test(url)) { item.publicUrl = url; A.touch(proj); }
+          return url;
+        });
+      });
+    };
+    // Prompt final de tous les moteurs : règles fixes + (Agnes Image) légende des images de référence
+    core.addPromptFilter(function (prompt, shot, proj, kind) { return self.quality(prompt, shot, proj, kind); });
 
     // Chaque prise garde le nom du moteur qui l'a fabriquée (affiché sur les cartes)
     var tag = function (takes) { (takes || []).forEach(function (t) { if (t && !t.source) t.source = "agnes"; }); return takes; };
@@ -28,6 +50,8 @@ AgnesPlugins.register("moteurs", {
       return self.cfg.image === "chatgpt" ? self.chatgptImage(job, shot, proj) : agnesImage(job, shot, proj).then(tag);
     };
     A.generateVideo = function (job, shot, proj) {
+      // Une reprise (vidéo Agnes interrompue par un rechargement) reste chez Agnes : jamais renvoyée à Grok
+      if (job && job.resume) return agnesVideo(job, shot, proj).then(tag);
       return self.cfg.video === "grok" ? self.grokVideo(job, shot, proj) : agnesVideo(job, shot, proj).then(tag);
     };
     // Badges en tête des cartes : moteur de la prochaine image / vidéo, clic = changer (pour tous les plans)
@@ -83,6 +107,13 @@ AgnesPlugins.register("moteurs", {
     var sel = document.getElementById("motImage"); if (sel) sel.value = this.cfg.image;
     var vsel = document.getElementById("motVideo"); if (vsel) vsel.value = this.cfg.video;
     var gopt = document.getElementById("motGrokOpts"); if (gopt) gopt.style.display = this.cfg.video === "grok" ? "" : "none";
+    var gb = document.getElementById("motGrokBloc"), self = this;
+    if (gb) {
+      gb.style.display = this.cfg.grokBloque ? "" : "none";
+      gb.innerHTML = this.cfg.grokBloque ? "⛔ " + this.A.esc(this.cfg.grokBloque) + ' <button class="small-btn" type="button" id="motGrokDebloc">Réactiver Grok</button>' : "";
+      var bt = document.getElementById("motGrokDebloc");
+      if (bt) bt.onclick = function () { delete self.cfg.grokBloque; self.cfg.save(); self.refresh(); self.core.toast("Grok réactivé.", "ok"); };
+    }
     if (this.A.ready) this.A.renderShots();
   },
 
@@ -107,6 +138,7 @@ AgnesPlugins.register("moteurs", {
       '<option value="agnes">Agnes Video 2.5 — gratuit</option><option value="grok">Grok Imagine (votre abonnement) — Agnes ouverte depuis Lumina</option></select>' +
       '<p class="hint">Grok : gardez un onglet <b>grok.com/imagine</b> ouvert et connecté ; il passe au premier plan pendant chaque génération. Une vidéo à la fois. Durée arrondie à 6, 10 ou 15 s ; formats 9:16, 16:9 ou 1:1. Image de départ et références envoyées sans imgbb.' +
       (this.canGrok() ? '' : ' <b>Indisponible ici</b> : ouvrez Agnes depuis l\'onglet Agnes de Lumina.') + '</p></div>' +
+      '<div class="hint" id="motGrokBloc" style="display:none;color:var(--danger)"></div>' +
       '<div class="row-inline" id="motGrokOpts"><label class="inline">Résolution <select id="motGrokRes"><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option></select></label>' +
       '<label class="inline">Qualité <select id="motGrokQ"><option value="speed">Rapide</option><option value="quality">Qualité</option></select></label></div>';
     host.parentNode.insertBefore(card, host);
@@ -171,6 +203,42 @@ AgnesPlugins.register("moteurs", {
   // Planche personnage (skill « Fiche personnage » ou prompt qui en demande une) : mise en page et bandeau nom autorisés
   isSheet: function (shot, prompt) {
     return (shot.skills || []).indexOf("b-sheet") !== -1 || /character (reference )?sheet|model sheet|planche|fiche perso/i.test(prompt || shot.prompt || "");
+  },
+
+  // Qualité en mode gratuit (et règles communes à tous les moteurs), d'après la fiche « structure des prompts Agnes 2.5 » :
+  // - images Agnes avec références : « <Picture n> = Nom (rôle) » dans l'ordre exact des images envoyées, sinon le modèle
+  //   ne sait pas quelle photo correspond à quel personnage ;
+  // - règles fixes de l'utilisatrice (jeu subtil, regard vers l'interlocuteur, net sans grain, sans texte, sans musique),
+  //   ajoutées seulement si le prompt ne les contient pas déjà (ChatGPT, Grok et Lumina les reconnaissent : pas de doublon).
+  quality: function (prompt, shot, proj, kind) {
+    var A = this.A, out = String(prompt || "");
+    if (kind === "image") {
+      if (!shot._export && this.cfg.image !== "chatgpt") {
+        var KIND = { personnage: "character", decor: "place", objet: "object", costume: "outfit", style: "style reference" }, list = [], styleOnly = true;
+        if (shot.mode === "i2i" && shot.sourceRef) list.push("is the image to edit: keep its composition unless asked otherwise");
+        if (A.usesRefs(shot.mode, shot)) (shot.ingredients || []).slice(0, A.settings.maxRefs || 5).forEach(function (id) {
+          var it = proj.library.find(function (l) { return l.id === id; });
+          if (!it || it.kind !== "style") styleOnly = false;
+          // Référence de style : le rendu seulement, jamais le visage ni le personnage (sinon il remplace le personnage demandé)
+          list.push("= " + (it ? it.name + (it.kind === "style" ? " (style reference only: copy its rendering and materials, NOT its characters, faces or outfits)" : " (" + (KIND[it.kind] || "reference") + ")") : "reference"));
+        });
+        // Verrou d'identité actif : la consigne « même visage, même tenue » est déjà dans le prompt
+        if (list.length) out += ". Reference images: " + list.map(function (x, i) { return "<Picture " + (i + 1) + "> " + x; }).join(", ") +
+          (shot.lock !== false || styleOnly ? "" : ". Keep the exact face, hairstyle, skin, outfit and proportions of each character and the exact look of each place as shown in its reference") +
+          "; show them in this new scene, never reproduce the reference sheets themselves";
+      }
+      if (!/subtle/i.test(out)) out += ". Human, natural body language, subtle restrained expression";
+      if (!/no film grain/i.test(out)) out += ". Tack-sharp, crisp image, no film grain, no noise";
+      if (!this.isSheet(shot, out) && !/no (on-screen )?text/i.test(out)) out += ". No text, no letters, no subtitles, no watermark";
+    } else if (kind === "video") {
+      // Répliques françaises : ponctuation et caractères spéciaux qui coupent la parole (tous moteurs).
+      // Le français reste intact (accents compris) : la phonétique de prod-fruits était prévue pour Google Flow.
+      if (window.AgnesDialogue) out = window.AgnesDialogue.nettoie(out, { phonetique: this.cfg.phonetique === true });
+      if (!/subtle/i.test(out)) out += ". Natural human behaviour, subtle restrained acting, calm natural conversational voices, no exaggerated expressions; whoever speaks looks at the person they are talking to";
+      if (!/no film grain/i.test(out)) out += ". Tack-sharp, crisp image, no film grain, no noise";
+      if (!/no music/i.test(out)) out += ". No music. No song. Ambient sound only";
+    }
+    return out;
   },
 
   // Blob d'un élément de bibliothèque, réduit, en data URL
@@ -285,6 +353,7 @@ AgnesPlugins.register("moteurs", {
   grokVideoNow: function (job, shot, proj) {
     var self = this, A = this.A, m = shot.mode;
     if (!this.canGrok()) return Promise.reject({ display: "Grok n'est disponible que dans Agnes ouverte depuis Lumina (onglet Agnes). Repassez les vidéos sur Agnes (⚙ → Moteurs)." });
+    if (this.cfg.grokBloque) return Promise.reject({ display: "Grok est bloqué par sécurité : " + this.cfg.grokBloque + " Vérifiez l'onglet Grok, puis réactivez-le dans ⚙ → Moteurs de génération." });
     if (job.signal && job.signal.aborted) return Promise.reject({ display: "Annulé.", cancelled: true });
     var send = function (payload) {
       return new Promise(function (resolve) {
@@ -334,6 +403,13 @@ AgnesPlugins.register("moteurs", {
         }).then(function (r) {
           if (job.signal && job.signal.aborted) throw { display: "Annulé.", cancelled: true };
           if (!r || !r.ok) throw { display: "Grok : " + ((r && r.error) || "échec de la génération") };
+          if (r.surplus > 0) {
+            // Garde-fou : Grok a lancé plus de vidéos que demandé pour un seul envoi → plus aucun envoi jusqu'à réactivation
+            self.cfg.grokBloque = "Grok a généré " + r.surplus + " vidéo(s) en trop le " + new Date().toLocaleString("fr-FR") + ".";
+            self.cfg.save(); self.refresh();
+            self.core.toast("⚠ Grok a généré " + r.surplus + " vidéo(s) de plus que demandé : Grok est bloqué (⚙ → Moteurs pour le réactiver).", "err");
+            job.warning = "Grok a généré " + r.surplus + " vidéo(s) en trop — Grok bloqué";
+          }
           var url = (r.urls || [])[0];
           if (!url) throw { display: "Grok n'a renvoyé aucune vidéo." };
           job.info = "Récupération de la vidéo…"; A.emitJob(job);

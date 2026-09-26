@@ -135,6 +135,7 @@ if (chromeApi?.storage?.local) {
       $("#copy-complete").checked = Boolean(state.settings.copyComplete);
       if ($("#lint")) $("#lint").checked = state.settings.lint !== false;
       if ($("#clean-image")) $("#clean-image").checked = state.settings.cleanImage !== false;
+      if ($("#grok-video-only")) $("#grok-video-only").checked = state.settings.grokVideoOnly !== false;
       if ($("#append-rules")) $("#append-rules").checked = state.settings.appendRules !== false;
       if ($("#ep-serie")) $("#ep-serie").value = state.settings.lastSerie || "";
       if ($("#ep-num")) $("#ep-num").value = state.settings.lastEp || "";
@@ -306,6 +307,10 @@ $("#lint")?.addEventListener("change", (e) => {
 });
 $("#append-rules")?.addEventListener("change", (e) => {
   state.settings.appendRules = e.target.checked;
+  persist();
+});
+$("#grok-video-only")?.addEventListener("change", (e) => {
+  state.settings.grokVideoOnly = e.target.checked;
   persist();
 });
 $("#clean-image")?.addEventListener("change", (e) => {
@@ -1372,6 +1377,11 @@ async function runBatch(rebuild, opts = {}) {
         .filter((r) => r.dataUrl).map(({ name, kind, dataUrl }) => ({ name, kind, dataUrl }));
     }
   }
+  // Règle : Grok ne fabrique que des vidéos (une génération d'image force plusieurs générations décomptées)
+  if (state.settings.grokVideoOnly !== false && state.jobs.some((j) => j.status === "queued" && j.role === "image")) {
+    state.jobs = state.jobs.filter((j) => j.role !== "image" || j.status !== "queued");
+    return runHint("Grok est réservé à la vidéo (Réglages → « Grok : vidéo uniquement ») : faites les images avec ChatGPT ou Agnes, puis utilisez Stills → Clips.");
+  }
   if (!state.jobs.some((j) => j.status === "queued")) return runHint("Rien à lancer.");
   if (rebuild && state.settings.lint !== false && !opts.pilot) {
     const issues = lintJobs(state.jobs.filter((j) => j.status === "queued"));
@@ -1562,6 +1572,13 @@ async function worker() {
       log(`${kind === "video" ? "Clip" : "Image"} ${stem}.${ext}`);
       // Plan venu d'Agnes : le rendu devient une prise du plan (agnes-bridge.js).
       if (job.agnes && typeof onAgnesJobDone === "function") void onAgnesJobDone(job, kind);
+    }
+    if (res?.ok && res.surplus > 0) {
+      // Grok a généré plus que demandé pour un seul envoi : lot arrêté avant de consommer davantage de quota.
+      log(`⚠ Grok a lancé ${res.surplus} génération(s) de plus que demandé pour ${job.stem || "ce plan"} — lot arrêté. Vérifiez l'onglet Grok avant de relancer.`);
+      persist();
+      failAll(`Arrêt de sécurité : Grok a généré ${res.surplus} vidéo(s) en trop.`);
+      return;
     }
     persist();
     renderJobs();
@@ -2204,6 +2221,9 @@ async function lastFrameOf(blob) {
 
 /* Génère un job. "scene" = image (t2i) PUIS vidéo (image→vidéo) pour garder la cohérence. */
 async function generateInLumina(job) {
+  if (state.settings.grokVideoOnly !== false && (job.kind === "image" || (job.kind === "scene" && !job.chain_from))) {
+    throw new Error("Grok est réservé à la vidéo (Réglages → « Grok : vidéo uniquement ») : image à faire avec ChatGPT ou Agnes.");
+  }
   const opts = { aspect: job.aspect, duration: job.duration, refs: refsForQueueJob(job) };
 
   if (job.kind === 'image') {

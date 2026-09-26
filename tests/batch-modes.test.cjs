@@ -41,6 +41,8 @@ function panel() {
   context.state.settings.delay = 0;
   context.state.settings.step = false;
   context.state.settings.lint = false; // ces tests couvrent l'envoi ; le contrôle a ses propres tests
+  // Ces tests couvrent aussi les modes image de Grok : la règle « Grok : vidéo uniquement » a son propre test
+  context.state.settings.grokVideoOnly = false;
   node('#prompts').value = 'First scene\n\nSecond scene';
   return { ...context, context, sent, node, maxActive: () => maxActive };
 }
@@ -287,4 +289,24 @@ test('Permanent rules are appended once: subtle human acting, sharp image, no mu
   const img = p.context.promptForGrok('A still of the counter.', 'image');
   assert.match(img, /no film grain/);
   assert.doesNotMatch(img, /No music/);
+});
+
+test("Grok : vidéo uniquement (défaut) — aucun envoi d'image à Grok, message clair", async () => {
+  for (const mode of ["t2i", "i2i", "pipeline"]) {
+    const p = panel();
+    delete p.state.settings.grokVideoOnly;
+    p.state.mode = mode;
+    p.state.images = images.slice(0, 1);
+    p.state.pairs = [{ id: "pair", imagePrompt: "Photo", videoPrompt: "Motion" }];
+    await p.run(true);
+    assert.equal(p.sent.filter((s) => s.mediaKind === "image").length, 0, mode);
+    assert.equal(p.sent.length, 0, mode + " : la vidéo du Lot mixte attend son image, rien ne part");
+  }
+  const v = panel();
+  delete v.state.settings.grokVideoOnly;
+  v.state.mode = "montage";
+  v.state.stills = [{ id: "s1", videoPrompt: "Animate", dataUrl: "STILL", duration: 6 }];
+  await v.run(true);
+  assert.equal(v.sent.length, 1);
+  assert.equal(v.sent[0].mediaKind, "video");
 });

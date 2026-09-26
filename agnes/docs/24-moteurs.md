@@ -51,3 +51,18 @@ Concerne toutes les images : plans Texte → Image / Image → Image, **image de
 - Les vidéos sont rangées comme prises (« vidéo · Grok ») et gardent le fichier : elles vont directement dans l'Assemblage.
 - Si le panneau Lumina lance un lot Grok en même temps, l'onglet refuse la seconde génération (« déjà en cours ») : lancez l'une après l'autre.
 
+---
+
+## Mode tout gratuit (Agnes Image + Agnes Video) — ce que l'app fait pour la qualité
+- **Images avec références** : le prompt nomme chaque image envoyée, dans l'ordre (`<Picture 1> = Léa (character), <Picture 2> = Café Rivoli (place)`), comme le recommande la fiche Agnes 2.5 ([structure des prompts](structure_prompt_agnes2.5flash.md)). Sans cela, le modèle ne sait pas quelle photo correspond à quel personnage.
+- **Vos règles fixes sur tous les moteurs** : jeu subtil, regard vers l'interlocuteur, image nette sans grain, sans texte (sauf bandeau nom d'une planche), sans musique. Ajoutées seulement si le prompt ne les contient pas déjà.
+- **Agents de l'Atelier** : ils écrivent dans l'ordre de la fiche Agnes 2.5 (image : sujet → décor → style → lumière → composition → qualité ; vidéo : sujet → action → caméra → style → cohérence).
+- **Montage** : sortie 1080p par défaut avec agrandissement « net » des vidéos 720P (Agnes Video Flash) ; bouton **⬇ 1080p** sur chaque carte vidéo.
+
+**Conseils pour tirer le maximum du gratuit**
+- Passez par l'**image validée** (Texte → Image → Vidéo) : 2 à 4 variantes, choisissez la meilleure, puis animez. C'est le levier n°1 de netteté et de cohérence.
+- Une **planche par personnage** dans la Bibliothèque, sous le même nom que dans la Bible et les mentions `@[Nom]`.
+- **Scène verrouillée** + mouvement **subtil** pour les dialogues ; « Standard » seulement pour les plans d'action.
+- Plans de **6 à 8 s** : au-delà, Agnes Video Flash dérive plus souvent (visages, décor).
+- Contrôle : en mode manager, Claude exporte les rendus (`agnes.py exporter_prises`) et les regarde un par un avant l'animation.
+

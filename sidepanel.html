@@ -673,9 +673,9 @@ ol li { margin: 8px 0; }
           <div class="field">
             <label for="agnes-mode">Mode Lumina</label>
             <select id="agnes-mode">
-              <option value="auto">Automatique : Stills → Clips si les plans ont leur image, sinon Lot mixte</option>
+              <option value="auto">Automatique : Stills → Clips (les plans sans image sont signalés)</option>
               <option value="montage">Stills → Clips (image validée ou image source du plan)</option>
-              <option value="pipeline">Lot mixte (Grok fait l’image, puis le clip)</option>
+              <option value="pipeline">Lot mixte (Grok fait l’image, puis le clip) — bloqué si « Grok : vidéo uniquement »</option>
             </select>
           </div>
           <label class="switch">
@@ -946,6 +946,13 @@ ol li { margin: 8px 0; }
             <small>Ajoute aux prompts qui ne l’ont pas : jeu humain et subtil, regard vers l’interlocuteur, image nette sans grain, pas de musique.</small>
           </span>
           <input id="append-rules" type="checkbox" />
+        </label>
+        <label class="switch">
+          <span>
+            Grok : vidéo uniquement
+            <small>Aucune image n’est générée par Grok (Texte → Image, Image → Image, passe image du Lot mixte) : Grok impose alors plusieurs générations décomptées. Faites les images avec ChatGPT ou Agnes, puis Stills → Clips.</small>
+          </span>
+          <input id="grok-video-only" type="checkbox" />
         </label>
         <label class="switch">
           <span>

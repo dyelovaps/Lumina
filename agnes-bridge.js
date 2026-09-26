@@ -155,13 +155,15 @@ async function applyAgnesExport(data, opts = {}) {
   const video = shots.filter((s) => s.videoPrompt);
   const withStill = video.filter((s) => s.still || s.chainPrev);
   let mode = opts.mode || "auto";
-  if (mode === "auto") mode = video.length && withStill.length === video.length ? "montage" : "pipeline";
+  // Grok = vidéo uniquement : les plans sans image vont en Stills → Clips « à compléter », jamais au Lot mixte
+  if (state.settings.grokVideoOnly !== false) mode = "montage";
+  else if (mode === "auto") mode = video.length && withStill.length === video.length ? "montage" : "pipeline";
 
   if (mode === "montage") {
     const stills = [];
     for (const s of shots) {
       if (!s.videoPrompt) { notes.push(`plan ${s.num} sans prompt vidéo`); continue; }
-      if (!s.still && !s.chainPrev) { notes.push(`plan ${s.num} sans image`); continue; }
+      if (!s.still && !s.chainPrev) { notes.push(`plan ${s.num} sans image : faites-la d'abord dans Agnes (ChatGPT ou Agnes Image)`); continue; }
       const nn = String(s.num).padStart(2, "0");
       stills.push({
         id: "st" + Math.random().toString(36).slice(2, 8),

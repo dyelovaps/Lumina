@@ -20,11 +20,17 @@ AgnesPlugins.register("claude", {
     this.renderSettings();
     this.badge = core.ui.addToolbarButton("storyboard", "", function () { self.toggle(); });
     this.refresh();
-    setInterval(function () { self.tick(); }, 3000);
+    // Horloge dans un worker (non ralentie en arrière-plan), sinon minuteries classiques
+    this.timers = {}; this.tid = 0;
+    try {
+      this.worker = new Worker("plugins/claude-horloge.js");
+      this.worker.onmessage = function (e) { var f = self.timers[e.data.id]; delete self.timers[e.data.id]; if (f) f(); };
+    } catch (e) { this.worker = null; }
+    (function loop() { self.tick(); self.sleep(3000).then(loop); })();
   },
 
   pont: function () { var m = AgnesPlugins.get("moteurs"); return (m && m.cfg && m.cfg.pont) || "http://127.0.0.1:8177"; },
-  toggle: function () { this.cfg.actif = !this.cfg.actif; this.cfg.save(); this.refresh(); this.core.toast(this.cfg.actif ? "Agnes écoute les commandes de Claude (pont local)." : "Commandes de Claude désactivées.", "ok"); },
+  toggle: function () { this.busy = false; this.cfg.actif = !this.cfg.actif; this.cfg.save(); this.refresh(); this.core.toast(this.cfg.actif ? "Agnes écoute les commandes de Claude (pont local)." : "Commandes de Claude désactivées.", "ok"); },
   refresh: function () {
     if (this.badge) { this.badge.textContent = "🤖 Claude : " + (this.cfg.actif ? "actif" : "off"); this.badge.title = "Agnes exécute les commandes de Claude déposées au pont local"; }
     var c = document.getElementById("clActif"); if (c) c.checked = !!this.cfg.actif;
@@ -61,7 +67,16 @@ AgnesPlugins.register("claude", {
     if (!plans || plans === "tous") return all;
     return (Array.isArray(plans) ? plans : String(plans).split(",")).map(function (n) { return all[(+n || 0) - 1]; }).filter(Boolean);
   },
-  sleep: function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); },
+  sleep: function (ms) {
+    var self = this;
+    return new Promise(function (r) {
+      if (!self.worker) return setTimeout(r, ms);
+      // Filet de sécurité : si le worker ne répond pas (bloqué, non chargé), l'horloge classique prend le relais
+      var id = ++self.tid, done = false, fin = function () { if (!done) { done = true; delete self.timers[id]; r(); } };
+      self.timers[id] = fin; self.worker.postMessage({ id: id, ms: ms });
+      setTimeout(function () { if (!done) { self.worker = null; fin(); } }, ms + 5000);
+    });
+  },
   engine: function (t) { return t ? (this.A.engineOf(t) || "importé") : null; },
 
   etat: function () {
@@ -69,7 +84,7 @@ AgnesPlugins.register("claude", {
     var plans = A.sortedShots(p).map(function (s, i) {
       var t = A.selectedTake(s), k = A.keyTake(s);
       return { n: i + 1, mode: A.MODE_LABEL(s), statut: s.status, erreur: s.errorMsg || undefined,
-        image: k ? self.engine(k) : undefined, rendu: t ? t.kind + " · " + self.engine(t) : null, prises: (s.takes || []).length,
+        image: k ? self.engine(k) : undefined, rendu: t ? t.kind + " · " + self.engine(t) + (t.local ? "" : " · en ligne seulement" + (t.remoteUrl ? " (" + String(t.remoteUrl).split("/")[2] + ")" : "")) : null, prises: (s.takes || []).length,
         prompt: String(s.imagePrompt || s.prompt || "").slice(0, 90) };
     });
     var st = P && P.project && P.project();
@@ -120,7 +135,24 @@ AgnesPlugins.register("claude", {
         return "Projet créé et ouvert : " + np.name;
       }
       case "storyboard": return this.atelier().storyboardText();
-      case "plans": return this.atelier().applyPlans((a.plans || []).map(function (x) { return { plan: x.plan, image: x.image_prompt, video: x.video_prompt }; }));
+      case "plans": {
+        // Prompts (facultatifs) + réglages de carte : format, duree (s), variantes, tenue (standard|anchor|refs), mouvement (subtle|moderate|free)
+        var withText = (a.plans || []).filter(function (x) { return x.image_prompt || x.video_prompt; });
+        var msg = withText.length ? this.atelier().applyPlans(withText.map(function (x) { return { plan: x.plan, image: x.image_prompt, video: x.video_prompt }; })) : "";
+        var tuned = [];
+        (a.plans || []).forEach(function (x) {
+          var s = self.shotByNum(x.plan), two = A.isTwoStep(s) || s.mode === "t2v";
+          if (x.format) s.aspect = String(x.format);
+          if (x.duree) s.duration = A.clamp(x.duree, 1, 30);
+          if (x.variantes) { if (two) s.keyOutputs = A.clamp(x.variantes, 1, 4); else s.outputs = A.clamp(x.variantes, 1, 4); }
+          if (x.tenue) s.i2v = x.tenue;
+          if (x.mouvement) s.motion = x.mouvement;
+          if (x.verrou !== undefined) s.lock = !!x.verrou;
+          if (x.format || x.duree || x.variantes || x.tenue || x.mouvement || x.verrou !== undefined) tuned.push(x.plan);
+        });
+        if (tuned.length) { A.touch(); A.renderShots(); }
+        return [msg, tuned.length ? "Réglages appliqués aux cartes " + tuned.join(", ") + "." : ""].filter(Boolean).join(" ");
+      }
       case "moteurs": {
         var m = AgnesPlugins.get("moteurs"); if (!m) throw new Error("extension Moteurs inactive");
         if (a.image) m.cfg.image = a.image;
@@ -158,7 +190,64 @@ AgnesPlugins.register("claude", {
         if (!ag2) throw new Error("agent « " + a.agent + " » introuvable");
         return { agent: ag2.num + ". " + ag2.name, sortie: P4.outputOf(ag2.id).slice(0, 20000) };
       }
+      case "importer_image": {
+        // Image du disque (servie par le pont : dossier du pont ou dossier de sortie) → Bibliothèque
+        var kinds = ["personnage", "decor", "objet", "style", "autre"], kd2 = kinds.indexOf(a.type) !== -1 ? a.type : "style";
+        if (!a.chemin || !a.nom) throw new Error("chemin et nom obligatoires");
+        var ex = A.getProject().library.find(function (l) { return l.name.toLowerCase() === String(a.nom).toLowerCase(); });
+        if (ex && !a.remplacer) throw new Error("« " + a.nom + " » existe déjà dans la Bibliothèque (remplacer=true pour changer son image)");
+        return fetch(this.pont() + "/file?path=" + encodeURIComponent(a.chemin)).then(function (r) {
+          if (!r.ok) throw new Error("image introuvable via le pont : " + a.chemin);
+          return r.blob();
+        }).then(function (b) {
+          if (!ex) return core.addToLibrary(b, { name: String(a.nom), kind: kd2 }).then(function (it) { return "« " + it.name + " » importé dans la Bibliothèque (" + kd2 + ")."; });
+          // Même nom, même identifiant : les cartes qui la citent suivent automatiquement
+          return AgnesStore.putBlob("lib:" + ex.id, b).then(function () { return A.makeThumb(b, 320); }).then(function (th) {
+            ex.thumb = th; ex.publicUrl = ""; ex.kind = kd2; if (A.forgetUrl) A.forgetUrl("lib:" + ex.id); A.touch(); A.render();
+            return "« " + ex.name + " » : image remplacée dans la Bibliothèque.";
+          });
+        });
+      }
+      case "choisir_prise": {
+        // prise=N (numéro dans la liste des prises) ou image=N (variante de l'image de départ)
+        var sc = this.shotByNum(a.plan);
+        if (a.image) { var kt = (sc.keyTakes || [])[(+a.image || 0) - 1]; if (!kt) throw new Error("variante d'image " + a.image + " introuvable"); sc.keyTakeId = kt.id; }
+        else { var tt = (sc.takes || [])[(+a.prise || 0) - 1]; if (!tt) throw new Error("prise " + a.prise + " introuvable (" + (sc.takes || []).length + " prise(s))"); sc.selectedTakeId = tt.id; if (sc.status !== "done") sc.status = "done"; }
+        A.touch(); A.renderShots(); return "Carte " + a.plan + " : " + (a.image ? "image " + a.image : "prise " + a.prise) + " choisie.";
+      }
+      case "vider_file": {
+        // Annule tout ce qui attend ou tourne (aucune carte ni prise supprimée)
+        var act = A.jobs.filter(function (j) { return j.status === "waiting" || j.status === "running"; });
+        act.forEach(function (j) { A.cancelJob(j); });
+        return act.length ? act.length + " tâche(s) annulée(s) dans la file." : "File déjà vide.";
+      }
+      case "installer_pack": {
+        // Pack de skills prêt à l'emploi (Skills → Packs) : france, spatial, styles… ; les skills déjà présents sont gardés
+        var pk = (A.SKILL_PACKS || []).find(function (p) { return p.id === a.pack; });
+        if (!pk) throw new Error("pack inconnu : " + a.pack + " (" + (A.SKILL_PACKS || []).map(function (p) { return p.id; }).join(", ") + ")");
+        var added = 0;
+        pk.skills.forEach(function (sk) { if (!A.db.skills.some(function (x) { return x.id === sk.id; })) { A.db.skills.push(JSON.parse(JSON.stringify(sk))); added++; } });
+        A.saveDB(true); if (A.refreshPickers) A.refreshPickers(); A.renderShots();
+        return "Pack « " + pk.title + " » : " + added + " skill(s) ajouté(s), " + (pk.skills.length - added) + " déjà présent(s).";
+      }
       case "exporter_prises": return this.exporter(a);
+      case "vers_bibliotheque": {
+        // Image choisie d'un plan (image validée, sinon prise image) → Bibliothèque, sous un nom (planche de personnage…)
+        var sv = this.shotByNum(a.plan), tk = A.keyTake(sv) || A.selectedTake(sv);
+        if (!tk || tk.kind !== "image") throw new Error("le plan " + a.plan + " n'a pas d'image");
+        var KINDS = ["personnage", "decor", "objet", "style", "autre"], kd = KINDS.indexOf(a.type) !== -1 ? a.type : "personnage";
+        return A.getTakeBlobOrFetch(tk).then(function (b) {
+          if (!b) throw new Error("fichier de l'image introuvable");
+          var old = A.getProject().library.find(function (l) { return l.name.toLowerCase() === String(a.nom || "").toLowerCase(); });
+          if (old && !a.remplacer) throw new Error("« " + old.name + " » existe déjà dans la Bibliothèque (remplacer=true pour changer son image)");
+          if (old) {   // même nom, même identifiant : les cartes qui la citent suivent automatiquement
+            return AgnesStore.putBlob("lib:" + old.id, b).then(function () { return A.makeThumb(b, 320); }).then(function (th) {
+              old.thumb = th; old.publicUrl = ""; old.kind = kd; if (A.forgetUrl) A.forgetUrl("lib:" + old.id); A.touch(); A.render(); return old;
+            }).then(function (it) { return "« " + it.name + " » : image remplacée dans la Bibliothèque."; });
+          }
+          return core.addToLibrary(b, { name: String(a.nom || "Référence"), kind: kd }).then(function (it) { return "« " + it.name + " » ajouté à la Bibliothèque (" + kd + ")."; });
+        });
+      }
     }
     throw new Error("action inconnue : " + action);
   },
@@ -187,22 +276,27 @@ AgnesPlugins.register("claude", {
 
   // Enregistre les prises choisies (et images validées) dans prod-fruits/agnes/<projet>/ via le pont, pour contrôle
   exporter: function (a) {
-    var self = this, A = this.A, p = A.getProject(), all = A.sortedShots(p), list = this.pick(a.plans), done = [];
+    var self = this, A = this.A, p = A.getProject(), all = A.sortedShots(p), list = this.pick(a.plans), done = [], echecs = [];
     var slug = String(a.dossier || p.name).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "projet";
     var ext = function (b, t) { var ty = (b && b.type) || ""; return /png/.test(ty) ? "png" : /jpe?g/.test(ty) ? "jpg" : /webp/.test(ty) ? "webp" : /webm/.test(ty) ? "webm" : t.kind === "video" ? "mp4" : "png"; };
     return list.reduce(function (chain, s) {
       var n = String(all.indexOf(s) + 1).padStart(2, "0"), items = [];
       var k = A.keyTake(s), t = A.selectedTake(s);
-      if (k) items.push({ t: k, nom: n + "-image" });
-      if (t) items.push({ t: t, nom: n + "-" + (t.kind === "video" ? "video" : "rendu") });
+      if (a.toutes) {   // toutes les variantes : images de départ (v1, v2…) puis prises (p1, p2…)
+        (s.keyTakes || []).forEach(function (x, i) { items.push({ t: x, nom: n + "-image-v" + (i + 1) + (k && x.id === k.id ? "-choisie" : "") }); });
+        (s.takes || []).forEach(function (x, i) { items.push({ t: x, nom: n + "-prise-p" + (i + 1) + (t && x.id === t.id ? "-choisie" : "") }); });
+      } else {
+        if (k) items.push({ t: k, nom: n + "-image" });
+        if (t) items.push({ t: t, nom: n + "-" + (t.kind === "video" ? "video" : "rendu") });
+      }
       return items.reduce(function (c2, it) {
         return c2.then(function () { return A.getTakeBlobOrFetch(it.t); }).then(function (b) {
-          if (!b) return;
+          if (!b) { echecs.push(it.nom + " : fichier introuvable (local=" + !!it.t.local + ", en ligne=" + !!it.t.remoteUrl + ")"); return; }
           var path = "agnes/" + slug + "/" + it.nom + "-" + (self.engine(it.t) || "").toLowerCase() + "." + ext(b, it.t);
           return fetch(self.pont() + "/save", { method: "POST", headers: { "X-Save-Path": encodeURIComponent(path), "Content-Type": b.type || "application/octet-stream" }, body: b })
-            .then(function (r) { return r.json(); }).then(function (j) { if (j.saved) done.push(j.saved); });
-        });
+            .then(function (r) { return r.json(); }).then(function (j) { if (j.saved) done.push(j.saved); else echecs.push(it.nom + " : " + (j.error || "refusé par le pont")); });
+        }).catch(function (e) { echecs.push(it.nom + " : " + ((e && e.message) || e)); });
       }, chain);
-    }, Promise.resolve()).then(function () { return { fichiers: done }; });
+    }, Promise.resolve()).then(function () { return echecs.length ? { fichiers: done, echecs: echecs } : { fichiers: done }; });
   }
 });

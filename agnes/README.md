@@ -208,6 +208,7 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
 - **Agnes dans Lumina** ([23](docs/23-lumina.md)) : onglet Agnes du panneau Lumina ; plans envoyés vers Grok Imagine (Stills → Clips ou Lot mixte, références et ADN Bible compris), rendus rangés comme prises, **pilote auto** `pilote.py lancer-agnes`.
 - **Sauvegarde complète** (.zip) de tous les projets, médias, Bible et réglages, et **restauration** (onglet Projet) — sert aussi à transférer vers Lumina.
 - Bibliothèques (JSZip, mammoth, pdf.js) copiées dans `vendor/` : plus besoin de connexion pour les charger.
+- **Anti-doublon Grok** (Lumina 1.13.1, [23 §6](docs/23-lumina.md)) : plus de renvoi de prompt quand la page Grok change, même prompt bloqué 90 s, échecs écrits dans le journal. Une seule Lumina active à la fois.
 
 ### 3.9 — septembre 2026
 **Écriture avec l'Atelier IA** ([21](docs/21-atelier.md))

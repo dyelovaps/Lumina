@@ -58,18 +58,51 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function sendToTab(tabId, payload) {
   try {
     return await chrome.tabs.sendMessage(tabId, payload);
-  } catch {
+  } catch (err) {
+    const msg = String(err?.message || err);
+    // Renvoi UNIQUEMENT si le message n'a jamais été reçu (script absent de la page).
+    // Si le script l'a reçu puis que la page a changé (« message port closed »), le prompt est
+    // peut-être déjà parti chez Grok : le renvoyer lancerait une 2e génération (bug de la boucle).
+    const neverDelivered = /receiving end does not exist|could not establish connection/i.test(msg);
+    if (payload?.type === "SUBMIT_PROMPT" && !neverDelivered) {
+      // Le prompt est parti puis Grok a changé de page : on NE renvoie PAS le prompt,
+      // on demande au script de la nouvelle page de reprendre l'attente du résultat.
+      return await resumeWait(tabId, msg);
+    }
     await injectContent(tabId);
     await wait(400);
     try {
       return await chrome.tabs.sendMessage(tabId, payload);
-    } catch (err) {
+    } catch (err2) {
       throw new Error(
         "Lumina n’est pas branché sur la page. Rechargez grok.com/imagine (F5), puis Correction rapide. " +
-          (err?.message || ""),
+          (err2?.message || ""),
       );
     }
   }
+}
+
+async function resumeWait(tabId, firstError) {
+  await waitForComplete(tabId);
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, { type: "RESUME_WAIT" });
+    } catch (err) {
+      const m = String(err?.message || err);
+      if (/receiving end does not exist|could not establish connection/i.test(m)) {
+        await injectContent(tabId).catch(() => {});
+        await wait(600);
+        continue;
+      }
+      // Nouvelle navigation pendant l'attente : on reprend encore.
+      await waitForComplete(tabId);
+    }
+  }
+  return {
+    ok: false,
+    error: "La page Grok a changé pendant la génération (" + firstError + "). Aucun renvoi automatique : " +
+      "vérifiez l’onglet Grok avant de relancer.",
+  };
 }
 
 async function injectContent(tabId) {

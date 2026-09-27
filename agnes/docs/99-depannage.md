@@ -125,3 +125,12 @@ Détails : [21 — Atelier IA](21-atelier.md#13-dépannage).
 |---|---|
 | Un onglet n'apparaît pas | Vérifiez la case dans ⚙ ; un message indique si le fichier est introuvable |
 | Extension décochée mais toujours visible | Rechargez la page |
+
+## Lumina et Grok
+| Symptôme | Solution |
+|---|---|
+| La même vidéo est générée plusieurs fois | Une seule Lumina activée (vérifiez vos autres navigateurs/profils) ; version **1.13.1** ou plus dans `chrome://extensions` ; ne relancez pas pendant que Grok travaille. Voir [23 §6](23-lumina.md#6-éviter-les-vidéos-en-double-lumina-1131) |
+| « Même prompt déjà envoyé à Grok il y a … s » | Protection anti-doublon (90 s) : vérifiez l'onglet Grok, puis relancez si la vidéo n'y est pas |
+| « La page Grok a changé pendant la génération » | Le suivi a été perdu mais la vidéo est souvent faite : regardez l'onglet Grok avant de relancer |
+| « Grok est bloqué par sécurité » | Grok a produit plus que demandé : vérifiez l'onglet, puis ⚙ → Moteurs → Réactiver Grok |
+| « origine refusée » (pont) | Le pont n'accepte que Lumina, Agnes (fichier local ou extension), localhost et les scripts Python |

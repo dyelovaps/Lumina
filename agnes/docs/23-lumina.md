@@ -47,6 +47,13 @@ python pilote.py attendre
 ```
 Pré-requis : pont lancé, Lumina ouverte avec **Pilote auto** coché, onglet grok.com/imagine ouvert. `--mode montage` force Stills → Clips.
 
+## 6. Éviter les vidéos en double (Lumina 1.13.1)
+- **Une seule Lumina active.** Si l'extension est activée dans deux navigateurs ou deux profils Chrome, chaque plan part deux fois vers Grok (et le pont). Désactivez-la partout sauf un (`chrome://extensions`).
+- **Vérifiez la version** dans `chrome://extensions` : **1.13.1** ou plus. En dessous, une page Grok qui change pendant la génération pouvait provoquer un renvoi du prompt, et le passage en mode vidéo pouvait cliquer plusieurs fois « Créer une vidéo ».
+- **Ne relancez pas pendant que Grok travaille.** Un échec est maintenant écrit dans le journal de Lumina (`✖ …`) : regardez d'abord l'onglet Grok, la vidéo y est peut-être.
+- Un même prompt est refusé pendant 90 s dans l'onglet Grok (« envoi en double bloqué ») : attendez, puis relancez si la vidéo n'est vraiment pas là.
+- Si Grok génère plus que demandé, Lumina arrête le lot et Agnes bloque Grok (⚙ → Moteurs → Réactiver Grok après vérification).
+
 ## Limites
 - **Whisper dans le navigateur** (Extraire) ne fonctionne pas dans Lumina : Chrome interdit le code distant dans une extension. Utilisez l'API OpenAI, un fichier de sous-titres, ou l'`index.html` ouvert directement.
 - Après une modification d'Agnes (dossier `Agnes_production`), recopiez-la dans Lumina : `npm run sync:agnes` dans le dossier de Lumina, puis rechargez l'extension.

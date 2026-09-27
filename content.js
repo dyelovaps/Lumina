@@ -126,25 +126,39 @@
   }
 
   async function clickVideoSurface() {
-    const preds = [
-      (el) => /cr[ée]er une vid[ée]o|create (a )?video|make (a )?video/i.test(textOf(el).trim()),
-      (el) => /cr[ée]er une vid[ée]o|create (a )?video|make (a )?video|animate|animer/i.test((el.getAttribute("aria-label") || el.getAttribute("title") || "").trim()),
+    // Onglets de MODE (changent le formulaire, ne lancent rien).
+    const modePreds = [
       (el) => /^(vid[ée]o|video)$/i.test(textOf(el).trim()),
       (el) => /^(vid[ée]o|video)$/i.test((el.getAttribute("aria-label") || "").trim()),
       (el) => el.getAttribute("role") === "tab" && /vid[ée]o|video/i.test(textOf(el) + (el.getAttribute("aria-label") || "")),
+    ];
+    // Boutons d'ACTION (« Créer une vidéo », « Make video », « Animer ») : sur Grok, un clic peut
+    // LANCER une génération. Autrefois recliqués jusqu'à 20 fois → la même vidéo générée en boucle.
+    // Désormais : un seul clic au maximum, et seulement si aucun onglet de mode n'existe.
+    const actionPreds = [
+      (el) => /cr[ée]er une vid[ée]o|create (a )?video|make (a )?video/i.test(textOf(el).trim()),
+      (el) => /cr[ée]er une vid[ée]o|create (a )?video|make (a )?video|animate|animer/i.test((el.getAttribute("aria-label") || el.getAttribute("title") || "").trim()),
       (el) => /image\s*(to|→|-)?\s*vid[ée]o|animer|animate/i.test(textOf(el)),
     ];
-    for (let i = 0; i < 20; i++) {
+    const isOk = (el) => el && !el.disabled && el.getAttribute("aria-disabled") !== "true";
+    let modeClicks = 0;
+    let actionClicked = false;
+    for (let i = 0; i < 12; i++) {
       if (aborted) return false;
       if (looksLikeVideoComposer()) {
         await sleep(500);
         if (aborted) return false;
         if (looksLikeVideoComposer()) return true;
       }
-      const tab = findClickable(preds);
-      if (tab && !tab.disabled && tab.getAttribute("aria-disabled") !== "true") {
-        tab.click();
-        // Let the new composer mount before trying another control.
+      let target = modeClicks < 2 ? findClickable(modePreds) : null;
+      if (isOk(target)) modeClicks++;
+      else if (!actionClicked && !findClickable(modePreds)) {
+        target = findClickable(actionPreds);
+        if (isOk(target)) actionClicked = true;
+        else target = null;
+      } else target = null;
+      if (target) {
+        target.click();
         for (let j = 0; j < 8; j++) {
           await sleep(250);
           if (aborted) return false;
@@ -152,6 +166,7 @@
         }
       } else await sleep(250);
       if (looksLikeVideoComposer()) return true;
+      if (!target && modeClicks >= 2 && actionClicked) break;
     }
     return looksLikeVideoComposer();
   }
@@ -651,6 +666,8 @@
     }
     const kind = payload.mediaKind || "image";
     const wantVideo = kind === "video";
+    // Vidéos présentes AVANT toute manipulation : une génération lancée par un clic de préparation compte en surplus.
+    const earliest = new Set(wantVideo ? collectVideos() : collectImages());
     const attachments = wantVideo ? payload.attachments || [] : [];
     if (attachments.some((a) => !a.url || !["first", "last", "reference"].includes(a.role))) {
       return { ok: false, error: "Image ou rôle de pièce jointe invalide." };
@@ -739,6 +756,8 @@
           ],
     );
 
+    // Mémorisé juste avant l'envoi réel : un échec en amont (« aucun prompt envoyé ») ne bloque pas une relance.
+    try { sessionStorage.setItem("luminaLastSubmit", JSON.stringify({ sig: promptSignature(payload), t: Date.now() })); } catch { /* ignore */ }
     if (generate) generate.click();
     else {
       box.dispatchEvent(
@@ -748,34 +767,61 @@
 
     const wanted = Math.max(1, Math.min(4, Number(payload.outputs) || 1));
     const extra = /1080/.test(String(payload.resolution || "")) ? 180000 : /720/.test(String(payload.resolution || "")) ? 60000 : 0;
-    const timeout = Date.now() + (payload.timeoutMs || (180000 + extra));
-    while (Date.now() < timeout) {
+    const pending = {
+      wantVideo,
+      wanted,
+      before: [...before],
+      earliest: [...earliest],
+      timeout: Date.now() + (payload.timeoutMs || (180000 + extra)),
+    };
+    // Si Grok change de page pendant l'attente, le script de la nouvelle page reprend l'attente
+    // (message RESUME_WAIT envoyé par background.js) au lieu de renvoyer le prompt.
+    try { sessionStorage.setItem("luminaPending", JSON.stringify(pending)); } catch { /* ignore */ }
+    return waitForResult(pending);
+  }
+
+  async function waitForResult(p) {
+    const snapshot = p.wantVideo ? collectVideos : collectImages;
+    const before = new Set(p.before);
+    const earliest = new Set(p.earliest);
+    const done = (res) => {
+      try { sessionStorage.removeItem("luminaPending"); } catch { /* ignore */ }
+      return res;
+    };
+    while (Date.now() < p.timeout) {
       await sleep(400);
-      if (aborted) return { ok: false, error: "Arrêté" };
+      if (aborted) return done({ ok: false, error: "Arrêté" });
       if (!isImagine()) {
-        return { ok: false, error: "La page a quitté Imagine. Rouvrez grok.com/imagine." };
+        return done({ ok: false, error: "La page a quitté Imagine. Rouvrez grok.com/imagine." });
       }
       const now = snapshot().filter((u) => !before.has(u));
-      if (now.length >= wanted) {
+      if (now.length >= p.wanted) {
         // Garde-fou : Grok a déjà lancé plusieurs générations pour un seul envoi (interface changée, mode automatique…).
         // On surveille encore 15 s ; le surplus est signalé pour que Lumina / Agnes arrêtent d'envoyer.
-        if (wantVideo) {
+        if (p.wantVideo) {
           for (let i = 0; i < 30 && !aborted; i++) await sleep(500);
         }
-        const all = snapshot().filter((u) => !before.has(u));
-        return { ok: true, urls: now.slice(0, wanted), surplus: Math.max(0, all.length - wanted) };
+        const all = snapshot().filter((u) => !(p.wantVideo ? earliest : before).has(u));
+        return done({ ok: true, urls: now.slice(0, p.wanted), surplus: Math.max(0, all.length - p.wanted) });
       }
       const err = [...document.querySelectorAll("div, p, span")].find(
         (el) => /rate limit|trop de requêtes|try again|quota|upgrade/i.test(textOf(el)) && visible(el),
       );
-      if (err && textOf(err).length < 180) return { ok: false, error: textOf(err) };
+      if (err && textOf(err).length < 180) return done({ ok: false, error: textOf(err) });
     }
-    return {
+    return done({
       ok: false,
-      error: wantVideo
-        ? "Délai dépassé — aucune vidéo détectée. Cliquez l’onglet Vidéo, F5, Correction rapide."
+      error: p.wantVideo
+        ? "Délai dépassé — aucune vidéo détectée. Vérifiez l’onglet Grok (la vidéo a peut-être été faite) avant de relancer."
         : "Délai dépassé — aucune image détectée.",
-    };
+    });
+  }
+
+  function promptSignature(p) {
+    const str = [p.mediaKind, p.grokMode, p.prompt, (p.images || []).length, (p.attachments || []).length].join("|");
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+    return String(h);
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -783,12 +829,40 @@
       sendResponse({ ok: true, imagine: isImagine(), href: location.href });
       return false;
     }
+    if (msg?.type === "RESUME_WAIT") {
+      let p = null;
+      try { p = JSON.parse(sessionStorage.getItem("luminaPending") || "null"); } catch { /* ignore */ }
+      if (!p || Date.now() > p.timeout) {
+        sendResponse({ ok: false, error: "La page Grok a changé pendant la génération et le suivi est perdu. Vérifiez l’onglet Grok : ne relancez pas si la vidéo y est." });
+        return false;
+      }
+      if (submitting) {
+        sendResponse({ ok: false, error: "Une génération Lumina est déjà suivie dans cet onglet." });
+        return false;
+      }
+      submitting = true;
+      aborted = false;
+      waitForResult(p)
+        .finally(() => { submitting = false; })
+        .then(sendResponse)
+        .catch((err) => sendResponse({ ok: false, error: String(err) }));
+      return true;
+    }
     if (msg?.type === "CANCEL") {
       aborted = true;
       sendResponse({ ok: true });
       return false;
     }
     if (msg?.type === "SUBMIT_PROMPT") {
+      // Anti-doublon : même prompt déjà envoyé dans cet onglet il y a moins de 90 s → refusé.
+      // sessionStorage survit à un changement de page de grok.com dans le même onglet.
+      const sig = promptSignature(msg);
+      let last = null;
+      try { last = JSON.parse(sessionStorage.getItem("luminaLastSubmit") || "null"); } catch { /* stockage indisponible */ }
+      if (last && last.sig === sig && Date.now() - last.t < 90000) {
+        sendResponse({ ok: false, error: "Même prompt déjà envoyé à Grok il y a " + Math.round((Date.now() - last.t) / 1000) + " s : envoi en double bloqué." });
+        return false;
+      }
       if (submitting) {
         sendResponse({ ok: false, error: "Une génération Lumina est déjà en cours dans cet onglet." });
         return false;

@@ -2,6 +2,19 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Anti-doublon Grok (1.13.1)
+
+Une vidéo ne doit partir qu'**une fois** vers Grok, même si la page change pendant la génération.
+
+- **Plus de renvoi automatique** : si Grok change de page après « Générer », `background.js` ne renvoie plus le prompt ;
+  il demande au script de la nouvelle page de **reprendre l'attente** (`RESUME_WAIT`, état dans `sessionStorage.luminaPending`).
+- **Même prompt bloqué 90 s** dans un onglet Grok (`sessionStorage.luminaLastSubmit`), quel que soit l'envoyeur (lot, File, Agnes).
+- **Passage en mode vidéo** : l'onglet « Vidéo » est cliqué au plus 2 fois ; « Créer une vidéo / Animer » (qui peut lancer
+  une génération) **au plus une fois**, et seulement s'il n'y a pas d'onglet de mode. Une vidéo lancée pendant ces clics compte en surplus.
+- **Journal** : chaque échec de lot est écrit (`✖ scène : raison`). Vérifiez l'onglet Grok avant de relancer.
+- **Une seule Lumina active** : l'extension activée dans deux navigateurs/profils envoie chaque requête deux fois
+  au même onglet Grok et au même pont. Désactivez-la partout sauf un.
+
 ## Agnes Studio Pro (1.13)
 
 Onglet **Agnes** : l'app Agnes Studio Pro (écriture, Bible, storyboard, montage) est embarquée dans `agnes/`
@@ -149,5 +162,3 @@ JSON (lot mixte) :
   ]
 }
 ```
-#   L u m i n a  
- 

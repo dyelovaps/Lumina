@@ -1548,6 +1548,9 @@ async function worker() {
         job.status = "error";
         job.error = res?.error || "Échec";
       }
+      // L'échec est écrit dans le journal : sans ça, un lot raté semblait « rien du tout » et on relançait
+      // alors que Grok était peut-être encore en train de faire la vidéo (→ doublons).
+      log(`✖ ${job.stem || "Scène"} : ${job.error}`);
     } else {
       job.status = "done";
       job.progress = 100;

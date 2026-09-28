@@ -55,5 +55,5 @@ Pré-requis : pont lancé, Lumina ouverte avec **Pilote auto** coché, onglet gr
 - Si Grok génère plus que demandé, Lumina arrête le lot et Agnes bloque Grok (⚙ → Moteurs → Réactiver Grok après vérification).
 
 ## Limites
-- **Whisper dans le navigateur** (Extraire) ne fonctionne pas dans Lumina : Chrome interdit le code distant dans une extension. Utilisez l'API OpenAI, un fichier de sous-titres, ou l'`index.html` ouvert directement.
+- **Whisper dans le navigateur** (Extraire) fonctionne dans Lumina : le moteur est livré avec Agnes (`vendor/transformers/`, copie identique à jsDelivr), seul le modèle se télécharge une fois depuis Hugging Face. Agnes seule (localhost, Live Server) utilise la même copie locale ; ouverte en fichier (`index.html` en double-clic), elle le charge depuis internet comme avant.
 - Après une modification d'Agnes (dossier `Agnes_production`), recopiez-la dans Lumina : `npm run sync:agnes` dans le dossier de Lumina, puis rechargez l'extension.

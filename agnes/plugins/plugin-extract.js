@@ -428,13 +428,38 @@ AgnesPlugins.register("extracteur", {
     }).catch(function (e) { st.textContent = ""; core.toast("Transcription : " + (e.message || e), "err"); })
       .finally(function () { btn.disabled = false; });
   },
+  // Moteur Whisper : copie locale (vendor/transformers, identique à jsDelivr) dès qu'Agnes est servie (extension Lumina,
+  // localhost, Live Server) ; en fichier (file://) Chrome refuse d'importer un module local : on garde le CDN.
+  WHISPER_DIR: "vendor/transformers/",
+  whisperSources: function () {
+    var ext = location.protocol === "chrome-extension:";
+    if (ext || /^https?:$/.test(location.protocol)) {
+      var dir = new URL(this.WHISPER_DIR, document.baseURI).href;
+      var local = { lib: dir + "transformers.min.js", wasm: dir, proxy: !ext };
+      // dans l'extension, pas de repli sur internet (code distant interdit) ; ailleurs, repli sur le CDN
+      return ext ? [local] : [local, { lib: this.TFJS, wasm: null, proxy: true }];
+    }
+    return [{ lib: this.TFJS, wasm: null, proxy: true }];
+  },
+  importWhisper: function () {
+    var tries = this.whisperSources(), last = null;
+    return tries.reduce(function (chain, src) {
+      return chain.catch(function (e) {
+        if (e) last = e;
+        return import(src.lib).then(function (T) {
+          if (src.wasm) { try { T.env.backends.onnx.wasm.wasmPaths = src.wasm; } catch (e2) { } }
+          try { T.env.backends.onnx.wasm.proxy = src.proxy; } catch (e3) { }
+          return T;
+        });
+      });
+    }, Promise.reject(null)).catch(function (e) { throw e || last; });
+  },
   loadWhisper: function (model, st) {
     var self = this;
     if (this.asr && this.asrModel === model) return Promise.resolve(this.asr);
     st.textContent = "Chargement du moteur…";
-    return import(this.TFJS).then(function (T) {
+    return this.importWhisper().then(function (T) {
       T.env.allowLocalModels = false;
-      try { T.env.backends.onnx.wasm.proxy = true; } catch (e) { }
       var files = {};
       var progress = function (p) {
         if (p.status === "progress" && p.file) { files[p.file] = p; }
@@ -445,8 +470,8 @@ AgnesPlugins.register("extracteur", {
       return (navigator.gpu ? make("webgpu").catch(function () { return make("wasm"); }) : make("wasm"));
     }).then(function (asr) { self.asr = asr; self.asrModel = model; return asr; })
       .catch(function (e) {
-        if (location.protocol === "chrome-extension:") throw new Error("Whisper dans le navigateur n'est pas disponible dans Lumina (Chrome interdit le code distant dans une extension). Utilisez l'API OpenAI, un fichier de sous-titres, ou ouvrez Agnes directement (index.html) pour cette transcription.");
-        throw new Error("moteur Whisper indisponible (" + (e.message || e) + "). Vérifiez la connexion internet pour le premier chargement, ou utilisez l'API OpenAI.");
+        throw new Error("moteur Whisper indisponible (" + (e.message || e) + "). Le modèle se télécharge une seule fois depuis " +
+          "Hugging Face : vérifiez la connexion internet, ou utilisez l'API OpenAI / un fichier de sous-titres.");
       });
   },
   localTranscribe: function (pcm, st) {

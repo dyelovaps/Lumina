@@ -385,7 +385,12 @@ AgnesPlugins.register("moteurs", {
       if (!/subtle/i.test(prompt)) prompt += ". Natural human behaviour, subtle restrained acting, calm natural conversational voices, no exaggerated expressions; whoever speaks looks at the person they are talking to";
       if (!/no film grain/i.test(prompt)) prompt += ". Tack-sharp, crisp image, no film grain, no noise";
       if (!/no music/i.test(prompt)) prompt += ". No music. No song. Ambient sound only";
-      var res = self.cfg.grokRes || "720p", wanted = A.clamp(shot.outputs || 1, 1, 4), takes = [];
+      // Grok : UNE vidéo par envoi (chaque génération est décomptée). « Sorties » > 1 est ignoré, avec un avertissement.
+      var res = self.cfg.grokRes || "720p", wanted = 1, takes = [];
+      if ((Number(shot.outputs) || 1) > 1) {
+        job.warning = "Grok : 1 vidéo par envoi (Sorties = " + shot.outputs + " ignoré pour ne pas décompter de générations en plus).";
+        A.emitJob(job);
+      }
       var payload = {
         type: "SUBMIT_PROMPT", prompt: prompt, mediaKind: "video", grokMode: grokMode,
         aspectRatio: A.nearestRatio(shot.aspect || proj.aspect || "9:16", self.GROK_RATIOS), outputs: 1,

@@ -183,3 +183,40 @@ test('Projet Agnes inconnu : le pilote rend une erreur claire', async () => {
   assert.match(p.reported[0].erreur, /projet « Autre » introuvable/);
   assert.equal(p.sent.length, 0);
 });
+
+test('Anti-doublon Grok : un clip déjà fait n’est jamais renvoyé ; ↻ le remet dans le lot', async () => {
+  const p = panel({ project, shots: [
+    { shotId: 's1', num: 1, title: 'Un', imagePrompt: '', videoPrompt: 'Plan un', duration: 6, still: 'IMG1', refs: [] },
+    { shotId: 's2', num: 2, title: 'Deux', imagePrompt: '', videoPrompt: 'Plan deux', duration: 6, still: 'IMG2', refs: [] },
+  ], refs: [], skipped: [] });
+  await p.context.importFromAgnes({});
+  p.state.settings.step = false;
+  await p.run(true);
+  await p.settle();
+  assert.equal(p.sent.length, 2);
+  assert.ok(p.state.stills.every((s) => s.doneAt));
+  // relancer : rien ne repart chez Grok
+  await p.run(true);
+  await p.settle();
+  assert.equal(p.sent.length, 2);
+  // refaire volontairement le plan 2
+  delete p.state.stills[1].doneAt;
+  await p.run(true);
+  await p.settle();
+  assert.equal(p.sent.length, 3);
+  assert.match(p.sent[2].prompt, /Plan deux/);
+});
+
+test('Anti-doublon Grok : plan déjà en cours dans Agnes non importé ; plan déjà filmé importé comme fait', async () => {
+  const p = panel({ project, shots: [
+    { shotId: 's1', num: 1, title: 'En cours', imagePrompt: '', videoPrompt: 'Plan un', duration: 6, still: 'IMG1', refs: [], busy: true, videoTakes: 0 },
+    { shotId: 's2', num: 2, title: 'Déjà filmé', imagePrompt: '', videoPrompt: 'Plan deux', duration: 6, still: 'IMG2', refs: [], busy: false, videoTakes: 1 },
+    { shotId: 's3', num: 3, title: 'Nouveau', imagePrompt: '', videoPrompt: 'Plan trois', duration: 6, still: 'IMG3', refs: [], busy: false, videoTakes: 0 },
+  ], refs: [], skipped: [] });
+  await p.context.importFromAgnes({});
+  eq(p.state.stills.map((s) => [s.agnes.shotId, Boolean(s.doneAt)]), [['s2', true], ['s3', false]]);
+  p.state.settings.step = false;
+  await p.run(true);
+  await p.settle();
+  eq(p.sent.map((x) => x.prompt.includes('Plan trois')), [true]);
+});

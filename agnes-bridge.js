@@ -162,6 +162,8 @@ async function applyAgnesExport(data, opts = {}) {
   if (mode === "montage") {
     const stills = [];
     for (const s of shots) {
+      // Évite la double génération : un plan déjà envoyé à Grok PAR AGNES (en file ou en cours) n'est pas importé.
+      if (s.busy) { notes.push(`plan ${s.num} déjà en cours de génération dans Agnes : non importé (pas de doublon)`); continue; }
       if (!s.videoPrompt) { notes.push(`plan ${s.num} sans prompt vidéo`); continue; }
       if (!s.still && !s.chainPrev) { notes.push(`plan ${s.num} sans image : faites-la d'abord dans Agnes (ChatGPT ou Agnes Image)`); continue; }
       const nn = String(s.num).padStart(2, "0");
@@ -178,7 +180,10 @@ async function applyAgnesExport(data, opts = {}) {
         chainPrev: Boolean(s.chainPrev && !s.still),
         savePath: "",
         agnes: link(s),
+        // Plan qui a déjà sa vidéo dans Agnes : marqué fait (non relancé) ; « ↻ » sur la carte pour le refaire
+        ...(s.videoTakes > 0 ? { doneAt: Date.now() } : {}),
       });
+      if (s.videoTakes > 0) notes.push(`plan ${s.num} a déjà sa vidéo dans Agnes : marqué fait (↻ pour le refaire)`);
     }
     state.stills = stills.slice(0, 40);
   } else {

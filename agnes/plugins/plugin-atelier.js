@@ -633,7 +633,22 @@ AgnesPlugins.register("atelier", {
         context: { type: "array", items: { type: "string", enum: ["bible", "library", "skills", "storyboard"] } },
         dest: { type: "string", enum: ["none", "bible-serie", "bible-perso", "scenario", "lot", "publication", "storyboard"] } }, required: ["name", "desc", "instructions"] } } },
     { type: "function", function: { name: "set_publication", description: "Remplit la fiche de l'onglet Publication. Nécessite l'autorisation.",
-      parameters: { type: "object", properties: { serie: { type: "string" }, episode: { type: "number" }, titre: { type: "string" }, accroche: { type: "string" }, resume: { type: "string" }, hashtags: { type: "string" }, appel: { type: "string" } } } } }
+      parameters: { type: "object", properties: { serie: { type: "string" }, episode: { type: "number" }, titre: { type: "string" }, accroche: { type: "string" }, resume: { type: "string" }, hashtags: { type: "string" }, appel: { type: "string" } } } } },
+    { type: "function", function: { name: "generate_shots", description: "Lance la génération de cartes du Storyboard (image ou vidéo) avec les moteurs réglés dans ⚙ → Moteurs. Consomme des quotas : numéros exacts (get_storyboard), une carte d'abord pour un nouveau style. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { plans: { type: "array", items: { type: "number" }, description: "Numéros des cartes (#N du Storyboard)" },
+        etape: { type: "string", enum: ["image", "video", "auto"], description: "image : image de départ ; video : animer l'image validée ; auto : selon la carte" } }, required: ["plans", "etape"] } } },
+    { type: "function", function: { name: "marketing_state", description: "Agent Marketing (vidéos d'avatar pour les réseaux, via le pont local) : fiches méthodes disponibles (AIDA, PAS…), prochaines vidéos, veille non utilisée, journées préparées, identité de l'avatar à compléter. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "marketing_veille", description: "Agent Marketing : veille internet (actualités avatar IA, vidéo courte, marketing) ; renvoie les pistes avec leur numéro. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { max: { type: "number", description: "Articles lus par flux (facultatif)" } } } } },
+    { type: "function", function: { name: "marketing_generate_day", description: "Agent Marketing : prépare une journée de 3 vidéos d'avatar de 10 s (éducative, problème-solution, démonstration), validées, et ajoute le livrable « Marketing — date » aux documents de l'Atelier. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { methode: { type: "string", description: "Fiche méthode du jour choisie par l'utilisateur : identifiant donné par marketing_state (ex. aida, pas, avant-apres, conseil-express)" },
+        date: { type: "string", description: "AAAA-MM-JJ (défaut : aujourd'hui)" }, topic: { type: "string" }, audience: { type: "string" }, offer: { type: "string" }, objective: { type: "string" },
+        trend: { type: "number", description: "Numéro d'une piste de veille (facultatif)" }, pillar: { type: "string" }, cluster: { type: "string" }, environment: { type: "string" } } } } },
+    { type: "function", function: { name: "marketing_get_day", description: "Agent Marketing : (re)met le livrable d'une journée déjà préparée dans les documents de l'Atelier. Sans autorisation.",
+      parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } },
+    { type: "function", function: { name: "marketing_validate", description: "Agent Marketing : revalide les 3 vidéos d'une journée (durée, CTA, doublons…). Lecture et contrôle, sans autorisation.",
+      parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } }
   ],
   managerSystem: function () {
     var self = this, st = this.project();
@@ -653,7 +668,9 @@ AgnesPlugins.register("atelier", {
       "- Quand l'utilisateur parle d'un document, lis-le avec get_document avant de décider. Pour qu'un agent le lise, il suffit qu'il soit destiné à cet agent ou à « tous » ; sinon cite l'essentiel dans la consigne de run_agent.\n" +
       "- Les messages « ▸ N. Agent a terminé » viennent d'appels directs de l'utilisateur (@N) : tiens-en compte.\n" +
       "- Prompts des cartes du Storyboard (« prompt parfait », placement des personnages, angle, voiture…) : confie-les à a16 (Directeur de plans) en précisant les numéros de cartes et la demande de l'utilisateur, puis applique son travail avec update_shots en donnant agent_id \"a16\" (sans recopier les prompts).\n" +
-      "- Si aucun agent ne convient à la demande, propose d'en créer un avec create_agent (consignes complètes, format de sortie, entrées et contexte utiles), puis lance-le. N'en crée pas un qui double un agent existant.\n\n" +
+      "- Si aucun agent ne convient à la demande, propose d'en créer un avec create_agent (consignes complètes, format de sortie, entrées et contexte utiles), puis lance-le. N'en crée pas un qui double un agent existant.\n" +
+      "- Générations (generate_shots) : annonce le nombre de cartes, l'étape et les moteurs (quotas) ; une carte d'abord pour un nouveau style ou personnage, fais valider, puis les autres ; vidéos seulement quand les images sont validées. Grok sert uniquement à la vidéo ; si Grok est bloqué, arrête et préviens l'utilisateur.\n" +
+      "- Vidéos d'avatar pour les réseaux (marketing) : utilise les outils marketing_* (agent Marketing branché par le pont local). Avant marketing_generate_day, si l'utilisateur n'a pas choisi la méthode du jour, lis marketing_state et demande-lui : « Qu'est-ce qu'on fait aujourd'hui : AIDA, PAS… ? » en citant les fiches actives. marketing_generate_day dépose un document « Marketing — date » : lis-le avec get_document et suis ses CONSIGNES POUR LE CHEF dans l'ordre, une étape à la fois. Ne reformule jamais les répliques d'un livrable marketing.\n\n" +
       "ÉQUIPE ET ÉTAT\n" + team + "\n\nAPP\nProjet : " + (p ? p.name : "?") + " · " + (p ? p.shots.length : 0) + " plan(s) dans le Storyboard\n" +
       "Bible :\n" + this.bibleText() + "\nBibliothèque :\n" + this.libraryText() +
       "\n\nDOCUMENTS FOURNIS PAR L'UTILISATEUR (lecture avec get_document ; ils sont aussi transmis automatiquement aux agents indiqués)\n" + this.docsIndex();
@@ -732,7 +749,8 @@ AgnesPlugins.register("atelier", {
       st.chat.push({ role: "assistant", content: "⚠ " + (e.display || e.message || e), local: true }); self.core.saveProject(); self.renderChat(); self.setBusy("");
     });
   },
-  NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true },
+  NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true,
+    generate_shots: true, marketing_veille: true, marketing_generate_day: true },
   handleCalls: function (calls, depth) {
     var self = this, st = this.project(), results = [];
     function next(i) {
@@ -772,6 +790,12 @@ AgnesPlugins.register("atelier", {
         return "Écrire les prompts de " + n + " carte(s) du Storyboard" + (ag ? " (travail de « " + ag.name + " »)" : "");
       }
       case "create_agent": return "Créer l'agent « " + (a.name || "?") + " » — " + (a.desc || "");
+      case "generate_shots": return this.describeGeneration(a);
+      case "marketing_state": return "Lire l'état de l'agent Marketing";
+      case "marketing_veille": return "Agent Marketing : lancer la veille internet";
+      case "marketing_generate_day": return "Agent Marketing : préparer les 3 vidéos du " + (a.date || "jour") + " — méthode " + (a.methode || "par défaut") + (a.topic ? " — sujet « " + a.topic + " »" : "") + " (écrites avec " + this.marketingModelLabel() + ")";
+      case "marketing_get_day": return "Agent Marketing : reprendre le livrable du " + (a.date || "?");
+      case "marketing_validate": return "Agent Marketing : revalider la journée du " + (a.date || "?");
       default: return c.name;
     }
   },
@@ -796,6 +820,24 @@ AgnesPlugins.register("atelier", {
         return this.applyPlans(plans);
       }
       case "create_agent": return this.createAgent(a);
+      case "generate_shots": return this.generateShots(a);
+      case "marketing_state": return this.marketingCall("GET", "/marketing/etat").then(function (d) { return JSON.stringify(d); });
+      case "marketing_veille": return this.marketingCall("POST", "/marketing/veille", { max: a.max }).then(function (d) {
+        return (d.nouveautes.length ? d.nouveautes.map(function (t) { return "#" + t.id + " [" + (t.pilier || "divers") + "] " + t.titre; }).join("\n") : "Aucune nouveauté.") +
+          (d.erreurs.length ? "\nFlux en erreur : " + d.erreurs.join(" · ") : "");
+      });
+      case "marketing_generate_day": return this.marketingDay(a);
+      case "marketing_get_day": {
+        var self2 = this;
+        return this.marketingCall("GET", "/marketing/livrable?date=" + encodeURIComponent(a.date || "")).then(function (d) {
+          self2.addDoc(d.nom, d.livrable, "agent Marketing", true); return "Document « " + d.nom + " » prêt : lis-le avec get_document.";
+        });
+      }
+      case "marketing_validate": return this.marketingCall("POST", "/marketing/valider", { date: a.date }).then(function (d) {
+        return "Journée " + d.date + " : " + (d.pret ? "toutes prêtes" : "à corriger") + "\n" + d.videos.map(function (v) {
+          return "- " + v.type + " · " + v.statut + " · score " + v.score + (v.erreurs.length ? " · " + v.erreurs.join(" ; ") : "");
+        }).join("\n");
+      });
     }
     return "Outil inconnu.";
   },
@@ -810,11 +852,64 @@ AgnesPlugins.register("atelier", {
   // DOCUMENTS (lus par les agents choisis)
   // =========================================================
   DOC_MAX: 200000,     // caractères gardés par document
+  // =========================================================
+  // GÉNÉRATIONS ET AGENT MARKETING (outils du Chef)
+  // =========================================================
+  moteurs: function () { var m = window.AgnesPlugins && AgnesPlugins.get("moteurs"); return m && m.cfg ? m : null; },
+  pont: function () { var m = this.moteurs(); return ((m && m.cfg.pont) || "http://127.0.0.1:8177").replace(/\/$/, ""); },
+  shotsByNumbers: function (plans) {
+    var all = window.AgnesApp.sortedShots(), nums = (Array.isArray(plans) ? plans : String(plans || "").split(/[,\s]+/)).map(Number).filter(function (n) { return n > 0; });
+    return nums.map(function (n) { return { n: n, shot: all[n - 1] }; });
+  },
+  describeGeneration: function (a) {
+    var m = this.moteurs(), picked = this.shotsByNumbers(a.plans), etape = a.etape === "image" || a.etape === "video" ? a.etape : "auto";
+    var moteur = !m ? "Agnes" : etape === "video" ? m.cfg.video : etape === "image" ? m.cfg.image : m.cfg.image + " puis " + m.cfg.video;
+    return "Lancer " + picked.length + " génération(s) " + (etape === "auto" ? "" : etape + " ") + "(moteur : " + moteur + ") — cartes " + picked.map(function (p) { return p.n; }).join(", ");
+  },
+  generateShots: function (a) {
+    var A = window.AgnesApp, m = this.moteurs(), etape = a.etape === "image" || a.etape === "video" ? a.etape : "";
+    var picked = this.shotsByNumbers(a.plans), missing = picked.filter(function (p) { return !p.shot; }).map(function (p) { return p.n; });
+    if (!picked.length) return "Aucun numéro de carte donné.";
+    if (missing.length) return "Cartes introuvables : " + missing.join(", ") + " (voir get_storyboard). Rien n'a été lancé.";
+    if (etape !== "image" && m && m.cfg.video === "grok") {
+      if (m.cfg.grokBloque) return "Grok est bloqué par sécurité : " + m.cfg.grokBloque + " Rien n'a été lancé : préviens l'utilisateur (⚙ → Moteurs).";
+      if (!m.canGrok()) return "Grok indisponible : Agnes n'est pas ouverte depuis Lumina. Rien n'a été lancé.";
+    }
+    var done = [];
+    picked.forEach(function (p) { var j = etape ? A.enqueueStage(p.shot, etape) : A.enqueueShot(p.shot); if (j) done.push(p.n); });
+    if (!done.length) return "Rien n'a été lancé (clé Agnes manquante pour ce moteur ?).";
+    return done.length + " carte(s) mise(s) en file" + (etape ? " (étape " + etape + ")" : "") + " : " + done.join(", ") + ". Suivi dans la Liste d'attente ; contrôle le résultat avant la suite.";
+  },
+  // Fournisseur de l'Atelier transmis à l'agent Marketing pour écrire les scripts (sans Claude ni abonnement)
+  marketingModel: function () {
+    var r = this.resolveModel(""), id = r && r.provider, key = id && this.keyOf(id);
+    if (!id || !key) return null;
+    return { base: this.baseOf(id), key: key, model: r.model, label: this.PROVIDERS[id].label, min_interval_s: (this.PROVIDERS[id].gap || 1500) / 1000 };
+  },
+  marketingModelLabel: function () { var m = this.marketingModel(); return m ? m.label + " (" + m.model + ")" : "les modèles de phrases locaux"; },
+  marketingCall: function (method, path, body) {
+    var init = method === "GET" ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) };
+    return fetch(this.pont() + path, init).then(function (r) {
+      return r.json().then(function (j) { if (!r.ok || j.error) throw new Error(j.error || "HTTP " + r.status); return j; });
+    }, function () { throw new Error("pont local injoignable : lancez lancer_pont.bat (prod-fruits) puis réessayez"); });
+  },
+  marketingDay: function (a) {
+    var self = this, body = { methode: a.methode, date: a.date, topic: a.topic, audience: a.audience, offer: a.offer, objective: a.objective,
+      trend: a.trend, pillar: a.pillar, cluster: a.cluster, environment: a.environment, llm: this.marketingModel() };
+    return this.marketingCall("POST", "/marketing/journee", body).then(function (d) {
+      self.addDoc(d.livrable_nom, d.livrable, "agent Marketing", true);
+      return "Journée du " + d.date + " (méthode " + (d.methodes || []).join(", ") + ", pilier " + d.pilier + ") : " + (d.pret ? "3/3 vidéos prêtes" : "au moins une vidéo à corriger") + ".\n" +
+        d.videos.map(function (v) { return "- " + v.type + " [" + v.statut + ", " + v.duree_s + " s, " + v.generateur + "] " + v.hook + (v.erreurs.length ? " — " + v.erreurs.join(" ; ") : ""); }).join("\n") +
+        "\nDocument « " + d.livrable_nom + " » ajouté : lis-le avec get_document et suis ses CONSIGNES POUR LE CHEF.";
+    });
+  },
   DOC_BUDGET: 60000,   // caractères de documents envoyés au maximum dans une requête d'agent
   doc: function (id) { return (this.project().docs || []).find(function (d) { return d.id === id; }); },
-  addDoc: function (name, content, source) {
+  // replace = true : un document du même nom est remplacé (livrables régénérés), sinon ajouté à côté
+  addDoc: function (name, content, source, replace) {
     var st = this.project(), text = String(content || "").replace(/\r/g, "").replace(/\n{4,}/g, "\n\n\n").trim();
     if (!text) { this.core.toast("« " + name + " » est vide.", "err"); return; }
+    if (replace) st.docs = (st.docs || []).filter(function (d) { return d.name !== name; });
     var cut = text.length > this.DOC_MAX;
     st.docs.push({ id: window.AgnesApp.uid(), name: name, source: source || "fichier", content: cut ? text.slice(0, this.DOC_MAX) : text, size: text.length, cut: cut, on: true, for: "all", at: Date.now() });
     this.core.saveProject(); this.renderDocs();

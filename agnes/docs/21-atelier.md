@@ -168,10 +168,20 @@ Il connaît à chaque message l'état de chaque agent, votre Bible, votre Biblio
 | Lire les cartes du Storyboard | Non (lecture seule) |
 | Écrire les prompts des cartes du Storyboard | **Toujours** |
 | Créer un nouvel agent dans l'équipe | **Toujours** |
+| Lancer des générations (images ou vidéos) sur des cartes précises | **Toujours** (l'aperçu indique le nombre de cartes et le moteur) |
+| Agent Marketing : lire son état, reprendre ou revalider une journée | Non |
+| Agent Marketing : veille internet, préparer une journée de 3 vidéos | **Toujours** |
 
 Chaque demande s'affiche dans la discussion avec un **aperçu du contenu** : **Autoriser** ou **Refuser**. Après un refus, le chef ne recommence pas sans vous le demander.
 
-**Ce qu'il ne fait jamais** : créer ou supprimer des cartes, lancer une génération chez Agnes ou supprimer quoi que ce soit. Après son envoi, c'est vous qui cliquez **Créer les plans** dans Le lot ou dans Scénario.
+**Ce qu'il ne fait jamais** : supprimer quoi que ce soit, ou lancer une génération sans votre accord. Les vidéos Grok respectent le garde-fou « Grok bloqué » (⚙ → Moteurs) : s'il est actif, le chef s'arrête et vous prévient. Après un envoi dans Le lot ou Scénario, c'est vous qui cliquez **Créer les plans**.
+
+**Autorisation déléguée** : quand Claude pilote Agnes (« 🤖 Claude : actif »), il peut répondre aux demandes du chef à votre place, seulement pour les actions que vous lui avez confiées.
+
+### Agent Marketing (vidéos d'avatar pour les réseaux)
+L'agent Marketing (dossier `Marketing_Avatar`) prépare chaque jour, pour l'avatar Anthony, un sujet raconté en trois vidéos verticales de 10 s, chacune en AIDA (attention, intérêt, désir, action) : le matin éducative, en journée problème-solution, le soir démonstration. Il vérifie la durée, le CTA unique et l'absence de chiffres inventés, et évite les doublons. Le chef l'utilise par le **pont local** (`lancer_pont.bat`), **sans abonnement Claude** : les scripts sont écrits avec votre fournisseur de l'Atelier (Agnes AI gratuit, Gemini, Groq…), ou avec des modèles de phrases hors ligne si aucun n'est disponible.
+
+Demandez simplement au chef : « Prépare les vidéos marketing de demain sur … ». S'il ne connaît pas encore la méthode du jour, il vous la demande (AIDA, PAS, Avant-Après-Pont, Conseil express… : les fiches actives de l'agent Marketing). Il ajoute le document **Marketing — date** (Bible de l'avatar et des décors, répliques prêtes pour la voix, lot, montage, publication), puis suit ses consignes étape par étape avec votre autorisation : Bible, Le lot, Publication, puis les générations (une carte d'abord). L'identité de l'avatar se règle une fois dans `config/avatar_profile.json` de l'agent Marketing ; tant qu'elle n'est pas remplie, le chef ne crée pas sa fiche et vous le signale.
 
 **Nouvelle discussion** efface la conversation avec le chef. Le travail des agents et les documents sont conservés.
 

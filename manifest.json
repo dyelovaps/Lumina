@@ -53,6 +53,9 @@
     "resources": ["flow/injected.js"],
     "matches": ["https://flow.google.com/*", "https://labs.google/*"]
   }],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
   "declarative_net_request": {
     "rule_resources": [{ "id": "flow_referer_rules", "enabled": true, "path": "flow/rules.json" }]
   },

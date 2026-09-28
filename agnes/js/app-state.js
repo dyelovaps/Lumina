@@ -187,6 +187,7 @@
       if (raw) A.settings = Object.assign({}, A.SETTINGS_DEFAULTS, JSON.parse(raw));
     } catch (e) { console.warn("Réglages illisibles :", e); }
     migrateModels();
+    if (window.AgnesCles) window.AgnesCles.remplir("settings");   // clés du .env, si déjà reçues
   };
   // Agnes Video v2.0 est retiré le 25/09/2026 : passage automatique à la série 2.5 (et Image 2.5 Flash, même API que 2.1)
   function migrateModels() {
@@ -213,7 +214,7 @@
       ["agnes-image-2.1-flash", "Agnes Image 2.1 Flash"], ["agnes-image-2.0-flash", "Agnes Image 2.0 Flash"]]
   };
   A.persistSettings = function () {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(A.settings)); return true; }
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(window.AgnesCles ? window.AgnesCles.strip("settings", A.settings) : A.settings)); return true; }
     catch (e) { A.toast("Enregistrement des réglages impossible (stockage local indisponible).", "err"); return false; }
   };
 

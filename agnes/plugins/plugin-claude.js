@@ -166,6 +166,13 @@ AgnesPlugins.register("claude", {
         return n + " plan(s) mis en file" + (a.etape ? " (étape " + a.etape + ")" : "") + ".";
       }
       case "lot": return this.lot(a);
+      case "document": {
+        // Document pour l'Atelier IA (ex. livrable de l'agent Marketing), lisible par le Chef avec get_document
+        var PD = this.atelier(), nom = String(a.nom || "").trim(), texte = String(a.script || a.contenu || "");
+        if (!nom || !texte.trim()) throw new Error("nom et contenu obligatoires (agnes.py document nom=… --fichier …)");
+        PD.addDoc(nom, texte, "Claude", true);
+        return "Document « " + nom + " » ajouté à l'Atelier IA (" + texte.length + " caractères).";
+      }
       case "chef": {
         var P = this.atelier(), st = P.project();
         if (P.pending) throw new Error("une autorisation est en attente : " + P.describe(P.pending.call) + " — commande autoriser d'abord");

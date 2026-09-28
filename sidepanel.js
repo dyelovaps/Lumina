@@ -649,6 +649,7 @@ $("#still-cards")?.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-act]");
   if (!btn) return;
   if (btn.dataset.act === "skip") state.stills[i].skip = !state.stills[i].skip;
+  if (btn.dataset.act === "redo") delete state.stills[i].doneAt;
   if (btn.dataset.act === "del") state.stills.splice(i, 1);
   if (btn.dataset.act === "up" && i > 0) {
     const [x] = state.stills.splice(i, 1);
@@ -837,8 +838,9 @@ function applyClipPairs(pairs, how) {
   log("Prompts reliés par titre — " + used.size + " clips");
 }
 
+// Un still dont le clip est déjà fait (doneAt) n'est plus relancé : « ↻ » sur sa carte pour le refaire volontairement.
 function readyStills() {
-  return (state.stills || []).filter((s) => !s.skip && s.videoPrompt.trim() && (s.dataUrl || s.chainPrev));
+  return (state.stills || []).filter((s) => !s.skip && !s.doneAt && s.videoPrompt.trim() && (s.dataUrl || s.chainPrev));
 }
 
 function renderStills() {
@@ -851,12 +853,13 @@ function renderStills() {
       .join("") + `<button type="button" class="tile-add">Ajouter les images</button>`;
   cards.innerHTML = (state.stills || [])
     .map(
-      (s, i) => `<article class="still-card${s.skip ? " skipped" : ""}" data-id="${s.id}">
+      (s, i) => `<article class="still-card${s.skip ? " skipped" : ""}${s.doneAt ? " done" : ""}" data-id="${s.id}">
       ${s.dataUrl ? `<img src="${s.dataUrl}" alt="" />` : `<div class="still-suite">↪ dernière image du clip précédent</div>`}
       <div>
         <div class="still-meta">
-          <span>${String(i + 1).padStart(2, "0")} · ${escapeHtml(s.title || s.stem)}</span>
+          <span>${String(i + 1).padStart(2, "0")} · ${escapeHtml(s.title || s.stem)}${s.doneAt ? " · ✓ fait" : ""}</span>
           <div class="tools">
+            ${s.doneAt ? `<button type="button" class="icon-btn" data-act="redo" title="Clip déjà généré : le refaire au prochain lancement">↻</button>` : ""}
             <button type="button" class="icon-btn" data-act="skip">${s.skip ? "●" : "○"}</button>
             <button type="button" class="icon-btn" data-act="up">↑</button>
             <button type="button" class="icon-btn" data-act="down">↓</button>
@@ -881,11 +884,12 @@ function updateMontagePreview() {
   const n = state.stills.length;
   const ready = readyStills().length;
   const miss = state.stills.filter((s) => !s.skip && !s.videoPrompt.trim()).length;
+  const done = state.stills.filter((s) => s.doneAt).length;
   if (!n) {
     el.textContent = "Aucune image. Dépose tes stills (01-titre.jpg…).";
     return;
   }
-  el.textContent = `${n} image${n > 1 ? "s" : ""} · ${ready} clip${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""}${miss ? " · " + miss + " prompt" + (miss > 1 ? "s" : "") + " manquant" + (miss > 1 ? "s" : "") : ""} · ${state.settings.duration || 6}s ${state.settings.quality || "speed"} ${state.settings.resolution || "480p"} ${state.settings.aspect || "16:9"}`;
+  el.textContent = `${n} image${n > 1 ? "s" : ""} · ${ready} clip${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""}${done ? " · " + done + " déjà fait" + (done > 1 ? "s" : "") + " (↻ pour refaire)" : ""}${miss ? " · " + miss + " prompt" + (miss > 1 ? "s" : "") + " manquant" + (miss > 1 ? "s" : "") : ""} · ${state.settings.duration || 6}s ${state.settings.quality || "speed"} ${state.settings.resolution || "480p"} ${state.settings.aspect || "16:9"}`;
 }
 
 function filledPairs() {
@@ -1200,6 +1204,8 @@ async function runBatch(rebuild, opts = {}) {
     const previousJobs = state.jobs;
     if (state.mode === "montage") {
       const stills = readyStills().slice(0, Math.max(1, state.settings.maxScenes || 15));
+      if (!stills.length && (state.stills || []).some((s) => s.doneAt && !s.skip))
+        return runHint("Stills → vidéo : tous les clips sont déjà faits (rien n'est renvoyé à Grok). « ↻ » sur une carte pour en refaire un.");
       if (!stills.length) return runHint("Stills → vidéo : aucun still prêt (il faut une image et un prompt vidéo).");
       state.jobs = stills.map((s) => {
         const i = Math.max(0, state.stills.indexOf(s));
@@ -1208,6 +1214,7 @@ async function runBatch(rebuild, opts = {}) {
           prompt: s.videoPrompt,
           role: "video",
           pairIndex: i,
+          stillId: s.id,
           title: s.title || "",
           stem: sceneStem(s, i),
           status: "queued",
@@ -1555,6 +1562,9 @@ async function worker() {
       job.status = "done";
       job.progress = 100;
       job.urls = (res.urls || []).slice(0, Math.max(1, Math.min(4, settings.outputs || 1)));
+      // Stills → Clips : ce still a son clip, il ne sera plus renvoyé à Grok au prochain « Lancer le lot »
+      const doneStill = job.stillId && (state.stills || []).find((x) => x.id === job.stillId);
+      if (doneStill) doneStill.doneAt = Date.now();
       const stem = job.stem || sceneStem({ title: job.title, imagePrompt: job.prompt }, job.pairIndex || 0);
       const ext = kind === "video" ? "mp4" : "jpg";
       const sub =

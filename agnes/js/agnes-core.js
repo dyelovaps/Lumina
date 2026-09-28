@@ -45,7 +45,9 @@ window.AgnesCore = {
     var key = "agnes_plugin_" + id, v = {};
     try { v = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { }
     var obj = Object.assign({}, defaults || {}, v);
-    Object.defineProperty(obj, "save", { enumerable: false, value: function () { try { localStorage.setItem(key, JSON.stringify(obj)); } catch (e) { } } });
+    // Clés venues du fichier .env (js/cles-env.js) : utilisées en mémoire, jamais enregistrées
+    Object.defineProperty(obj, "save", { enumerable: false, value: function () { try { localStorage.setItem(key, JSON.stringify(window.AgnesCles ? window.AgnesCles.strip(id, obj) : obj)); } catch (e) { } } });
+    if (window.AgnesCles) window.AgnesCles.register(id, obj);
     return obj;
   },
 

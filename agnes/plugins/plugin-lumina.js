@@ -93,7 +93,10 @@ AgnesPlugins.register("lumina", {
       var entry = {
         shotId: s.id, num: x.num, duration: s.duration || proj.duration || 6,
         title: String(s.prompt || s.imagePrompt || "plan").replace(/\s+/g, " ").trim().split(" ").slice(0, 6).join(" "),
-        refs: [], imagePrompt: "", videoPrompt: "", still: null, stillFrom: "", chainPrev: false
+        refs: [], imagePrompt: "", videoPrompt: "", still: null, stillFrom: "", chainPrev: false,
+        // anti-doublon côté Lumina : plan déjà en file / en cours dans Agnes, nombre de vidéos déjà faites
+        busy: ["queued", "running", "resume"].indexOf(s.status) !== -1,
+        videoTakes: (s.takes || []).filter(function (t) { return t.kind === "video"; }).length
       };
       if (kind === "image") entry.imagePrompt = self.finalPrompt(s, proj, s.mode, s.prompt, withDna);
       else {

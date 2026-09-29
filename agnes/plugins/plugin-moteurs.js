@@ -368,17 +368,25 @@ AgnesPlugins.register("moteurs", {
 
     var starts = m === "frames" ? [shot.startRef, shot.endRef] : m === "i2v" ? [shot.sourceRef] : [];
     var withRefs = m === "t2v" || m === "ingr_v" || (m === "i2v" && shot.i2v === "refs");
+    // Image intermédiaire (facultative, rôle Grok « Image intermédiaire ») : ex. le profil de la recette
+    // « arc face → profil → face » (29/09/2026), la face étant en « Boucle ».
+    var mid = (m === "i2v" || m === "frames") && shot.midRef ? shot.midRef : "";
     return Promise.all([
       Promise.all(starts.map(function (r) { return self.startImage(r, shot, proj); })),
-      Promise.all((withRefs ? shot.ingredients || [] : []).slice(0, 7).map(function (id) { return self.libData(proj, id, 1024); }))
+      Promise.all((withRefs ? shot.ingredients || [] : []).slice(0, 7).map(function (id) { return self.libData(proj, id, 1024); })),
+      mid ? self.startImage(mid, shot, proj) : Promise.resolve(null)
     ]).then(function (r) {
-      var imgs = r[0].filter(Boolean), refs = r[1].filter(Boolean);
+      var imgs = r[0].filter(Boolean), refs = r[1].filter(Boolean), midImg = r[2];
       if (starts.length && imgs.length !== starts.length) throw { display: "Image de départ introuvable pour ce plan." };
-      // Scène verrouillée : début et fin sur la même image
-      var pair = m === "frames" || (m === "i2v" && shot.i2v === "anchor") ? "startEnd" : imgs.length ? "startOnly" : "";
+      if (mid && !midImg) throw { display: "Image intermédiaire introuvable dans la Bibliothèque." };
+      // Scène verrouillée (même image au début et à la fin) : UNE image en rôle Grok « Boucle » (début et fin).
+      // Début + fin distincts (mode « frames ») : « Première » + « Dernière ». Sinon « Première » seule.
+      var loop = m === "i2v" && shot.i2v === "anchor" && imgs.length === 1;
+      var pair = m === "frames" ? "startEnd" : imgs.length ? "startOnly" : "";
       if (pair === "startEnd" && imgs.length === 1) imgs = [imgs[0], imgs[0]];
       var grokMode = m === "ingr_v" ? "ingredients" : imgs.length ? "frame2v" : "t2v";
-      var attachments = imgs.map(function (u, i) { return { url: u, role: i === 1 ? "last" : "first", name: "Scène " + (i + 1) }; })
+      var attachments = imgs.map(function (u, i) { return { url: u, role: loop ? "loop" : i === 1 ? "last" : "first", name: "Scène " + (i + 1) }; })
+        .concat(midImg ? [{ url: midImg, role: "middle", name: "Image intermédiaire" }] : [])
         .concat(refs.map(function (x) { return { url: x.data, role: "reference", name: x.nom }; }));
       // Règles de tous les projets : jeu subtil, regard vers l'interlocuteur, image nette, pas de musique
       var prompt = A.buildPrompt(shot, proj);

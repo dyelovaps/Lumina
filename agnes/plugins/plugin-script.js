@@ -175,7 +175,7 @@ AgnesPlugins.register("scenario", {
     var core = this.core, App = window.AgnesApp, proj = core.getProject();
     var created = list.map(function (s) {
       var kind = App.modeKind(cfg.mode);
-      var shot = core.addShot({ mode: cfg.mode, prompt: s.prompt, duration: kind === "video" ? s.duration : proj.duration || 5 });
+      var shot = core.addShot({ mode: cfg.mode, prompt: s.prompt, duration: kind === "video" ? s.duration : proj.duration || 10 });
       if (s.voice) shot.voiceDraft = s.voice;
       if (s.transIn) {
         // la transition se règle sur le plan précédent

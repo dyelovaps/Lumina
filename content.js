@@ -7,6 +7,21 @@
   let aborted = false;
   let submitting = false;
 
+  // Garde-fou « surplus » toutes conversations : chaque lancement Grok est un POST /rest/app-chat/conversations/new.
+  // Une 2e génération part dans une AUTRE conversation (invisible dans la page ouverte) : on compte ces requêtes.
+  // Un observateur, car la liste performance de Grok est pleine (250 entrées) et n'en garde plus aucune.
+  const grokLaunches = [];
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        if (/\/rest\/app-chat\/conversations\/new(?:[?#]|$)/.test(e.name)) grokLaunches.push(e.startTime);
+      }
+    }).observe({ type: "resource", buffered: true });
+  } catch { /* navigateur sans PerformanceObserver : seul le contrôle de la page reste */ }
+  function launchesSince(t) {
+    return typeof t === "number" ? grokLaunches.filter((x) => x >= t).length : 0;
+  }
+
   function isImagine() {
     return /\/imagine/i.test(location.pathname + location.hash);
   }
@@ -300,6 +315,9 @@
     first: /premi[eè]re|first|start|d[ée]but/i,
     last: /derni[eè]re|last|\bend\b|\bfin\b/i,
     reference: /r[ée]f[ée]rence|reference|ingr[ée]dient|ingredient|guide|personnage|character/i,
+    // Rôles du menu Grok ajoutés le 29/09/2026 (recette « arc face → profil → face »).
+    middle: /interm[ée]diaire|middle|milieu/i,
+    loop: /^(boucle|loop)\b/i,
   };
 
   // Grok's current composer shows the roles in a hover card (Radix popper, plain
@@ -658,6 +676,8 @@
 
   async function submitPrompt(payload) {
     aborted = false;
+    // Toute génération lancée depuis ce moment (préparation comprise) est comptée ; un envoi = un lancement.
+    const launchT0 = typeof performance !== "undefined" ? performance.now() : undefined;
     if (!isImagine()) {
       return {
         ok: false,
@@ -669,7 +689,7 @@
     // Vidéos présentes AVANT toute manipulation : une génération lancée par un clic de préparation compte en surplus.
     const earliest = new Set(wantVideo ? collectVideos() : collectImages());
     const attachments = wantVideo ? payload.attachments || [] : [];
-    if (attachments.some((a) => !a.url || !["first", "last", "reference"].includes(a.role))) {
+    if (attachments.some((a) => !a.url || !["first", "last", "reference", "middle", "loop"].includes(a.role))) {
       return { ok: false, error: "Image ou rôle de pièce jointe invalide." };
     }
     if (["frame2v", "ingredients", "i2i", "montage"].includes(payload.grokMode) && !payload.images?.length && !attachments.length) {
@@ -758,7 +778,12 @@
 
     // Mémorisé juste avant l'envoi réel : un échec en amont (« aucun prompt envoyé ») ne bloque pas une relance.
     try { sessionStorage.setItem("luminaLastSubmit", JSON.stringify({ sig: promptSignature(payload), t: Date.now() })); } catch { /* ignore */ }
-    if (generate) generate.click();
+    // Bouton « Valider » de Grok (type submit dans un formulaire) : un clic simulé lance DEUX générations
+    // (2 × conversations/new à 1 ms) alors qu'un vrai clic, requestSubmit() ou Entrée n'en lancent qu'une
+    // (mesuré le 28/09/2026, requêtes bloquées, sans crédit). Le clic ne sert plus qu'à un bouton hors formulaire.
+    const form = generate?.closest?.("form");
+    if (form && typeof form.requestSubmit === "function" && generate.type === "submit") form.requestSubmit(generate);
+    else if (generate) generate.click();
     else {
       box.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }),
@@ -772,6 +797,7 @@
       wanted,
       before: [...before],
       earliest: [...earliest],
+      launchT0,
       timeout: Date.now() + (payload.timeoutMs || (180000 + extra)),
     };
     // Si Grok change de page pendant l'attente, le script de la nouvelle page reprend l'attente
@@ -802,7 +828,9 @@
           for (let i = 0; i < 30 && !aborted; i++) await sleep(500);
         }
         const all = snapshot().filter((u) => !(p.wantVideo ? earliest : before).has(u));
-        return done({ ok: true, urls: now.slice(0, p.wanted), surplus: Math.max(0, all.length - p.wanted) });
+        // Autres conversations : plus d'un lancement pour cet envoi = surplus, même si la page n'en montre qu'un.
+        const elsewhere = Math.max(0, launchesSince(p.launchT0) - 1);
+        return done({ ok: true, urls: now.slice(0, p.wanted), surplus: Math.max(0, all.length - p.wanted, elsewhere) });
       }
       const err = [...document.querySelectorAll("div, p, span")].find(
         (el) => /rate limit|trop de requêtes|try again|quota|upgrade/i.test(textOf(el)) && visible(el),

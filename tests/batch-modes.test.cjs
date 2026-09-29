@@ -43,6 +43,10 @@ function panel() {
   context.state.settings.lint = false; // ces tests couvrent l'envoi ; le contrôle a ses propres tests
   // Ces tests couvrent aussi les modes image de Grok : la règle « Grok : vidéo uniquement » a son propre test
   context.state.settings.grokVideoOnly = false;
+  // Ces tests couvrent « Début + fin » et les références : depuis le 28/09/2026, l'image seule et « Aucune référence »
+  // sont les réglages par défaut (test dédié plus bas).
+  context.state.settings.framePair = 'startEnd';
+  context.state.settings.referenceSelection = 'matching';
   node('#prompts').value = 'First scene\n\nSecond scene';
   return { ...context, context, sent, node, maxActive: () => maxActive };
 }
@@ -309,4 +313,11 @@ test("Grok : vidéo uniquement (défaut) — aucun envoi d'image à Grok, messag
   await v.run(true);
   assert.equal(v.sent.length, 1);
   assert.equal(v.sent[0].mediaKind, "video");
+});
+
+test('Par défaut : image de scène seule (1 image = 1 clip) et aucune référence jointe', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'sidepanel.js'), 'utf8');
+  assert.match(source, /framePair: "startOnly",\s*referenceSelection: "none",/);
+  const html = fs.readFileSync(path.join(__dirname, '..', 'sidepanel.html'), 'utf8');
+  assert.match(html, /data-frame="startOnly" class="on"/);
 });

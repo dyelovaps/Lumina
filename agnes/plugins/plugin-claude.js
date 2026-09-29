@@ -136,7 +136,8 @@ AgnesPlugins.register("claude", {
       }
       case "storyboard": return this.atelier().storyboardText();
       case "plans": {
-        // Prompts (facultatifs) + réglages de carte : format, duree (s), variantes, tenue (standard|anchor|refs), mouvement (subtle|moderate|free)
+        // Prompts (facultatifs) + réglages de carte : format, duree (s), variantes, tenue (standard|anchor|refs), mouvement (subtle|moderate|free),
+        // intermediaire (nom d'une image de la Bibliothèque : rôle Grok « Image intermédiaire »)
         var withText = (a.plans || []).filter(function (x) { return x.image_prompt || x.video_prompt; });
         var msg = withText.length ? this.atelier().applyPlans(withText.map(function (x) { return { plan: x.plan, image: x.image_prompt, video: x.video_prompt }; })) : "";
         var tuned = [];
@@ -148,7 +149,12 @@ AgnesPlugins.register("claude", {
           if (x.tenue) s.i2v = x.tenue;
           if (x.mouvement) s.motion = x.mouvement;
           if (x.verrou !== undefined) s.lock = !!x.verrou;
-          if (x.format || x.duree || x.variantes || x.tenue || x.mouvement || x.verrou !== undefined) tuned.push(x.plan);
+          if (x.intermediaire !== undefined) {   // nom d'une image de la Bibliothèque (rôle Grok « Image intermédiaire »), "" = aucune
+            var li = x.intermediaire ? A.getProject().library.find(function (l) { return l.name.toLowerCase() === String(x.intermediaire).toLowerCase(); }) : null;
+            if (x.intermediaire && !li) throw new Error("image « " + x.intermediaire + " » introuvable dans la Bibliothèque");
+            s.midRef = li ? li.id : "";
+          }
+          if (x.format || x.duree || x.variantes || x.tenue || x.mouvement || x.verrou !== undefined || x.intermediaire !== undefined) tuned.push(x.plan);
         });
         if (tuned.length) { A.touch(); A.renderShots(); }
         return [msg, tuned.length ? "Réglages appliqués aux cartes " + tuned.join(", ") + "." : ""].filter(Boolean).join(" ");

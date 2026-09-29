@@ -148,7 +148,7 @@
     shot.keyTakeId = sel && sel.kind === "image" ? sel.id : images[images.length - 1].id;
     shot.takes = (shot.takes || []).filter(function (t) { return t.kind !== "image"; });
     shot.selectedTakeId = shot.takes.length ? shot.takes[shot.takes.length - 1].id : null;
-    shot.mode = "t2v"; shot.prompt = ""; shot.outputs = proj.outputs || 1; shot.duration = shot.duration || proj.duration || 5;
+    shot.mode = "t2v"; shot.prompt = ""; shot.outputs = proj.outputs || 1; shot.duration = shot.duration || proj.duration || 10;
     shot.i2v = shot.i2v && shot.i2v !== "refs" ? shot.i2v : "anchor"; shot.motion = shot.motion || "subtle";
     shot.status = shot.takes.length ? "done" : "review"; shot.errorMsg = ""; shot.remoteTasks = [];
     A.touch(proj); return true;
@@ -262,7 +262,7 @@
   A.newProject = function (name) {
     return {
       id: A.uid(), name: name || "Nouveau projet", createdAt: Date.now(), updatedAt: Date.now(),
-      styleGuide: "", negative: "", seed: "", aspect: "16:9", resolution: "1080p", duration: 5, outputs: 1, fps: 24,
+      styleGuide: "", negative: "", seed: "", aspect: "9:16", resolution: "1080p", duration: 10, outputs: 1, fps: 24,
       concurrency: 1, library: [], shots: [], montage: { items: {}, opts: {} }
     };
   };
@@ -277,8 +277,8 @@
     var maxOrder = proj.shots.reduce(function (m, s) { return Math.max(m, s.order); }, 0);
     return Object.assign({
       id: A.uid(), order: maxOrder + 1, mode: "t2v", prompt: "", negative: "",
-      aspect: proj.aspect || "16:9", resolution: proj.resolution || "1080p",
-      duration: proj.duration || 5, outputs: proj.outputs || 1, seed: "", strength: "",
+      aspect: proj.aspect || "9:16", resolution: proj.resolution || "1080p",
+      duration: proj.duration || 10, outputs: proj.outputs || 1, seed: "", strength: "",
       sourceRef: "", startRef: "", endRef: "", ingredients: [], skills: [],
       status: "idle", errorMsg: "", takes: [], selectedTakeId: null, lastRaw: null, toLibrary: null
     }, opts);
@@ -330,7 +330,7 @@
         var mode = s.kind === "image" ? "t2i" : (s.startRefId && s.endRefId ? "frames" : (s.startRefId ? "i2v" : "t2v"));
         return A.newShot({
           id: s.id, order: s.order, mode: mode, prompt: s.prompt || "", aspect: np.aspect, resolution: np.resolution,
-          duration: s.duration || 5, seed: s.seed || "", sourceRef: mode === "i2v" ? s.startRefId : "",
+          duration: s.duration || 10, seed: s.seed || "", sourceRef: mode === "i2v" ? s.startRefId : "",
           startRef: mode === "frames" ? s.startRefId : "", endRef: mode === "frames" ? s.endRefId : "",
           status: "idle"
         }, np);

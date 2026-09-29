@@ -67,7 +67,7 @@
     byId("projName").value = p.name; byId("projStyle").value = p.styleGuide || ""; byId("projNegative").value = p.negative || "";
     byId("projAspect").innerHTML = A.optionsHtml(A.ASPECTS, p.aspect);
     byId("projRes").innerHTML = A.optionsHtml(A.RESOLUTIONS, p.resolution);
-    byId("projSeed").value = p.seed || ""; byId("projDuration").value = p.duration || 5; byId("projOutputs").value = p.outputs || 1;
+    byId("projSeed").value = p.seed || ""; byId("projDuration").value = p.duration || 10; byId("projOutputs").value = p.outputs || 1;
     byId("projFps").value = p.fps || 24; byId("projConcurrency").value = p.concurrency || 1; byId("qConcurrency").value = p.concurrency || 1;
   }
   function renderStorageInfo() {
@@ -92,6 +92,12 @@
     });
     return html;
   }
+  // Image intermédiaire (facultative) : rôle Grok « Image intermédiaire » — ex. le profil de la recette « arc face → profil
+  // → face » (29/09/2026), avec la stratégie « Scène verrouillée » (la face part en « Boucle »). Utilisée par le moteur Grok.
+  function midHtml(shot, proj) {
+    return '<div class="refs-row"><select data-f="midRef" title="Grok : image montrée au milieu de la vidéo (ex. le même instant vu de profil)">' +
+      libOptions(proj, shot.midRef, false, "Image intermédiaire — aucune (Grok)") + '</select></div>';
+  }
   function skillsFor(kind) {
     return A.db.skills.filter(function (s) { return s.target === "both" || s.target === kind; });
   }
@@ -111,12 +117,13 @@
     if (m === "i2v") {
       var strat = shot.i2v || "standard", tips = {
         standard: "L'image sert de première image ; la suite est libre. À réserver aux plans où le mouvement compte plus que la fidélité.",
-        anchor: "Le rendu part de l'image et y revient : l'IA ne peut presque rien inventer. Idéal pour les dialogues et les plans où le personnage bouge peu.",
+        anchor: "Le rendu part de l'image et y revient : l'IA ne peut presque rien inventer. Idéal pour les dialogues et les plans où le personnage bouge peu. Avec Grok : l'image part en « Boucle » ; ajoutez une image intermédiaire (le même instant vu de profil) pour un arc caméra face → profil → face.",
         refs: "L'image fixe la scène, les références ci-dessous fixent le visage et la tenue des personnages (vos fiches, votre Bible)."
       };
       return '<div class="refs-row"><select data-f="sourceRef">' + libOptions(proj, shot.sourceRef, true, "Image de la scène — choisir") + '</select>' + hint + '</div>' +
         '<div class="refs-row"><select data-f="i2v" title="Comment tenir la scène">' + A.optionsHtml(A.I2V_STRATEGIES, strat) + '</select>' +
         '<select data-f="motion" title="Amplitude du mouvement">' + A.optionsHtml(A.MOTIONS, shot.motion || "subtle") + '</select></div>' +
+        midHtml(shot, proj) +
         '<p class="hint" style="margin:4px 0 0">' + esc(tips[strat]) + '</p>' +
         (strat === "refs" ? refsBlock(shot, proj) : lockHtml(shot));
     }
@@ -125,7 +132,8 @@
     }
     if (m === "frames") {
       return '<div class="refs-row"><select data-f="startRef">' + libOptions(proj, shot.startRef, true, "Première frame — choisir") + '</select>' +
-        '<select data-f="endRef">' + libOptions(proj, shot.endRef, false, "Dernière frame — choisir") + '</select>' + hint + '</div>';
+        '<select data-f="endRef">' + libOptions(proj, shot.endRef, false, "Dernière frame — choisir") + '</select>' + hint + '</div>' +
+        midHtml(shot, proj);
     }
     if (m === "frames") return lockHtml(shot);
     return A.usesRefs(m, shot) ? refsBlock(shot, proj) : "";
@@ -144,6 +152,7 @@
       (keys.length ? '<div class="takes" style="margin-top:6px">' + minis + '</div>' : '<p class="hint" style="margin:4px 0 0">Générée avec le prompt image et les références ci-dessous. Vous choisissez la meilleure, puis vous l\'animez avec le prompt vidéo.</p>') +
       '<div class="refs-row" style="margin-top:8px"><select data-f="i2v" title="Comment tenir la scène pendant l\'animation">' + A.optionsHtml(A.I2V_STRATEGIES, strat) + '</select>' +
       '<select data-f="motion" title="Amplitude du mouvement">' + A.optionsHtml(A.MOTIONS, shot.motion || "subtle") + '</select></div>' +
+      midHtml(shot, A.getProject()) +
       '<div class="row-inline" style="margin-top:8px">' +
       '<button class="small-btn" data-act="genkey"' + (busy ? " disabled" : "") + '>' + (keys.length ? "Nouvelle image" : "Générer l'image") + '</button>' +
       '<button class="small-btn" data-act="animate"' + (busy || !cur ? " disabled" : "") + '>Animer cette image →</button>' +
@@ -373,7 +382,7 @@
       A.renderShots(); return;
     }
     onFieldInput(e);
-    if (["mode", "sourceRef", "startRef", "endRef", "i2v", "imagePrompt"].indexOf(f) !== -1) A.renderShots();
+    if (["mode", "sourceRef", "startRef", "endRef", "midRef", "i2v", "imagePrompt"].indexOf(f) !== -1) A.renderShots();
   }
 
   function downloadTake(shot, take, proj) {

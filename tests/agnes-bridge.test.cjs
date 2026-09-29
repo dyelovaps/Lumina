@@ -220,3 +220,28 @@ test('Anti-doublon Grok : plan déjà en cours dans Agnes non importé ; plan d�
   await p.settle();
   eq(p.sent.map((x) => x.prompt.includes('Plan trois')), [true]);
 });
+
+test('Agnes → Grok : une scène verrouillée part avec UNE image (la même image en « Dernière image » lançait 2 vidéos)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'plugins', 'plugin-moteurs.js'), 'utf8');
+  assert.match(src, /var pair = m === "frames" \? "startEnd" : imgs\.length \? "startOnly" : "";/);
+  assert.doesNotMatch(src, /shot\.i2v === "anchor"\) \? "startEnd"/);
+});
+
+test('Agnes : nouveaux projets en 9:16 et 10 s, rien n’est mis en file sans le demander', () => {
+  const state = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'js', 'app-state.js'), 'utf8');
+  assert.match(state, /aspect: "9:16", resolution: "1080p", duration: 10,/);
+  const html = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'index.html'), 'utf8');
+  for (const id of ['batchRunNow', 's2cRunNow', 'diagKeyframe']) assert.doesNotMatch(html, new RegExp(`id="${id}" checked`));
+  assert.match(html, /id="batchDuration" min="1" max="18" value="10"/);
+});
+
+test('Agnes → Grok (recette arc 29/09/2026) : scène verrouillée = rôle « Boucle », image intermédiaire = rôle « Image intermédiaire »', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'plugins', 'plugin-moteurs.js'), 'utf8');
+  assert.match(src, /var loop = m === "i2v" && shot\.i2v === "anchor" && imgs\.length === 1;/);
+  assert.match(src, /role: loop \? "loop" : i === 1 \? "last" : "first"/);
+  assert.match(src, /role: "middle", name: "Image intermédiaire"/);
+  const ui = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'js', 'app-ui.js'), 'utf8');
+  assert.match(ui, /data-f="midRef"/);
+  const claude = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'plugins', 'plugin-claude.js'), 'utf8');
+  assert.match(claude, /x\.intermediaire/);
+});

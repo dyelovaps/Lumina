@@ -10,10 +10,13 @@ function page({ missingRole = '', confirm = true, dropUpload = false, noMenu = f
   const visibleNode = (text = '') => ({ innerText: text,
     getBoundingClientRect: () => ({ width: 160, height: 55 }),
     getAttribute: () => '', querySelector: () => null });
-  const options = ['first', 'last', 'reference'].filter(r => r !== missingRole).map(role => ({
+  const options = ['first', 'last', 'reference', 'middle', 'loop'].filter(r => r !== missingRole).map(role => ({
     ...visibleNode({ first: 'Première image\nL’image marque le début de la vidéo',
       last: 'Dernière image\nL’image marque la fin de la vidéo',
-      reference: 'Référence\nL’image sert de guide à la vidéo et ne remplace pas la première image' }[role]),
+      reference: 'Référence\nL’image sert de guide à la vidéo et ne remplace pas la première image',
+      // Libellés réels du menu Grok (capture du 29/09/2026) ; « Boucle » cite « début » et « fin » dans sa description.
+      middle: 'Image intermédiaire\nL’image apparaît au milieu de la vidéo',
+      loop: 'Boucle\nL’image marque le début et la fin de la vidéo' }[role]),
     getAttribute: attr => attr === 'aria-checked' && confirm && open?.role === role ? 'true' : '',
     click() { open.role = role; open = null; },
     dispatchEvent() { open = null; },
@@ -102,4 +105,10 @@ test('Grok without role menu: a lone scene image needs no mention', async () => 
   const { ctx } = page({ noMenu: true });
   const res = await ctx.attach([{ url: 'S', role: 'first', name: 'Scène 1' }]);
   assert.equal(res.mentions.length, 0);
+});
+
+test('Recette arc (29/09/2026) : face en « Boucle » + profil en « Image intermédiaire », sans confondre Boucle avec Première/Dernière', async () => {
+  const { ctx, thumbnails } = page();
+  await ctx.attach([{ url: 'FACE', role: 'loop', name: 'Face' }, { url: 'PROFIL', role: 'middle', name: 'Profil' }]);
+  assert.deepEqual(thumbnails.map(t => [t.src, t.role]), [['PROFIL', 'middle'], ['FACE', 'loop']]);
 });

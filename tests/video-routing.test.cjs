@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
-function scenario({ recover = true, latest = false, delayed = false, ingredients = false, initialMode = 'video' } = {}) {
+function scenario({ recover = true, latest = false, delayed = false, ingredients = false, initialMode = 'video', inForm = false, launches = 0 } = {}) {
   const events = [];
   let mode = initialMode;
   let pending = 0;
@@ -23,9 +23,20 @@ function scenario({ recover = true, latest = false, delayed = false, ingredients
   const video = node('Make a video', () => { events.push('video'); mode = 'video'; });
   const ingredient = node('Ingredients', () => events.push('ingredients'));
   const image = node('Image', () => { mode = 'image'; });
-  const generate = node('Generate', () => { events.push('generate'); generated = true; });
+  let observe = null; // faux PerformanceObserver : Grok qui lance `launches` conversations pour un envoi
+  const launch = () => observe && observe({ getEntries: () => Array.from({ length: launches },
+    () => ({ name: 'https://grok.com/rest/app-chat/conversations/new', startTime: 10 })) });
+  const generate = node('Generate', () => { events.push('generate'); generated = true; launch(); });
+  if (inForm) {
+    // Bouton « Valider » de Grok : type submit dans un formulaire (onClick + onSubmit).
+    const form = { requestSubmit: (submitter) => { events.push(submitter === generate ? 'requestSubmit' : 'requestSubmit?'); generated = true; launch(); } };
+    generate.type = 'submit';
+    generate.closest = (sel) => (sel === 'form' ? form : null);
+  }
   const context = {
     window: {}, location: { pathname: '/imagine', hash: '' }, innerHeight: 1000,
+    performance: { now: () => 0 },
+    PerformanceObserver: class { constructor(cb) { observe = cb; } observe() {} },
     chrome: { runtime: { onMessage: { addListener() {} } } },
     getComputedStyle: () => ({ visibility: 'visible', display: 'block' }),
     setTimeout(fn) {
@@ -146,4 +157,21 @@ test('Video submission uses role-aware uploads for scene plus references', async
     attachments, prompt: 'Animate', framePair: 'startOnly' });
   assert.equal(result.ok, true);
   assert.equal(context.receivedAttachments, attachments);
+});
+
+test('Bouton submit dans un formulaire : requestSubmit, jamais de clic simulé (le clic lançait 2 vidéos chez Grok)', async () => {
+  const { run, events } = scenario({ inForm: true });
+  const result = await run();
+  assert.equal(result.ok, true);
+  assert.equal(events.filter(e => e === 'requestSubmit').length, 1);
+  assert.equal(events.includes('generate'), false);
+});
+
+test('Surplus toutes conversations : 2 lancements Grok pour un envoi = 1 vidéo en trop, même invisible dans la page', async () => {
+  const { run } = scenario({ inForm: true, launches: 2 });
+  const result = await run();
+  assert.equal(result.ok, true);
+  assert.equal(result.surplus, 1);
+  const single = await scenario({ inForm: true, launches: 1 }).run();
+  assert.equal(single.surplus, 0);
 });

@@ -2,6 +2,20 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Corrections Grok du 28–30/09/2026 (testées en réel)
+
+- **Cause des vidéos en double trouvée** : le bouton « Valider » de Grok est un `submit` dans un formulaire ; un clic simulé
+  (`button.click()`) lançait **2 générations**. Lumina valide maintenant par `form.requestSubmit()` (1 seule) — vérifié en réel.
+- **Garde-fou « surplus » toutes conversations** : un `PerformanceObserver` compte les `POST /rest/app-chat/conversations/new`
+  depuis le début de l'envoi ; plus d'un = surplus (lot arrêté, Grok bloqué dans Agnes), même si la 2e vidéo part ailleurs.
+- **Toujours depuis l'accueil** : avant chaque envoi, `background.js` ramène l'onglet sur `grok.com/imagine`. Depuis la page
+  d'une ancienne vidéo (`/imagine/post/…`), l'import échouait (« Import de Scène 1 non confirmé ») **et une vidéo partait quand même**.
+- **Rôles d'image Grok** « **Boucle** » (début + fin) et « **Image intermédiaire** » ajoutés (`content.js → ROLE_RE`) ; Agnes :
+  « Scène verrouillée » = Boucle, menu « Image intermédiaire » sur les cartes (recette arc face → profil → face).
+- **Par défaut** : « 1 image = 1 clip » et « Aucune référence » dans « Par lot » (migration `soloV3`).
+- Agnes (copie `agnes/`) : nouveaux projets 9:16 / 10 s ; « Mettre en file tout de suite » décoché ; consigne du Chef :
+  une journée renvoyée remplace la précédente (relire le document avant chaque étape).
+
 ## Anti-doublon Grok (1.13.1)
 
 Une vidéo ne doit partir qu'**une fois** vers Grok, même si la page change pendant la génération.

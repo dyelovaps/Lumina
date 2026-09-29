@@ -602,7 +602,7 @@
   A.refreshBatchDefaults = function (p) {
     byId("batchAspect").innerHTML = A.optionsHtml(A.ASPECTS, p.aspect);
     byId("batchRes").innerHTML = A.optionsHtml(A.RESOLUTIONS, p.resolution);
-    byId("batchDuration").value = p.duration || 5; byId("batchOutputs").value = p.outputs || 1;
+    byId("batchDuration").value = p.duration || 10; byId("batchOutputs").value = p.outputs || 1;
     edits = {}; renderReview();
   };
 

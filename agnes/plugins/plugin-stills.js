@@ -11,7 +11,7 @@ AgnesPlugins.register("stills", {
   init: function (core) {
     var App = window.AgnesApp, esc = App.esc, self = this;
     this.core = core; this.items = []; this.sidecars = {};
-    var cfg = core.pluginSettings("stills", { aspect: "auto", duration: 5, strategy: "anchor", motion: "subtle", lock: true, order: "name", common: "", run: false });
+    var cfg = core.pluginSettings("stills", { aspect: "auto", duration: 10, strategy: "anchor", motion: "subtle", lock: true, order: "name", common: "", run: false });
     this.cfg = cfg;
 
     var view = core.ui.addTab("stills", "Stills → Clip",

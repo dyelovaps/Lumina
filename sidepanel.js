@@ -68,9 +68,10 @@ const state = {
     quality: "speed",
     resolution: "1080p",
     appendRules: true,
-    framePair: "startEnd",
-    referenceSelection: "matching",
+    framePair: "startOnly",
+    referenceSelection: "none",
     refSelV2: true,
+    soloV3: true,
     lint: true,
     cleanImage: true,
     copyComplete: false,
@@ -112,6 +113,13 @@ if (chromeApi?.storage?.local) {
         state.settings.referenceSelection = "matching";
         state.settings.refSelV2 = true;
       }
+      if (!saved.settings?.soloV3) {
+        // v3 (28/09/2026) : l'image de scène part seule. « Début + fin » avec la même image faisait lancer 2 vidéos à Grok ;
+        // les références restent possibles en les choisissant dans le menu.
+        state.settings.framePair = "startOnly";
+        state.settings.referenceSelection = "none";
+        state.settings.soloV3 = true;
+      }
       if (Array.isArray(saved.pairs) && saved.pairs.length) state.pairs = saved.pairs;
       if (Array.isArray(saved.refs)) state.refs = saved.refs;
       if (Array.isArray(saved.images)) state.images = saved.images;
@@ -121,7 +129,7 @@ if (chromeApi?.storage?.local) {
       if (Array.isArray(saved.jobs)) state.jobs = saved.jobs;
       if (Array.isArray(saved.journal)) state.journal = saved.journal;
       $("#prompts").value = state.promptText;
-      $("#reference-selection").value = state.settings.referenceSelection || "all";
+      $("#reference-selection").value = state.settings.referenceSelection || "none";
       $("#concurrent").value = String(state.settings.concurrent);
       $("#delay").value = String(state.settings.delay);
       $("#aspect").value = state.settings.aspect;

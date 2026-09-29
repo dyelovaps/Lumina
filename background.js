@@ -30,6 +30,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "SEND_TO_TAB") {
     ensureImagineTab()
       .then(async (tab) => {
+        // Nouvel envoi : toujours depuis l'accueil d'Imagine. Resté sur la page d'une ancienne vidéo (/imagine/post/…),
+        // l'image se dépose dans le formulaire de cette page et l'import n'est pas confirmé (constaté le 29/09/2026).
+        if (msg.payload?.type === "SUBMIT_PROMPT" && !isImagineHome(tab.url)) {
+          await chrome.tabs.update(tab.id, { url: IMAGINE_URL, active: true });
+          await waitForComplete(tab.id);
+        }
         const res = await sendToTab(tab.id, msg.payload);
         sendResponse(res ?? { ok: false, error: "Pas de réponse de grok.com" });
       })
@@ -111,6 +117,14 @@ async function injectContent(tabId) {
     await chrome.scripting.insertCSS({ target: { tabId }, files: ["content.css"] });
   } catch {
     /* css optional */
+  }
+}
+
+function isImagineHome(url) {
+  try {
+    return /^\/imagine\/?$/.test(new URL(url || "").pathname);
+  } catch {
+    return false;
   }
 }
 

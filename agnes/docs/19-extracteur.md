@@ -122,3 +122,10 @@ Les images sont à la **pleine résolution** de la vidéo, en **JPG** (léger) o
 3. **Script** (Whisper), puis **images**, une par plan : vous avez le découpage exact (cadrages, rythme).
 4. **✨ Convertir en prompts** avec votre consigne et votre Bible → **Le lot** → **Créer les plans**.
 5. **→ Scénario** pour les dialogues, puis **Voix** avec votre casting, et **AutoCaption** pour les sous-titres.
+
+## Transcrire pour une autre extension (01/10/2026)
+
+Extraire propose une fonction `transcribeBlob(vidéo, nom)` que d'autres extensions peuvent appeler : la vidéo s'ouvre dans
+l'onglet Extraire (session normale, script modifiable) et le texte est renvoyé à l'appelant. Le moteur est celui réglé ici
+(Whisper dans le navigateur ou API OpenAI ; pas « sous-titres »). Extraire ne dépend d'aucune autre extension.
+Exemple : le Chef de l'Atelier IA transcrit les vidéos des formations enregistrées sur l'ordinateur (voir l'Atelier IA).

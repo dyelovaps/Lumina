@@ -183,6 +183,10 @@ L'agent Marketing (dossier `Marketing_Avatar`) prépare chaque jour, pour l'avat
 
 Demandez simplement au chef : « Prépare les vidéos marketing de demain sur … ». S'il ne connaît pas encore la méthode du jour, il vous la demande (AIDA, PAS, Avant-Après-Pont, Conseil express… : les fiches actives de l'agent Marketing). Il ajoute le document **Marketing — date** (Bible de l'avatar et des décors, répliques prêtes pour la voix, lot, montage, publication), puis suit ses consignes étape par étape avec votre autorisation : Bible, Le lot, Publication, puis les générations (une carte d'abord). L'identité de l'avatar se règle une fois dans `config/avatar_profile.json` de l'agent Marketing ; tant qu'elle n'est pas remplie, le chef ne crée pas sa fiche et vous le signale.
 
+**Journée renvoyée (réécrite)** : le document « Marketing — date » est remplacé par la nouvelle version. Si les cartes de cette journée existent déjà dans le Storyboard, le chef **ne renvoie pas le lot** (ce qui créerait des cartes en double) : il demande l'autorisation de **mettre à jour les cartes existantes** (« Mettre à jour les cartes existantes #4, #5, #6 avec le LOT de … (aucune nouvelle carte) »). Les numéros lui sont donnés par l'agent Marketing (`send-chef`), qui retrouve les cartes par leur prompt image. Les prompts sont recopiés par l'app, mot pour mot : aucune réplique n'est reformulée.
+
+**Formations sur l'ordinateur** : voir [Ressources locales](#ressources-locales--vidéo--extraire--contrôle--fiche-01102026) en fin de page (transcription des vidéos avec Extraire, contrôle, fiches à valider).
+
 **Nouvelle discussion** efface la conversation avec le chef. Le travail des agents et les documents sont conservés.
 
 ---
@@ -346,3 +350,14 @@ Deux agents importés ne peuvent pas viser la même place. Un export de l'Atelie
 | Groq refuse une longue demande (limite de tokens) | Groq a peu de tokens par minute en gratuit : mettez les agents à longues entrées (bibles, scénario, storyboard) sur Gemini |
 
 Voir aussi [99 — Dépannage](99-depannage.md).
+
+## Ressources locales : vidéo → Extraire → contrôle → fiche (01/10/2026)
+
+Avec l'agent Marketing et le pont local, le Chef peut exploiter les formations enregistrées sur l'ordinateur :
+1. **marketing_ressources** : liste des formations, de leurs vidéos, et celles « à transcrire » (peu de texte, des vidéos).
+2. **transcrire_ressource** (avec votre autorisation) : la vidéo est lue par le pont, transcrite par **Extraire** (Whisper),
+   puis l'agent Marketing **contrôle la sortie** (orthographe, mots mal entendus, noms propres ; la version brute est gardée)
+   et l'ajoute à la fiche. Le texte contrôlé est aussi rangé dans les documents de l'Atelier.
+3. **marketing_extraire_fiche** (avec votre autorisation) : notions extraites ; la fiche passe « à valider » — c'est vous
+   qui validez.
+Sans l'extension Extraire, le Chef l'indique et propose d'ajouter un script exporté ailleurs ; le reste fonctionne.

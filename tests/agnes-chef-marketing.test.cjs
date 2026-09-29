@@ -37,7 +37,7 @@ function atelier({ grokBloque = '', video = 'grok', canGrok = true, reponse = {}
   P.configured = () => ['agnes'];
   P.keyOf = () => 'CLE-AGNES';
   P.baseOf = () => 'https://apihub.agnes-ai.com/v1';
-  return { P, queued, calls, docs };
+  return { P, queued, calls, docs, context };
 }
 
 test('les nouveaux outils sont déclarés et ceux qui agissent demandent une autorisation', () => {
@@ -114,4 +114,72 @@ test('pont injoignable : message clair', async () => {
   const ctxFetch = async () => { throw new Error('ECONNREFUSED'); };
   P.marketingCall = function (m, p, b) { return ctxFetch().then(null, () => { throw new Error('pont local injoignable : lancez lancer_pont.bat (prod-fruits) puis réessayez'); }); };
   await assert.rejects(P.execTool({ name: 'marketing_state', args: {} }), /lancer_pont\.bat/);
+});
+
+test('journée renvoyée : update_shots document + cartes applique le LOT aux cartes existantes, sans en créer', () => {
+  const { P, docs, context } = atelier();
+  const shots = [{ id: 's1', mode: 't2v', prompt: 'a' }, { id: 's2', mode: 't2v', prompt: 'b' }, { id: 's3', mode: 't2v', prompt: 'c' },
+    { id: 's4', mode: 't2v', prompt: 'vieux 4', imagePrompt: 'vieille image 4' }, { id: 's5', mode: 't2v', prompt: 'vieux 5' }];
+  Object.assign(context.AgnesApp, { sortedShots: () => shots, modeKind: () => 'video', renderShots() {} });
+  P.core.getProject = () => ({ shots });
+  docs.push({ name: 'Marketing — 2026-09-30', content: '# Livrable\n\n## LOT (à envoyer tel quel avec send_to_lot)\n\n```text\n' +
+    '01 — educatif · Un.\nIMAGE : image 1\nVIDÉO : « réplique 1 »\nRÉF : Anthony\n\n02 — probleme · Deux.\nIMAGE : image 2\nVIDÉO : « réplique 2 »\n```\n\n## CADRAGES\n01 — ignoré\nIMAGE : non\n' });
+  assert.deepEqual([...P.parseLot(docs[0].content).map((b) => b.video)], ['« réplique 1 »', '« réplique 2 »']);
+  assert.throws(() => P.applyLotToCards('Marketing — 2026-09-30', [4]), (e) => /2 bloc\(s\) mais 1 carte/.test(e.display));
+  assert.match(P.describe({ name: 'update_shots', args: { document: 'Marketing — 2026-09-30', cartes: [4, 5] } }), /cartes existantes #4, #5.*aucune nouvelle carte/);
+  const out = P.applyLotToCards('Marketing — 2026-09-30', [4, 5]);
+  assert.match(out, /2 carte\(s\) du Storyboard : 4, 5/);
+  assert.equal(shots.length, 5);                                              // aucune carte créée
+  assert.equal(shots[3].prompt, '« réplique 1 »');
+  assert.equal(shots[3].imagePrompt, 'image 1');
+  assert.equal(shots[4].prompt, '« réplique 2 »');
+  assert.equal(shots[0].prompt, 'a');                                         // les autres cartes ne bougent pas
+});
+
+test('règle du Chef : renvoi marketing sans doublon, et consignes des histoires (épisodes, scénario, Bible) intactes', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'plugins', 'plugin-atelier.js'), 'utf8');
+  assert.match(src, /N'UTILISE PAS send_to_lot, qui créerait des cartes en double/);
+  for (const r of ['Un seul épisode à la fois pour les étapes 5 à 15', 'confie-les à a16 (Directeur de plans)',
+    'Tu n\'écris pas toi-même le contenu créatif', 'send_to_scenario']) assert.ok(src.includes(r), r);
+});
+
+test('ressources locales : sans Extraire, le Chef le dit et rien ne casse', async () => {
+  const { P, calls } = atelier();
+  assert.equal(P.NEEDS_AUTH.transcrire_ressource, true);
+  assert.equal(P.NEEDS_AUTH.marketing_extraire_fiche, true);
+  assert.ok(!P.NEEDS_AUTH.marketing_ressources);
+  const out = await P.execTool({ name: 'transcrire_ressource', args: { fiche: 'la-methode-aida', video: 0 } });
+  assert.match(out, /Extraire n'est pas active/);
+  assert.equal(calls.length, 0);                                   // aucun appel au pont
+});
+
+test('ressources locales : vidéo du pont → Extraire (Whisper) → contrôle → fiche + document de l’Atelier', async () => {
+  const { P, context } = atelier();
+  const plugins = {};
+  const posted = [];
+  const fakeEx = { transcribeBlob: async (blob, name) => ({ text: 'la methode aida commence par attirer l attention du prospect', segments: [], name }) };
+  context.AgnesPlugins.get = (id) => (id === 'extracteur' ? fakeEx : plugins[id]);
+  context.AgnesApp.uid = () => 'u1';
+  context.fetch = async (url, init) => {
+    if (url.includes('/marketing/ressource-video')) return { ok: true, blob: async () => ({ size: 10 }) };
+    posted.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ fiche: 'la-methode-aida', mots: 10, mots_sources: 900, controle: true, par: 'Codex',
+      corriges: 1, morceaux: 1, gardes_bruts: 0, texte_controle: 'La méthode AIDA commence par attirer l’attention du prospect.' }) };
+  };
+  const out = await P.execTool({ name: 'transcrire_ressource', args: { fiche: 'la-methode-aida', video: 1 } });
+  assert.match(out, /contrôlée par Codex/);
+  assert.equal(posted.length, 1);
+  assert.match(posted[0].url, /\/marketing\/transcription$/);
+  assert.equal(posted[0].body.fiche, 'la-methode-aida');
+  assert.match(posted[0].body.texte, /methode aida/);
+  const saved = P.project().docs;                                   // addDoc(…, replace) remplace la liste
+  assert.equal(saved.length, 1);
+  assert.match(saved[0].name, /Transcription — la-methode-aida \(vidéo 1\)/);
+});
+
+test('Extraire expose transcribeBlob sans dépendre de l’Atelier', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'plugins', 'plugin-extract.js'), 'utf8');
+  const body = src.slice(src.indexOf('transcribeBlob: function'), src.indexOf('WHISPER_DIR'));
+  assert.ok(body.length > 50);
+  assert.ok(!/AgnesPlugins\.get\("atelier"\)/.test(body));
 });

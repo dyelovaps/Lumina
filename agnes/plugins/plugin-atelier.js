@@ -474,6 +474,34 @@ AgnesPlugins.register("atelier", {
     });
     return out;
   },
+  // Blocs d'un script numéroté « 01 — libellé / IMAGE : / VIDÉO : » (section LOT d'un document si elle existe) → [{ image, video }]
+  parseLot: function (text) {
+    var t = String(text || "").replace(/\r/g, ""), out = [], i = t.search(/^#+[ \t]*LOT\b/m);
+    if (i !== -1) { t = t.slice(i).replace(/^[^\n]*\n/, ""); var fin = t.search(/^#+[ \t]/m); if (fin !== -1) t = t.slice(0, fin); }
+    t.replace(/```[a-z]*/gi, "").split(/\n(?=[ \t]*\d{1,4}[ \t]*[—–-])/).forEach(function (b) {
+      b = b.replace(/^\n+/, "");
+      if (!/^[ \t]*\d{1,4}[ \t]*[—–-]/.test(b)) return;
+      var x = {}, cur = null;
+      b.split("\n").slice(1).forEach(function (line) {
+        var h = line.match(/^[ \t*]*(IMAGE|VID[ÉE]O|R[ÉE]F)[ \t*]*:[ \t]*(.*)$/i);
+        if (h) { cur = /^image$/i.test(h[1]) ? "image" : /^r/i.test(h[1]) ? null : "video"; if (cur) x[cur] = h[2]; }
+        else if (cur && line.trim()) x[cur] += "\n" + line;
+      });
+      if (x.image || x.video) out.push({ image: (x.image || "").trim() || null, video: (x.video || "").trim() || null });
+    });
+    return out;
+  },
+  // Journée renvoyée : les blocs du LOT d'un document remplacent, dans l'ordre, les prompts des cartes EXISTANTES indiquées
+  // (aucune carte créée ; les prompts ne passent pas par le modèle, donc aucune réplique reformulée)
+  applyLotToCards: function (name, cartes) {
+    var q = String(name || "").toLowerCase(), docs = this.project().docs || [];
+    var d = docs.find(function (x) { return x.name.toLowerCase() === q; }) || docs.find(function (x) { return x.name.toLowerCase().indexOf(q) !== -1; });
+    if (!d) throw { display: "Document « " + name + " » introuvable." };
+    var blocs = this.parseLot(d.content), nums = (cartes || []).map(Number).filter(function (n) { return n > 0; });
+    if (!blocs.length) throw { display: "Aucun bloc « 01 — … / IMAGE : / VIDÉO : » dans « " + d.name + " »." };
+    if (nums.length !== blocs.length) throw { display: "Le LOT de « " + d.name + " » a " + blocs.length + " bloc(s) mais " + nums.length + " carte(s) indiquée(s) : donne un numéro de carte par bloc (get_storyboard)." };
+    return this.applyPlans(blocs.map(function (b, i) { return { plan: nums[i], image: b.image, video: b.video }; }));
+  },
   // Écrit les prompts dans les cartes (numéros du Storyboard) ; les mentions @[Nom] cochent les références
   applyPlans: function (plans) {
     var A = window.AgnesApp, p = this.core.getProject(), shots = A.sortedShots(p), done = [], miss = [];
@@ -623,8 +651,10 @@ AgnesPlugins.register("atelier", {
       parameters: { type: "object", properties: { script: { type: "string" } }, required: ["script"] } } },
     { type: "function", function: { name: "get_storyboard", description: "Lit les cartes du Storyboard : numéro, mode, format, prompts actuels, références et skills cochés (lecture seule, sans autorisation).",
       parameters: { type: "object", properties: {} } } },
-    { type: "function", function: { name: "update_shots", description: "Écrit les prompts dans les cartes du Storyboard. Le plus sûr : agent_id = l'agent qui a produit des blocs « PLAN n / IMAGE : / VIDÉO : » (ex. a16), appliqués tels quels. Sinon plans = liste explicite. Nécessite l'autorisation.",
+    { type: "function", function: { name: "update_shots", description: "Écrit les prompts dans les cartes du Storyboard. Le plus sûr : agent_id = l'agent qui a produit des blocs « PLAN n / IMAGE : / VIDÉO : » (ex. a16), appliqués tels quels. Journée ou lot RENVOYÉ dont les cartes existent déjà : document + cartes (blocs 01, 02… du LOT du document appliqués tels quels aux cartes indiquées, dans l'ordre, sans en créer). Sinon plans = liste explicite. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { agent_id: { type: "string", description: "Agent dont le travail contient les blocs PLAN (ex. a16)" },
+        document: { type: "string", description: "Nom du document dont le LOT (blocs « 01 — … / IMAGE : / VIDÉO : ») remplace les prompts des cartes existantes" },
+        cartes: { type: "array", items: { type: "number" }, description: "Numéros des cartes existantes à mettre à jour, dans l'ordre des blocs du LOT (ex. [4, 5, 6])" },
         plans: { type: "array", items: { type: "object", properties: { plan: { type: "number", description: "Numéro de la carte (#N)" }, image_prompt: { type: "string" }, video_prompt: { type: "string" } }, required: ["plan"] } } } } } },
     { type: "function", function: { name: "create_agent", description: "Crée un nouvel agent dans l'équipe quand aucun agent existant ne convient. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { name: { type: "string" }, desc: { type: "string", description: "Rôle en une phrase" },
@@ -648,7 +678,13 @@ AgnesPlugins.register("atelier", {
     { type: "function", function: { name: "marketing_get_day", description: "Agent Marketing : (re)met le livrable d'une journée déjà préparée dans les documents de l'Atelier. Sans autorisation.",
       parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } },
     { type: "function", function: { name: "marketing_validate", description: "Agent Marketing : revalide les 3 vidéos d'une journée (durée, CTA, doublons…). Lecture et contrôle, sans autorisation.",
-      parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } }
+      parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } },
+    { type: "function", function: { name: "marketing_ressources", description: "Agent Marketing : formations enregistrées sur l'ordinateur (ressources locales), statut de leur fiche, vidéos disponibles ; « à transcrire » = trop peu de texte mais des vidéos. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: { seulement_a_transcrire: { type: "boolean" } } } } },
+    { type: "function", function: { name: "transcrire_ressource", description: "Transcrit la vidéo n°i d'une formation avec l'extension Extraire (Whisper), puis l'agent Marketing CONTRÔLE la sortie (orthographe, mots mal entendus, noms propres ; version brute gardée) et l'ajoute à la fiche. Le texte contrôlé est aussi rangé dans les documents de l'Atelier. Nécessite l'autorisation et l'extension Extraire.",
+      parameters: { type: "object", properties: { fiche: { type: "string", description: "identifiant de la formation (marketing_ressources)" }, video: { type: "number", description: "numéro i de la vidéo (0 = première)" } }, required: ["fiche"] } } },
+    { type: "function", function: { name: "marketing_extraire_fiche", description: "Agent Marketing : extrait les notions d'une formation (documents + transcriptions). La fiche passe « à valider » : seule l'utilisatrice la valide. Refusé si la fiche a déjà des notions, sauf ecraser (copie gardée). Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { fiche: { type: "string" }, ecraser: { type: "boolean" } }, required: ["fiche"] } } }
   ],
   managerSystem: function () {
     var self = this, st = this.project();
@@ -672,6 +708,9 @@ AgnesPlugins.register("atelier", {
       "- Générations (generate_shots) : annonce le nombre de cartes, l'étape et les moteurs (quotas) ; une carte d'abord pour un nouveau style ou personnage, fais valider, puis les autres ; vidéos seulement quand les images sont validées. Grok sert uniquement à la vidéo ; si Grok est bloqué, arrête et préviens l'utilisateur.\n" +
       "- Vidéos d'avatar pour les réseaux (marketing) : utilise les outils marketing_* (agent Marketing branché par le pont local). Avant marketing_generate_day, si l'utilisateur n'a pas choisi la méthode du jour, lis marketing_state et demande-lui : « Qu'est-ce qu'on fait aujourd'hui : AIDA, PAS… ? » en citant les fiches actives. marketing_generate_day dépose un document « Marketing — date » : lis-le avec get_document et suis ses CONSIGNES POUR LE CHEF dans l'ordre, une étape à la fois. Ne reformule jamais les répliques d'un livrable marketing. " +
       "Une journée peut être RENVOYÉE après réécriture (même nom de document) : la dernière version remplace entièrement la précédente. " +
+      "Si les cartes de cette journée existent déjà dans le Storyboard (la consigne donne leurs numéros ; sinon get_storyboard), N'UTILISE PAS send_to_lot, qui créerait des cartes en double : " +
+      "l'étape Le lot devient update_shots avec document (nom du document) et cartes (leurs numéros, dans l'ordre 01, 02, 03). Ne crée de nouvelles cartes qu'avec l'accord explicite de l'utilisateur. " +
+      "Ressources locales (formations sur l'ordinateur) : marketing_ressources pour voir les formations « à transcrire », transcrire_ressource (une vidéo à la fois : Extraire → Whisper, puis contrôle de la sortie par l'agent Marketing), puis marketing_extraire_fiche ; ne valide jamais une fiche toi-même : c'est l'utilisateur qui valide. " +
       "Avant chaque étape (Bible, Le lot, publication, générations), relis le document avec get_document et ne reprends JAMAIS un sujet, un lieu, " +
       "une tenue ou une réplique d'une version lue plus tôt dans la conversation ; en cas de doute, relis-le et cite le sujet et les lieux lus.\n\n" +
       "ÉQUIPE ET ÉTAT\n" + team + "\n\nAPP\nProjet : " + (p ? p.name : "?") + " · " + (p ? p.shots.length : 0) + " plan(s) dans le Storyboard\n" +
@@ -753,7 +792,7 @@ AgnesPlugins.register("atelier", {
     });
   },
   NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true,
-    generate_shots: true, marketing_veille: true, marketing_generate_day: true },
+    generate_shots: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true },
   handleCalls: function (calls, depth) {
     var self = this, st = this.project(), results = [];
     function next(i) {
@@ -789,6 +828,7 @@ AgnesPlugins.register("atelier", {
       case "set_publication": return "Remplir la fiche Publication";
       case "get_storyboard": return "Lire les cartes du Storyboard";
       case "update_shots": {
+        if (a.document) return "Mettre à jour les cartes existantes " + (a.cartes || []).map(function (x) { return "#" + x; }).join(", ") + " avec le LOT de « " + a.document + " » (aucune nouvelle carte)";
         var n = a.agent_id ? this.parsePlans(this.outputOf(a.agent_id)).length : (a.plans || []).length;
         return "Écrire les prompts de " + n + " carte(s) du Storyboard" + (ag ? " (travail de « " + ag.name + " »)" : "");
       }
@@ -799,6 +839,9 @@ AgnesPlugins.register("atelier", {
       case "marketing_generate_day": return "Agent Marketing : préparer les 3 vidéos du " + (a.date || "jour") + " — méthode " + (a.methode || "par défaut") + (a.topic ? " — sujet « " + a.topic + " »" : "") + " (écrites avec " + this.marketingModelLabel() + ")";
       case "marketing_get_day": return "Agent Marketing : reprendre le livrable du " + (a.date || "?");
       case "marketing_validate": return "Agent Marketing : revalider la journée du " + (a.date || "?");
+      case "marketing_ressources": return "Lire les ressources locales (formations et vidéos)";
+      case "transcrire_ressource": return "Transcrire la vidéo n°" + (a.video || 0) + " de « " + (a.fiche || "?") + " » (Extraire → Whisper), puis contrôle et ajout à la fiche";
+      case "marketing_extraire_fiche": return "Agent Marketing : extraire les notions de « " + (a.fiche || "?") + " »" + (a.ecraser ? " (en remplaçant les notions actuelles, copie gardée)" : "") + " — fiche à valider ensuite";
       default: return c.name;
     }
   },
@@ -818,6 +861,7 @@ AgnesPlugins.register("atelier", {
       case "set_publication": return this.toPublication(a);
       case "get_storyboard": return this.storyboardText();
       case "update_shots": {
+        if (a.document) return this.applyLotToCards(a.document, a.cartes);
         var plans = a.agent_id ? this.parsePlans(this.outputOf(a.agent_id)) : a.plans;
         if (!plans || !plans.length) return "Aucun bloc « PLAN n » trouvé" + (a.agent_id ? " dans le travail de " + a.agent_id : "") + ".";
         return this.applyPlans(plans);
@@ -840,6 +884,18 @@ AgnesPlugins.register("atelier", {
         return "Journée " + d.date + " : " + (d.pret ? "toutes prêtes" : "à corriger") + "\n" + d.videos.map(function (v) {
           return "- " + v.type + " · " + v.statut + " · score " + v.score + (v.erreurs.length ? " · " + v.erreurs.join(" ; ") : "");
         }).join("\n");
+      });
+      case "marketing_ressources": return this.marketingCall("GET", "/marketing/ressources").then(function (d) {
+        var list = d.formations.filter(function (f) { return !a.seulement_a_transcrire || f.a_transcrire; });
+        return d.a_transcrire + " formation(s) à transcrire sur " + d.formations.length + ".\n" + list.map(function (f) {
+          return "- " + f.fiche + " · " + f.titre + " · " + f.statut + " · " + f.mots + " mots" + (f.a_transcrire ? " · À TRANSCRIRE" : "") +
+            (f.videos.length ? " · vidéos : " + f.videos.map(function (v) { return v.i + "=" + v.nom + (v.mo ? " (" + v.mo + " Mo)" : ""); }).join(", ") : "");
+        }).join("\n");
+      });
+      case "transcrire_ressource": return this.transcribeResource(a);
+      case "marketing_extraire_fiche": return this.marketingCall("POST", "/marketing/extraire", { fiche: a.fiche, ecraser: !!a.ecraser }).then(function (d) {
+        return "Fiche « " + d.fiche + " » : " + d.notions + " notion(s), " + d.blocages + " blocage(s) du garde-fou, statut " + d.statut +
+          " (l'utilisatrice valide).\n" + d.apercu.map(function (x) { return "- " + x; }).join("\n");
       });
     }
     return "Outil inconnu.";
@@ -895,6 +951,29 @@ AgnesPlugins.register("atelier", {
     return fetch(this.pont() + path, init).then(function (r) {
       return r.json().then(function (j) { if (!r.ok || j.error) throw new Error(j.error || "HTTP " + r.status); return j; });
     }, function () { throw new Error("pont local injoignable : lancez lancer_pont.bat (prod-fruits) puis réessayez"); });
+  },
+  // 01/10 — Ressource locale : vidéo (pont) → Extraire (Whisper) → contrôle par l'agent Marketing → fiche + document.
+  // Extraire est facultative : sans elle, message clair et rien d'autre ne casse.
+  transcribeResource: function (a) {
+    var self = this, ex = window.AgnesPlugins && AgnesPlugins.get("extracteur");
+    if (!ex || !ex.transcribeBlob) return Promise.resolve("Transcription impossible : l'extension Extraire n'est pas active (⚙ → Extensions). " +
+      "Autre solution : exporter le script depuis une autre application puis « python -m content_agent connaissances ajouter-source " + (a.fiche || "<fiche>") + " --fichier script.txt ».");
+    var i = Math.max(0, parseInt(a.video, 10) || 0), url = this.pont() + "/marketing/ressource-video?fiche=" + encodeURIComponent(a.fiche || "") + "&i=" + i;
+    return fetch(url).then(function (r) {
+      if (!r.ok) return r.json().then(function (j) { throw new Error(j.error || "HTTP " + r.status); }, function () { throw new Error("HTTP " + r.status); });
+      return r.blob();
+    }, function () { throw new Error("pont local injoignable : lancez lancer_pont.bat (prod-fruits) puis réessayez"); })
+      .then(function (blob) { return ex.transcribeBlob(blob, (a.fiche || "video") + "-" + i + ".mp4"); })
+      .then(function (r) {
+        if (!r.text || r.text.split(/\s+/).length < 5) throw new Error("aucune parole détectée dans cette vidéo");
+        return self.marketingCall("POST", "/marketing/transcription", { fiche: a.fiche, texte: r.text, nom: (a.fiche || "video") + "-video-" + i });
+      })
+      .then(function (d) {
+        self.addDoc("Transcription — " + d.fiche + " (vidéo " + i + ")", d.texte_controle, "Extraire + contrôle", true);
+        return "Transcription ajoutée à la fiche « " + d.fiche + " » : " + d.mots + " mots" +
+          (d.controle ? " (contrôlée par " + d.par + " : " + d.corriges + "/" + d.morceaux + " morceau(x) corrigé(s), " + d.gardes_bruts + " gardé(s) brut(s) ; version brute conservée)" : " (sans contrôle)") +
+          ". Sources de la fiche : " + d.mots_sources + " mots. Texte rangé dans les documents de l'Atelier. Étape suivante possible : marketing_extraire_fiche.";
+      });
   },
   marketingDay: function (a) {
     var self = this, body = { methode: a.methode, date: a.date, topic: a.topic, audience: a.audience, offer: a.offer, objective: a.objective,

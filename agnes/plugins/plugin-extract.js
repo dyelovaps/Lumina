@@ -414,19 +414,39 @@ AgnesPlugins.register("extracteur", {
     }).then(function (r) { return r.getChannelData(0); });
   },
   transcribe: function () {
-    var self = this, core = this.core, cfg = this.cfg, st = this.$("exTStatus"), btn = this.$("exTranscribe");
+    var core = this.core, st = this.$("exTStatus"), btn = this.$("exTranscribe");
     if (!this.video) return core.toast("Choisissez d'abord une vidéo (étape 2).", "err");
-    btn.disabled = true; st.textContent = "Lecture du son…";
-    var job = this.audio16k().then(function (pcm) {
-      if (pcm.length < 16000 * 0.5) throw new Error("piste audio vide");
-      return cfg.engine === "openai" ? self.openaiTranscribe(pcm, st) : self.localTranscribe(pcm, st);
-    });
-    job.then(function (segs) {
-      self.segments = segs.filter(function (s) { return s.text && s.text.trim(); });
-      self.showScript(); st.textContent = self.segments.length ? "Terminé — " + self.segments.length + " passage(s)." : "Aucune parole détectée.";
-      self.saveSegments();
+    btn.disabled = true;
+    this.runTranscription().then(function (r) {
+      st.textContent = r.segments.length ? "Terminé — " + r.segments.length + " passage(s)." : "Aucune parole détectée.";
     }).catch(function (e) { st.textContent = ""; core.toast("Transcription : " + (e.message || e), "err"); })
       .finally(function () { btn.disabled = false; });
+  },
+  // Transcription de la source courante (moteur réglé : Whisper local, OpenAI) → segments affichés et enregistrés
+  runTranscription: function () {
+    var self = this, cfg = this.cfg, st = this.$("exTStatus");
+    st.textContent = "Lecture du son…";
+    return this.audio16k().then(function (pcm) {
+      if (pcm.length < 16000 * 0.5) throw new Error("piste audio vide");
+      return cfg.engine === "openai" ? self.openaiTranscribe(pcm, st) : self.localTranscribe(pcm, st);
+    }).then(function (segs) {
+      self.segments = segs.filter(function (s) { return s.text && s.text.trim(); });
+      self.showScript(); self.saveSegments();
+      // texte brut (quel que soit le format affiché : texte, timecodes ou .srt), paragraphes aux pauses de plus de 1,2 s
+      var text = self.segments.map(function (s, i) {
+        var gap = i ? s.start - self.segments[i - 1].end : 0; return (gap > 1.2 ? "\n\n" : " ") + s.text.trim();
+      }).join("").trim();
+      return { segments: self.segments.slice(), text: text };
+    });
+  },
+  // 01/10 — API pour les autres extensions (ex. le Chef de l'Atelier IA, ressources locales de l'agent Marketing) :
+  // transcrit une vidéo donnée et renvoie { text, segments }. Elle apparaît aussi dans l'onglet Extraire (session
+  // normale, script modifiable). Extraire ne dépend d'aucune autre extension : c'est l'appelant qui vérifie qu'elle est active.
+  transcribeBlob: function (blob, name) {
+    if (!blob || !blob.size) return Promise.reject(new Error("vidéo vide"));
+    if (this.cfg.engine === "subs") return Promise.reject(new Error("moteur « sous-titres » choisi dans Extraire : choisissez Whisper ou OpenAI"));
+    this.resetView(); this.setSource(blob, name || "vidéo");
+    return this.runTranscription();
   },
   // Moteur Whisper : copie locale (vendor/transformers, identique à jsDelivr) dès qu'Agnes est servie (extension Lumina,
   // localhost, Live Server) ; en fichier (file://) Chrome refuse d'importer un module local : on garde le CDN.

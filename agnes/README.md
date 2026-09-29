@@ -199,6 +199,11 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
 
 ## Nouveautés
 
+### 3.11 — octobre 2026
+- **Atelier IA — journée renvoyée sans doublon** ([21 §5](docs/21-atelier.md)) : quand une journée marketing est réécrite puis renvoyée, le Chef **met à jour les cartes existantes** (outil `update_shots` avec le document et les numéros de cartes ; les prompts sont recopiés par l'app, pas retapés par le modèle) au lieu d'en créer de nouvelles.
+- **Atelier IA — ressources locales** ([21](docs/21-atelier.md)) : le Chef liste les formations enregistrées sur l'ordinateur, fait **transcrire** une vidéo par Extraire, l'agent Marketing **contrôle la transcription** (orthographe, mots mal entendus, noms propres ; version brute gardée) et l'ajoute à la fiche, puis les notions sont extraites — fiche à valider par vous. Chaque étape qui modifie quelque chose demande votre accord.
+- **Extraire** ([19](docs/19-extracteur.md)) : fonction `transcribeBlob` utilisable par les autres extensions (la vidéo s'ouvre aussi dans l'onglet Extraire). Extraire reste indépendante : sans Atelier IA elle fonctionne comme avant, et sans Extraire le Chef le signale sans bloquer le reste.
+
 ### 3.10 — septembre 2026
 - **Atelier IA — prompt parfait** ([21](docs/21-atelier.md)) : agent 16 *Directeur de plans* (angle, place de chaque personnage dans l'image, règles France, mentions @ et #) ; le Chef lit le Storyboard, écrit les prompts dans les cartes et peut **créer de nouveaux agents**, toujours avec votre accord.
 - **Mentions @ et #** ([25](docs/25-mentions.md)) : `@[Nom]` (ou clic sur une pastille de référence) coche la référence ; `#[Skill]` insère le skill à cet endroit du prompt ; liste de suggestions.

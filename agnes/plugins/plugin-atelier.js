@@ -683,6 +683,8 @@ AgnesPlugins.register("atelier", {
       parameters: { type: "object", properties: { seulement_a_transcrire: { type: "boolean" } } } } },
     { type: "function", function: { name: "transcrire_ressource", description: "Transcrit la vidéo n°i d'une formation avec l'extension Extraire (Whisper), puis l'agent Marketing CONTRÔLE la sortie (orthographe, mots mal entendus, noms propres ; version brute gardée) et l'ajoute à la fiche. Le texte contrôlé est aussi rangé dans les documents de l'Atelier. Nécessite l'autorisation et l'extension Extraire.",
       parameters: { type: "object", properties: { fiche: { type: "string", description: "identifiant de la formation (marketing_ressources)" }, video: { type: "number", description: "numéro i de la vidéo (0 = première)" } }, required: ["fiche"] } } },
+    { type: "function", function: { name: "marketing_recherche_sujet", description: "Agent Marketing : cherche sur internet un sujet absent des ressources locales et de la veille (recherche web de Codex, Hacker News, Reddit ; pages hors sujet écartées), crée la fiche « web-… » et en extrait les notions. La fiche reste « à valider » par l'utilisatrice. Prend 1 à 3 minutes. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { sujet: { type: "string" }, forums: { type: "boolean", description: "inclure Hacker News et Reddit (témoignages) ; défaut oui" } }, required: ["sujet"] } } },
     { type: "function", function: { name: "marketing_extraire_fiche", description: "Agent Marketing : extrait les notions d'une formation (documents + transcriptions). La fiche passe « à valider » : seule l'utilisatrice la valide. Refusé si la fiche a déjà des notions, sauf ecraser (copie gardée). Nécessite l'autorisation.",
       parameters: { type: "object", properties: { fiche: { type: "string" }, ecraser: { type: "boolean" } }, required: ["fiche"] } } }
   ],
@@ -711,6 +713,7 @@ AgnesPlugins.register("atelier", {
       "Si les cartes de cette journée existent déjà dans le Storyboard (la consigne donne leurs numéros ; sinon get_storyboard), N'UTILISE PAS send_to_lot, qui créerait des cartes en double : " +
       "l'étape Le lot devient update_shots avec document (nom du document) et cartes (leurs numéros, dans l'ordre 01, 02, 03). Ne crée de nouvelles cartes qu'avec l'accord explicite de l'utilisateur. " +
       "Ressources locales (formations sur l'ordinateur) : marketing_ressources pour voir les formations « à transcrire », transcrire_ressource (une vidéo à la fois : Extraire → Whisper, puis contrôle de la sortie par l'agent Marketing), puis marketing_extraire_fiche ; ne valide jamais une fiche toi-même : c'est l'utilisateur qui valide. " +
+      "Sujet absent des ressources et de la veille : marketing_recherche_sujet (internet, forums = témoignages, fiche à valider). " +
       "Avant chaque étape (Bible, Le lot, publication, générations), relis le document avec get_document et ne reprends JAMAIS un sujet, un lieu, " +
       "une tenue ou une réplique d'une version lue plus tôt dans la conversation ; en cas de doute, relis-le et cite le sujet et les lieux lus.\n\n" +
       "ÉQUIPE ET ÉTAT\n" + team + "\n\nAPP\nProjet : " + (p ? p.name : "?") + " · " + (p ? p.shots.length : 0) + " plan(s) dans le Storyboard\n" +
@@ -792,7 +795,7 @@ AgnesPlugins.register("atelier", {
     });
   },
   NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true,
-    generate_shots: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true },
+    generate_shots: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true, marketing_recherche_sujet: true },
   handleCalls: function (calls, depth) {
     var self = this, st = this.project(), results = [];
     function next(i) {
@@ -841,6 +844,7 @@ AgnesPlugins.register("atelier", {
       case "marketing_validate": return "Agent Marketing : revalider la journée du " + (a.date || "?");
       case "marketing_ressources": return "Lire les ressources locales (formations et vidéos)";
       case "transcrire_ressource": return "Transcrire la vidéo n°" + (a.video || 0) + " de « " + (a.fiche || "?") + " » (Extraire → Whisper), puis contrôle et ajout à la fiche";
+      case "marketing_recherche_sujet": return "Agent Marketing : chercher « " + (a.sujet || "?") + " » sur internet" + (a.forums === false ? "" : " (avec Hacker News et Reddit)") + ", puis fiche à valider";
       case "marketing_extraire_fiche": return "Agent Marketing : extraire les notions de « " + (a.fiche || "?") + " »" + (a.ecraser ? " (en remplaçant les notions actuelles, copie gardée)" : "") + " — fiche à valider ensuite";
       default: return c.name;
     }
@@ -893,6 +897,14 @@ AgnesPlugins.register("atelier", {
         }).join("\n");
       });
       case "transcrire_ressource": return this.transcribeResource(a);
+      case "marketing_recherche_sujet": return this.marketingCall("POST", "/marketing/recherche", { sujet: a.sujet, forums: a.forums !== false }).then(function (d) {
+        var e = d.extraction || {};
+        return "Fiche « " + d.fiche + " » : " + d.sources.length + " source(s) trouvée(s) par " + d.par + " (" + d.mots + " mots)\n" +
+          d.sources.map(function (s) { return "- [" + s.type + "] " + s.url; }).join("\n") +
+          (d.notes.length ? "\nÉcartées / remarques : " + d.notes.join(" ; ") : "") +
+          (e.erreur ? "\nExtraction : " + e.erreur : "\nNotions (" + e.notions + ", " + e.blocages + " blocage(s)) — fiche à valider par l'utilisatrice :\n" +
+            (e.apercu || []).map(function (x) { return "- " + x; }).join("\n"));
+      });
       case "marketing_extraire_fiche": return this.marketingCall("POST", "/marketing/extraire", { fiche: a.fiche, ecraser: !!a.ecraser }).then(function (d) {
         return "Fiche « " + d.fiche + " » : " + d.notions + " notion(s), " + d.blocages + " blocage(s) du garde-fou, statut " + d.statut +
           " (l'utilisatrice valide).\n" + d.apercu.map(function (x) { return "- " + x; }).join("\n");

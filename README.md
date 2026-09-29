@@ -10,6 +10,7 @@ Copie `agnes/` mise à jour depuis Agnes_production (`npm run sync:agnes`) :
 - **Ressources locales** : outils du Chef `marketing_ressources`, `transcrire_ressource` (vidéo servie par le pont →
   Extraire/Whisper → contrôle de la transcription par l'agent Marketing → fiche + document) et `marketing_extraire_fiche`.
 - **Extraire** : API `transcribeBlob(blob, nom)` sans dépendance ; le Chef affiche un message si Extraire est désactivée.
+- **Sujet cherché sur internet** : outil du Chef `marketing_recherche_sujet` (Codex, Hacker News, Reddit → fiche à valider).
 - Consignes du Chef : seules les règles marketing ont changé (un test vérifie que celles des histoires sont intactes).
 - Tests : `tests/agnes-chef-marketing.test.cjs` (renvoi, ressources avec et sans Extraire). Après mise à jour : relancer le
   pont (`lancer_pont.bat`), ↻ sur Lumina, F5 dans Agnes.

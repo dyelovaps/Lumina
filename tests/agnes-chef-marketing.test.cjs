@@ -183,3 +183,18 @@ test('Extraire expose transcribeBlob sans dépendre de l’Atelier', () => {
   assert.ok(body.length > 50);
   assert.ok(!/AgnesPlugins\.get\("atelier"\)/.test(body));
 });
+
+test('recherche d’un sujet sur internet : outil du Chef avec autorisation, résultat lisible', async () => {
+  const { P, context } = atelier();
+  assert.equal(P.NEEDS_AUTH.marketing_recherche_sujet, true);
+  assert.match(P.describe({ name: 'marketing_recherche_sujet', args: { sujet: 'prix psychologique' } }), /chercher « prix psychologique » sur internet/);
+  let body = null;
+  context.fetch = async (url, init) => { body = JSON.parse(init.body); return { ok: true, json: async () => ({ fiche: 'web-prix-psychologique', par: 'Codex (defaut)', mots: 8000,
+    sources: [{ type: 'article', url: 'https://ex.fr/prix' }], notes: ['page hors sujet écartée : https://ex.fr/crm'],
+    extraction: { notions: 2, blocages: 0, apercu: ['le prix en 9 : … → … → …'] } }) }; };
+  const out = await P.execTool({ name: 'marketing_recherche_sujet', args: { sujet: 'prix psychologique' } });
+  assert.deepEqual({ ...body }, { sujet: 'prix psychologique', forums: true });
+  assert.match(out, /web-prix-psychologique/);
+  assert.match(out, /à valider par l'utilisatrice/);
+  assert.match(out, /hors sujet écartée/);
+});

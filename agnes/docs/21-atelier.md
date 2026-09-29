@@ -361,3 +361,11 @@ Avec l'agent Marketing et le pont local, le Chef peut exploiter les formations e
 3. **marketing_extraire_fiche** (avec votre autorisation) : notions extraites ; la fiche passe « à valider » — c'est vous
    qui validez.
 Sans l'extension Extraire, le Chef l'indique et propose d'ajouter un script exporté ailleurs ; le reste fonctionne.
+
+### Sujet cherché sur internet (01/10/2026)
+Pour un sujet qui n'est ni dans vos formations ni dans la veille, demandez au chef : « Cherche le sujet … sur internet ».
+**marketing_recherche_sujet** (avec votre autorisation, 1 à 3 minutes) : la recherche internet de Codex (abonnement ChatGPT)
+trouve 4 à 6 pages fiables, Hacker News et Reddit apportent des témoignages (jamais présentés comme des faits), les pages
+hors sujet sont écartées. Une fiche « web-… » est créée avec les liens des sources, ses notions sont extraites et contrôlées
+(chaque notion doit citer un passage des pages ; aucun chiffre inventé). **Vous validez la fiche** avant qu'Anthony s'en serve.
+Sans Codex : Google Actualités (France et États-Unis) en secours.

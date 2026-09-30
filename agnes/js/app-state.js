@@ -23,7 +23,7 @@
   // Qui a fabriqué une prise ? (source posée par l'extension Moteurs ou par Lumina ; anciennes prises : Agnes si en ligne)
   A.engineOf = function (take) {
     var s = take && take.source;
-    return s === "chatgpt" ? "ChatGPT" : s === "grok" ? "Grok" : s === "agnes" ? "Agnes" : take && take.remoteUrl ? "Agnes" : take && take.local && !s ? "" : "Agnes";
+    return s === "chatgpt" ? "ChatGPT" : s === "grok" ? "Grok" : s === "flow" ? "Flow" : s === "agnes" ? "Agnes" : take && take.remoteUrl ? "Agnes" : take && take.local && !s ? "" : "Agnes";
   };
   // Badge « moteur de la prochaine génération » en tête de carte (fourni par l'extension Moteurs)
   A.cardEngineBadge = function (shot) { return ""; };

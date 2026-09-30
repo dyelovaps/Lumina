@@ -162,7 +162,11 @@ AgnesPlugins.register("claude", {
       case "moteurs": {
         var m = AgnesPlugins.get("moteurs"); if (!m) throw new Error("extension Moteurs inactive");
         if (a.image) m.cfg.image = a.image;
-        if (a.video) { if (a.video === "grok" && !m.canGrok()) throw new Error("Grok indisponible : Agnes n'est pas ouverte depuis Lumina"); m.cfg.video = a.video; }
+        if (a.video) {
+          if (m.VIDEOS.indexOf(a.video) === -1) throw new Error("moteur vidéo inconnu : " + a.video + " (agnes, grok ou flow)");
+          if (a.video !== "agnes" && !m.canGrok()) throw new Error(m.shortName(a.video) + " indisponible : Agnes n'est pas ouverte depuis Lumina");
+          m.cfg.video = a.video;
+        }
         m.cfg.save(); m.refresh(); return { image: m.cfg.image, video: m.cfg.video };
       }
       case "generer": {

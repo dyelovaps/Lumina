@@ -63,6 +63,8 @@ async function agnesTab() {
 }
 
 async function openAgnes(active = true) {
+  const refus = await roleRefuse("agnes");
+  if (refus) throw new Error(refus);
   const tab = await agnesTab();
   if (tab?.id) {
     if (active) {

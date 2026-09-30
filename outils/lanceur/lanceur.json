@@ -1,0 +1,92 @@
+{
+  "_aide": "Chaque commande devient un bouton dans l'onglet Raccourcis de Lumina. type = lancer (programme/script), dossier (ouvre l'Explorateur) ou url. Remplace chaque A_COMPLETER par la vraie commande, puis clique Actualiser dans Lumina (pas besoin de relancer le lanceur).",
+  "port": 8178,
+  "commandes": [
+    {
+      "id": "pont",
+      "groupe": "Production",
+      "label": "Démarrer le pont Lumina (prod-fruits)",
+      "type": "lancer",
+      "cwd": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\prod-fruits",
+      "cmd": [
+        "cmd",
+        "/c",
+        "lancer_pont.bat"
+      ],
+      "aide": "Pont 127.0.0.1:8177 utilisé par la File, le pilote auto et l'import d'épisode."
+    },
+    {
+      "id": "flowkit",
+      "groupe": "Production",
+      "label": "Démarrer FlowKit (Google Flow)",
+      "type": "lancer",
+      "cwd": "A_COMPLETER",
+      "cmd": [
+        "A_COMPLETER"
+      ],
+      "aide": "Service local FlowKit (127.0.0.1:8100) nécessaire à l'onglet Google Flow."
+    },
+    {
+      "id": "agnes",
+      "groupe": "Applications",
+      "label": "Lancer Agnes production",
+      "type": "lancer",
+      "cwd": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\Agnes_production",
+      "cmd": [
+        "A_COMPLETER"
+      ]
+    },
+    {
+      "id": "marketing",
+      "groupe": "Applications",
+      "label": "Lancer l'agent Marketing",
+      "type": "lancer",
+      "cwd": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\Auto_Project\\Marketing_Avatar",
+      "cmd": [
+        "A_COMPLETER"
+      ]
+    },
+    {
+      "id": "claude",
+      "groupe": "Applications",
+      "label": "Ouvrir Claude Code (sauvegardes)",
+      "type": "lancer",
+      "cwd": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\_sauvegardes",
+      "cmd": [
+        "cmd",
+        "/k",
+        "claude"
+      ],
+      "plusieurs": true,
+      "aide": "Ouvre un terminal dans _sauvegardes (là où se trouve CLAUDE.md) et lance Claude Code."
+    },
+    {
+      "id": "dossier-agnes",
+      "groupe": "Dossiers",
+      "label": "Agnes_production",
+      "type": "dossier",
+      "path": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\Agnes_production"
+    },
+    {
+      "id": "dossier-prod-fruits",
+      "groupe": "Dossiers",
+      "label": "prod-fruits",
+      "type": "dossier",
+      "path": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\prod-fruits"
+    },
+    {
+      "id": "dossier-marketing",
+      "groupe": "Dossiers",
+      "label": "Marketing_Avatar",
+      "type": "dossier",
+      "path": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\Auto_Project\\Marketing_Avatar"
+    },
+    {
+      "id": "dossier-sauvegardes",
+      "groupe": "Dossiers",
+      "label": "Sauvegardes & CLAUDE.md",
+      "type": "dossier",
+      "path": "D:\\Rmaopn\\a classser\\Dernier_projet\\TitTok_Histoires_vraie\\_BlackLow\\Production\\App\\_sauvegardes"
+    }
+  ]
+}

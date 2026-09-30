@@ -680,7 +680,11 @@ $("#src-images").addEventListener("click", (e) => {
   }
 });
 
-$("#run").addEventListener("click", () => void runBatch(true));
+$("#run").addEventListener("click", () => {
+  // Clic = seul moment où Chrome accepte de redonner l'accès aux dossiers choisis.
+  void globalThis.LuminaFolders?.authorizeAll();
+  void runBatch(true);
+});
 $("#stop").addEventListener("click", () => void stopBatch());
 $("#fix").addEventListener("click", () => {
   if (state.running) return;
@@ -1192,8 +1196,33 @@ function runHint(msg) {
   el.hidden = !msg;
 }
 
+/* Rôle de ce navigateur (role.js) : ce qui est coupé ici ne part jamais, même demandé par un bouton ou le pont. */
+async function roleRefuse(what) {
+  const R = globalThis.LuminaRole;
+  if (!R) return "";
+  const role = await R.get();
+  return R.allows(role, what) ? "" : R.refusal(role, what);
+}
+
+async function showRoleNote() {
+  const el = $("#role-note");
+  const R = globalThis.LuminaRole;
+  if (!el || !R) return;
+  const role = await R.get();
+  el.textContent = role === "flow"
+    ? "Rôle « Flow seulement » : ici, seul l'onglet Google Flow sert. Grok, Agnes, le pilote auto et la file sont coupés."
+    : role === "principal"
+      ? "Rôle « Principal » : Google Flow tourne dans l'autre navigateur (compte Flow). Ici : Grok, Agnes, pilote auto et file."
+      : "";
+  el.hidden = !el.textContent;
+}
+void showRoleNote();
+chromeApi.storage?.onChanged?.addListener((changes, area) => { if (area === "local" && changes.luminaRole) void showRoleNote(); });
+
 async function runBatch(rebuild, opts = {}) {
   runHint("");
+  const refusGrok = await roleRefuse("grok");
+  if (refusGrok) { runHint(refusGrok); log(refusGrok); return; }
   if (state.running || batchActive) {
     // Pause pas à pas restée ouverte alors qu'il ne reste rien à faire : on la clôt et on relance.
     if (state.paused && !state.jobs.some((j) => j.status === "queued")) {
@@ -1658,7 +1687,28 @@ function exportLot() {
   log("Export lot.json");
 }
 
+/* Sous-dossier réglé → clé du dossier choisi dans l'explorateur (folders.js). */
+function folderKeyFor(sub) {
+  const s = state.settings;
+  if (sub === (s.dirImages || "Images")) return "images";
+  if (sub === (s.dirClips || "Clip video")) return "clips";
+  if (sub === (s.dirComplete || "Video complete")) return "complete";
+  if (sub === (s.dirScript || "Script")) return "script";
+  return null;
+}
+
+async function hasChosenFolder(key) {
+  return Boolean(globalThis.LuminaFolders && (await globalThis.LuminaFolders.get(key)));
+}
+
 async function saveDownload(url, sub, stem, ext) {
+  const key = folderKeyFor(sub);
+  if (key && globalThis.LuminaFolders) {
+    const res = await globalThis.LuminaFolders.save(key, `${stem}.${ext}`, url);
+    if (res.ok) return;
+    if (res.reason === "permission") log(`Dossier « ${sub} » non autorisé — clique « Réautoriser » dans Réglages. Copie dans Téléchargements.`);
+    else if (res.reason !== "none") log(`Dossier « ${sub} » : ${res.reason} — copie dans Téléchargements.`);
+  }
   const base = state.settings.folder || "Lumina";
   const filename = `${base}/${sub}/${stem}.${ext}`;
   try {
@@ -2046,20 +2096,28 @@ async function assembleComplete() {
     return;
   }
   const dirClips = state.settings.dirClips || "Clip video";
-  const lines = clips.map((j) => `file '../${dirClips}/${j.stem || sceneStem({ title: j.title }, j.pairIndex || 0)}.mp4'`);
+  // Clips rangés dans un dossier choisi : chemin inconnu du navigateur, donc
+  // concat.txt et assembler.bat vont à côté des clips et film.mp4 aussi.
+  const beside = await hasChosenFolder("clips");
+  const scriptSub = beside ? dirClips : state.settings.dirScript || "Script";
+  const lines = clips.map((j) => {
+    const name = `${j.stem || sceneStem({ title: j.title }, j.pairIndex || 0)}.mp4`;
+    return beside ? `file '${name}'` : `file '../${dirClips}/${name}'`;
+  });
   const concat = lines.join("\n") + "\n";
   const concatUrl = "data:text/plain;charset=utf-8," + encodeURIComponent(concat);
-  await saveDownload(concatUrl, state.settings.dirScript || "Script", "concat", "txt");
+  await saveDownload(concatUrl, scriptSub, "concat", "txt");
 
+  const out = beside ? "film.mp4" : `..\\${state.settings.dirComplete || "Video complete"}\\film.mp4`;
   const bat = `@echo off
 cd /d "%~dp0"
-ffmpeg -y -f concat -safe 0 -i concat.txt -c copy "..\\${state.settings.dirComplete || "Video complete"}\\film.mp4"
+ffmpeg -y -f concat -safe 0 -i concat.txt -c copy "${out}"
 if errorlevel 1 (
   echo Installez ffmpeg et relancez assembler.bat depuis le dossier Script.
   pause
 )
 `;
-  await saveDownload("data:text/plain;charset=utf-8," + encodeURIComponent(bat), state.settings.dirScript || "Script", "assembler", "bat");
+  await saveDownload("data:text/plain;charset=utf-8," + encodeURIComponent(bat), scriptSub, "assembler", "bat");
 
   const items = clips.map((j) => ({
     src: j.urls[0],
@@ -2277,6 +2335,8 @@ let queueRunning = false;
 /* Tire <batchSize> jobs "grok", génère, enregistre, marque "done" (ou "error"). */
 async function runLuminaQueue(batchSize = 1) {
   if (queueRunning) { log('File : génération déjà en cours.'); return 0; }
+  const refusFile = await roleRefuse('file');
+  if (refusFile) { log(refusFile); return 0; }
   queueRunning = true;
   const btn = $('#run-queue');
   if (btn) btn.disabled = true;
@@ -2402,6 +2462,7 @@ if ($("#ep-num")) $("#ep-num").value = state.settings.lastEp || "";
 let pilotBusy = false;
 async function pilotTick() {
   if (!state.settings.pilot || pilotBusy || state.running || batchActive) return;
+  if (await roleRefuse("pilote")) return; // jamais de demande prise au pont dans un navigateur « Flow seulement »
   let demande;
   try {
     demande = (await (await fetch(`${BRIDGE}/pilote/prendre`)).json()).demande;
@@ -2444,6 +2505,93 @@ $("#pilot")?.addEventListener("change", (e) => {
   state.settings.pilot = e.target.checked;
   persist();
   runHint(e.target.checked ? "Pilote auto activé : laisse l’onglet grok.com/imagine ouvert, Lumina lancera les épisodes envoyés par Claude." : "");
+});
+
+/* Onglet Raccourcis : boutons vers le lanceur local (outils/lanceur/lumina_lanceur.py),
+ * qui n'exécute que les commandes déclarées dans lanceur.json. */
+const LANCEUR = "http://127.0.0.1:8178";
+
+async function pingService(url, id) {
+  const el = $("#" + id);
+  if (!el) return false;
+  let ok = false;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1500);
+    await fetch(url, { signal: ctrl.signal }); // toute réponse HTTP = service en ligne
+    clearTimeout(t);
+    ok = true;
+  } catch { /* hors ligne */ }
+  el.classList.toggle("ok", ok);
+  el.classList.toggle("off", !ok);
+  el.title = ok ? "En ligne" : "Hors ligne";
+  return ok;
+}
+
+async function loadShortcuts() {
+  const host = $("#shortcut-list");
+  const err = $("#shortcut-err");
+  if (!host) return;
+  void pingService(BRIDGE + "/", "svc-pont");
+  void pingService("http://127.0.0.1:8100/", "svc-flowkit");
+  const up = await pingService(LANCEUR + "/commandes", "svc-lanceur");
+  if (err) err.hidden = true;
+  if (!up) {
+    host.className = "empty";
+    host.textContent = "Lanceur hors ligne : double-cliquez sur outils/lanceur/Lancer_lanceur.bat puis « Actualiser ».";
+    return;
+  }
+  let data;
+  try {
+    const r = await fetch(LANCEUR + "/commandes");
+    data = await r.json();
+    if (!r.ok) throw new Error(data.erreur || "HTTP " + r.status);
+  } catch (e) {
+    host.className = "empty";
+    host.textContent = "Lanceur : " + e.message;
+    return;
+  }
+  const groups = new Map();
+  for (const c of data.commandes || []) {
+    const g = c.groupe || "Divers";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(c);
+  }
+  host.className = "";
+  host.innerHTML = [...groups].map(([g, list]) => `
+    <p class="k shortcut-group">${escapeHtml(g)}</p>
+    <div class="shortcut-grid">${list.map((c) => `
+      <button type="button" class="ghost${c.a_completer ? " todo" : ""}${c.en_cours ? " live" : ""}" data-cmd="${escapeHtml(c.id)}"
+        title="${escapeHtml(c.a_completer ? "À configurer dans lanceur.json" : c.aide || c.label)}">
+        ${escapeHtml(c.label)}</button>`).join("")}
+    </div>`).join("");
+  host.querySelectorAll("[data-cmd]").forEach((b) => b.addEventListener("click", () => void runShortcut(b)));
+}
+
+async function runShortcut(btn) {
+  const err = $("#shortcut-err");
+  btn.disabled = true;
+  try {
+    const r = await fetch(`${LANCEUR}/lancer/${encodeURIComponent(btn.dataset.cmd)}`, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.erreur || "HTTP " + r.status);
+    log(`Raccourci ${btn.textContent.trim()} : ${data.deja ? "déjà en cours" : data.ouvert ? "ouvert" : "lancé (pid " + data.pid + ")"}`);
+    if (err) err.hidden = true;
+  } catch (e) {
+    if (err) { err.hidden = false; err.textContent = e.message; }
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => void loadShortcuts(), 2500);
+  }
+}
+
+$("#shortcut-refresh")?.addEventListener("click", () => void loadShortcuts());
+$$("[data-tab]").find((b) => b.dataset.tab === "shortcuts")?.addEventListener("click", () => void loadShortcuts());
+
+globalThis.LuminaFolders?.mount(document);
+$("#folders-authorize")?.addEventListener("click", async () => {
+  const n = await globalThis.LuminaFolders?.authorizeAll();
+  log(`Dossiers autorisés : ${n || 0}.`);
 });
 
 renderAll();

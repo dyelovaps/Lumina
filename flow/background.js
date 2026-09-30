@@ -113,11 +113,14 @@ function ensureInitialized() {
 }
 
 async function initialize() {
-  const data = await chrome.storage.local.get(['flowKey', 'metrics', 'callbackSecret', 'luminaFlowEnabled']);
+  const data = await chrome.storage.local.get(['flowKey', 'metrics', 'callbackSecret', 'luminaFlowEnabled', 'luminaFlowPace']);
   if (data.flowKey) flowKey = data.flowKey;
+  if (PACE_PRESETS[data.luminaFlowPace]) pacePreset = data.luminaFlowPace;
   if (data.metrics) Object.assign(metrics, data.metrics);
   if (data.callbackSecret) callbackSecret = data.callbackSecret;
   manualDisconnect = data.luminaFlowEnabled !== true;
+  // Rôle « principal » (role.js) : Flow tourne dans l'autre profil Chrome, jamais de connexion ici.
+  if (!(await flowRoleAllows())) manualDisconnect = true;
   if (manualDisconnect) return;
   connectToAgent();
   chrome.alarms.create('lumina-flow-keepAlive', { periodInMinutes: 0.4 });
@@ -291,6 +294,7 @@ function scheduleReconnect() {
 }
 
 function keepAlive() {
+  void reportFlowState();
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'ping' }));
   } else {
@@ -441,6 +445,10 @@ async function solveCaptcha(requestId, captchaAction) {
 
 async function handleSolveCaptcha(msg) {
   const { id, params } = msg;
+  if (pace.cooldownUntil > Date.now()) {
+    sendToAgent({ id, result: { error: 'FLOW_COOLDOWN' } });
+    return;
+  }
   const result = await solveCaptcha(id, params?.captchaAction || 'VIDEO_GENERATION');
 
   // Standalone captcha solve counts as captcha-consuming
@@ -455,6 +463,118 @@ async function handleSolveCaptcha(msg) {
 
   sendToAgent({ id, result });
 }
+
+// ─── Rythme anti-restriction ────────────────────────────────
+//
+// Google Flow classe un profil en « robot » quand les générations (chacune
+// porte un reCAPTCHA neuf) s'enchaînent à cadence fixe, sans pause, et que les
+// RPC partent en rafale. Tout batch_rpc passe donc par une file unique : un
+// écart minimal entre deux RPC, un écart plus long (avec aléa) entre deux
+// générations, et une mise au repos exponentielle dès que Flow signale une
+// limite (429, RESOURCE_EXHAUSTED, reCAPTCHA refusé…). Le panneau lit le même
+// réglage (luminaFlowPace) pour espacer ses prompts et ses sondages.
+
+const PACE_PRESETS = {
+  prudent: { genGapMs: 30000, rpcGapMs: 2500, jitter: 0.35 },
+  normal:  { genGapMs: 18000, rpcGapMs: 1500, jitter: 0.3 },
+  rapide:  { genGapMs: 9000,  rpcGapMs: 800,  jitter: 0.25 },
+};
+const COOLDOWN_BASE_MS = 60000;
+const COOLDOWN_MAX_MS = 15 * 60000;
+const THROTTLE_RE = /RESOURCE_EXHAUSTED|UNUSUAL_ACTIVITY|unusual traffic|too many requests|rate.?limit|recaptcha[^"\]]{0,60}(?:fail|invalid|denied|refus)/i;
+
+let pacePreset = 'normal';
+const pace = { lastRpcAt: 0, nextGenAt: 0, cooldownUntil: 0, strikes: 0, lastReason: null };
+let rpcChain = Promise.resolve();
+
+function paceConfig() {
+  return PACE_PRESETS[pacePreset] || PACE_PRESETS.normal;
+}
+
+function jittered(ms) {
+  const j = paceConfig().jitter;
+  return Math.round(ms * (1 - j / 2 + Math.random() * j));
+}
+
+function paceStatus() {
+  return {
+    preset: pacePreset,
+    genGapMs: paceConfig().genGapMs,
+    cooldownUntil: pace.cooldownUntil,
+    cooldownLeftMs: Math.max(0, pace.cooldownUntil - Date.now()),
+    strikes: pace.strikes,
+    lastReason: pace.lastReason,
+  };
+}
+
+function broadcastPace() {
+  chrome.runtime.sendMessage({ type: 'PACE_PUSH', pace: paceStatus() }).catch(() => {});
+}
+
+function isThrottled(out) {
+  if (!out) return false;
+  if (out.error) return /CAPTCHA|429|RESOURCE_EXHAUSTED|UNUSUAL/i.test(out.error);
+  if (out.status === 429 || out.status === 403) return true;
+  return THROTTLE_RE.test((out.text || '').slice(0, 4000));
+}
+
+function registerThrottle(reason) {
+  pace.strikes = Math.min(pace.strikes + 1, 8);
+  const wait = Math.min(COOLDOWN_MAX_MS, COOLDOWN_BASE_MS * 2 ** (pace.strikes - 1));
+  pace.cooldownUntil = Date.now() + jittered(wait);
+  pace.lastReason = String(reason || 'LIMITE').slice(0, 160);
+  console.warn(`[FlowAgent] Limite Google Flow détectée (${pace.lastReason}) — repos ${Math.round(wait / 1000)}s`);
+  broadcastPace();
+}
+
+function registerGenSuccess() {
+  if (pace.strikes > 0) {
+    pace.strikes--;
+    broadcastPace();
+  }
+}
+
+// Serialise every RPC; generates also wait for their own slot and for the
+// end of any cooldown. A generate during cooldown fails fast so the agent never
+// burns a reCAPTCHA against a profile Flow is already throttling.
+function pacedRpc(cmd) {
+  const run = async () => {
+    const isGen = !!cmd.captchaAction;
+    if (isGen) {
+      if (pace.cooldownUntil > Date.now()) {
+        const s = Math.ceil((pace.cooldownUntil - Date.now()) / 1000);
+        return { error: `FLOW_COOLDOWN: pause anti-restriction, reprise dans ${s}s` };
+      }
+      const waitGen = pace.nextGenAt - Date.now();
+      if (waitGen > 0) await sleep(waitGen);
+    }
+    const waitRpc = pace.lastRpcAt + jittered(paceConfig().rpcGapMs) - Date.now();
+    if (waitRpc > 0) await sleep(waitRpc);
+    try {
+      const out = await runBatchRpc(cmd);
+      if (isGen) {
+        if (isThrottled(out)) registerThrottle(out.error || `HTTP ${out.status}`);
+        else if (!out.error) registerGenSuccess();
+      } else if (out?.status === 429) {
+        registerThrottle('HTTP 429');
+      }
+      return out;
+    } finally {
+      pace.lastRpcAt = Date.now();
+      if (isGen) pace.nextGenAt = Date.now() + jittered(paceConfig().genGapMs);
+    }
+  };
+  const p = rpcChain.then(run, run);
+  rpcChain = p.catch(() => {});
+  return p;
+}
+
+chrome.storage.onChanged?.addListener?.((changes, area) => {
+  if (area === 'local' && changes.luminaFlowPace) {
+    pacePreset = PACE_PRESETS[changes.luminaFlowPace.newValue] ? changes.luminaFlowPace.newValue : 'normal';
+    broadcastPace();
+  }
+});
 
 // ─── Page-context RPC runner (the current path) ─────────────
 //
@@ -566,7 +686,7 @@ async function handleBatchRpc(msg) {
   }
 
   try {
-    const out = await runBatchRpc({ id, rpcid, freq, captchaAction, match });
+    const out = await pacedRpc({ id, rpcid, freq, captchaAction, match });
     if (out.error) {
       if (hasCaptcha) { metrics.failedCount++; metrics.lastError = out.error; }
       if (visible) updateRequestLog(id, { status: 'failed', error: out.error });
@@ -787,7 +907,7 @@ function broadcastStatus() {
   chrome.runtime.sendMessage({ type: 'STATUS_PUSH' }).catch(() => {});
 }
 
-const FLOW_MESSAGES = new Set(['STATUS', 'DISCONNECT', 'RECONNECT', 'REQUEST_LOG', 'OPEN_FLOW_TAB', 'REFRESH_TOKEN', 'TEST_CAPTCHA', 'TRPC_MEDIA_URLS']);
+const FLOW_MESSAGES = new Set(['PACE_STATUS', 'PACE_RESET', 'STATUS', 'DISCONNECT', 'RECONNECT', 'REQUEST_LOG', 'OPEN_FLOW_TAB', 'REFRESH_TOKEN', 'TEST_CAPTCHA', 'TRPC_MEDIA_URLS', 'FLOW_CHECK', 'FLOW_OPEN_PROJECT']);
 chrome.runtime.onMessage.addListener((msg, _, reply) => {
   if (!FLOW_MESSAGES.has(msg?.type)) return false;
   ensureInitialized().then(() => handleFlowMessage(msg, reply))
@@ -796,6 +916,20 @@ chrome.runtime.onMessage.addListener((msg, _, reply) => {
 });
 
 function handleFlowMessage(msg, reply) {
+  if (msg.type === 'PACE_STATUS') {
+    reply(paceStatus());
+    return false;
+  }
+
+  if (msg.type === 'PACE_RESET') {
+    pace.cooldownUntil = 0;
+    pace.strikes = 0;
+    pace.lastReason = null;
+    broadcastPace();
+    reply(paceStatus());
+    return false;
+  }
+
   if (msg.type === 'STATUS') {
     reply({
       connected: ws?.readyState === WebSocket.OPEN,
@@ -810,6 +944,7 @@ function handleFlowMessage(msg, reply) {
         lastError: metrics.lastError,
       },
       state,
+      pace: paceStatus(),
     });
     return false;
   }
@@ -824,12 +959,31 @@ function handleFlowMessage(msg, reply) {
     return true;
   }
 
+  if (msg.type === 'RECONNECT' || msg.type === 'OPEN_FLOW_TAB' || msg.type === 'FLOW_OPEN_PROJECT') {
+    // Rôle « principal » : ni connexion ni page Flow ici (une deuxième page Flow bloquerait le compte).
+
+    flowRoleAllows().then((ok) => {
+      if (ok) return handleFlowMessageAllowed(msg, reply);
+
+      globalThis.LuminaRole.get().then((role) => {
+        const error = globalThis.LuminaRole.refusal(role, 'flow');
+        reply({ ok: false, error, warning: error });
+      });
+    });
+    return true;
+  }
+
+  return handleFlowMessageAllowed(msg, reply);
+}
+
+function handleFlowMessageAllowed(msg, reply) {
   if (msg.type === 'RECONNECT') {
     manualDisconnect = false;
     chrome.storage.local.set({ luminaFlowEnabled: true });
     chrome.alarms.create('lumina-flow-keepAlive', { periodInMinutes: 0.4 });
     connectToAgent();
     reply({ ok: true });
+    setTimeout(() => void reportFlowState(), 1500);
     return true;
   }
 
@@ -872,7 +1026,158 @@ function handleFlowMessage(msg, reply) {
     return true;
   }
 
+  if (msg.type === 'FLOW_CHECK') {
+    flowCheck(msg.compte || '').then(reply).catch((e) => reply({ ok: false, blocking: true, warning: String(e?.message || e) }));
+    return true;
+  }
+
+  if (msg.type === 'FLOW_OPEN_PROJECT') {
+    openFlowProject(msg.url).then(reply).catch((e) => reply({ ok: false, warning: String(e?.message || e) }));
+    return true;
+  }
+
   return false;
+}
+
+// ─── Vérification avant tout envoi (Lumina, 30/09/2026) ─────
+//
+// Deux pages Flow ouvertes (même compte ou non, même navigateur ou non) font
+// redemander la connexion au compte et bloquent les générations. Avant chaque
+// envoi, le panneau Flow et Agnes demandent ce bilan ; tant qu'il n'est pas bon,
+// rien ne part. Les autres navigateurs ne sont visibles que s'ils sont eux aussi
+// reliés à FlowKit (nombre de connexions de l'agent).
+
+async function flowTabEmail(tab) {
+  if (tab.discarded) return '';
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => {
+        const wiz = globalThis.WIZ_global_data || {};
+        if (typeof wiz.oPEP7c === 'string' && wiz.oPEP7c.includes('@')) return wiz.oPEP7c;
+        for (const el of document.querySelectorAll('[aria-label*="@"]')) {
+          const m = el.getAttribute('aria-label').match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/);
+          if (m) return m[0];
+        }
+        return '';
+      },
+    });
+    return String(res?.result || '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+async function flowCheck(compte) {
+  const tabs = await chrome.tabs.query({ url: flowUrls });
+  const emails = [];
+  for (const t of tabs) emails.push(await flowTabEmail(t));
+  let agentConnections = null;
+  try {
+    const h = await (await fetch('http://127.0.0.1:8100/health')).json();
+    agentConnections = h?.ws?.active_connections ?? null;
+  } catch { /* FlowKit arrêté : signalé par l'appelant */ }
+  const want = String(compte || '').trim().toLowerCase();
+  const email = emails.find(Boolean) || '';
+  const warnings = [];
+  if (tabs.length > 1) {
+    warnings.push(`Google Flow est ouvert ${tabs.length} fois (onglets ou fenêtres). Fermez-le partout sauf une fois, dans tous vos navigateurs : sinon Flow redemande la connexion au compte et bloque les générations. Rien n'est envoyé tant que ce n'est pas réglé.`);
+  } else if (!tabs.length) {
+    warnings.push("Aucun onglet Google Flow ouvert : ouvrez le projet (bouton Ouvrir), vérifiez le compte connecté, puis relancez. Rien n'est envoyé.");
+  }
+  if (agentConnections > 1) {
+    warnings.push(`FlowKit reçoit ${agentConnections} connexions : Flow est aussi actif depuis un autre navigateur. Fermez Google Flow dans les autres navigateurs, puis relancez.`);
+  }
+  if (tabs.length === 1 && want && email && email !== want) {
+    warnings.push(`Le compte ouvert dans Google Flow (${email}) n'est pas celui du projet (${want}) : changez de compte dans l'onglet Flow (avatar en haut à droite), puis relancez.`);
+  }
+  return {
+    ok: !warnings.length,
+    blocking: warnings.length > 0,
+    tabs: tabs.length,
+    email,
+    accountChecked: Boolean(want && email),
+    agentConnections,
+    warning: warnings.join(' '),
+  };
+}
+
+// ─── Rôle du navigateur et bilan déposé au pont (30/09/2026) ───
+//
+// Deux profils Chrome, deux comptes Google : le profil « Flow seulement » fait Flow, le profil « Principal »
+// fait Grok et Agnes. Agnes (profil Principal) ne voit pas les pages Flow de l'autre profil : ce profil dépose
+// donc son bilan au pont (POST /flow/etat), qu'Agnes relit avant chaque envoi. Le pont ne distribue rien.
+
+const PONT_URL = 'http://127.0.0.1:8177';
+
+async function flowRoleAllows() {
+  const R = globalThis.LuminaRole;
+  return !R || R.allows(await R.get(), 'flow');
+}
+
+let reportTimer = null;
+async function reportFlowState() {
+  const R = globalThis.LuminaRole;
+  if (!R) return;
+  const role = await R.get();
+  if (!R.allows(role, 'flow')) return;
+  try {
+    const check = await flowCheck('');
+    const body = {
+      role,
+      profil: await R.profile(),
+      tabs: check.tabs,
+      email: check.email,
+      agentConnections: check.agentConnections,
+      warning: check.warning,
+      blocking: check.blocking,
+      pace: paceStatus(),
+      flowActive: !manualDisconnect && ws?.readyState === WebSocket.OPEN,
+    };
+    await fetch(PONT_URL + '/flow/etat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } catch {
+    /* pont arrêté : Agnes le signalera (bilan trop ancien) */
+  }
+}
+
+function scheduleFlowReport() {
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(() => void reportFlowState(), 1500);
+}
+
+chrome.tabs.onRemoved?.addListener(scheduleFlowReport);
+chrome.tabs.onUpdated?.addListener((_, info) => { if (info.status === 'complete') scheduleFlowReport(); });
+
+// Passage au rôle « principal » : la connexion Flow de ce profil est coupée aussitôt.
+chrome.storage.onChanged?.addListener((changes, area) => {
+  if (area !== 'local' || !changes.luminaRole) return;
+  flowRoleAllows().then((ok) => {
+    if (ok) { scheduleFlowReport(); return; }
+    manualDisconnect = true;
+    chrome.storage.local.set({ luminaFlowEnabled: false });
+    for (const name of ['lumina-flow-reconnect', 'lumina-flow-keepAlive', 'lumina-flow-token-refresh']) chrome.alarms.clear(name);
+    setState('off');
+    if (ws) ws.close();
+  });
+});
+
+// Ouvre un projet dans l'onglet Flow existant (jamais un deuxième onglet Flow).
+async function openFlowProject(url) {
+  if (!/^https:\/\/(flow\.google\.com|labs\.google)\//.test(String(url || ''))) {
+    return { ok: false, warning: 'Adresse de projet Flow invalide.' };
+  }
+  const tabs = await chrome.tabs.query({ url: flowUrls });
+  if (tabs.length > 1) {
+    return { ok: false, warning: `Google Flow est ouvert ${tabs.length} fois : fermez-le partout sauf une fois avant d'ouvrir un projet.` };
+  }
+  if (tabs.length === 1) {
+    await chrome.tabs.update(tabs[0].id, { url, active: true });
+    if (tabs[0].windowId != null) await chrome.windows.update(tabs[0].windowId, { focused: true }).catch(() => {});
+    return { ok: true, tabId: tabs[0].id };
+  }
+  const tab = await chrome.tabs.create({ url, active: true });
+  return { ok: true, tabId: tab.id };
 }
 
 // ─── TRPC Media URL Extractor ──────────────────────────────

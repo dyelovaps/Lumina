@@ -1,3 +1,4 @@
+import "./role.js";
 import "./flow/background.js";
 
 const IMAGINE_URL = "https://grok.com/imagine";
@@ -20,26 +21,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg?.type === "ENSURE_IMAGINE") {
-    ensureImagineTab()
-      .then((tab) => sendResponse({ ok: true, tabId: tab.id }))
-      .catch((err) => sendResponse({ ok: false, error: String(err) }));
-    return true;
-  }
-
-  if (msg?.type === "SEND_TO_TAB") {
-    ensureImagineTab()
-      .then(async (tab) => {
-        // Nouvel envoi : toujours depuis l'accueil d'Imagine. Resté sur la page d'une ancienne vidéo (/imagine/post/…),
-        // l'image se dépose dans le formulaire de cette page et l'import n'est pas confirmé (constaté le 29/09/2026).
-        if (msg.payload?.type === "SUBMIT_PROMPT" && !isImagineHome(tab.url)) {
-          await chrome.tabs.update(tab.id, { url: IMAGINE_URL, active: true });
-          await waitForComplete(tab.id);
-        }
-        const res = await sendToTab(tab.id, msg.payload);
-        sendResponse(res ?? { ok: false, error: "Pas de réponse de grok.com" });
-      })
-      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
+  // Rôle du navigateur (role.js) : Grok refusé en « Flow seulement », quel que soit l'envoyeur (lot, file, Agnes).
+  if (msg?.type === "ENSURE_IMAGINE" || msg?.type === "SEND_TO_TAB") {
+    globalThis.LuminaRole.get().then((role) => {
+      if (!globalThis.LuminaRole.allows(role, "grok")) {
+        sendResponse({ ok: false, error: globalThis.LuminaRole.refusal(role, "grok") });
+        return;
+      }
+      handleGrok(msg, sendResponse);
+    });
     return true;
   }
 
@@ -60,6 +50,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   return false;
 });
+
+// Traitement Grok (inchangé) : appelé seulement si le rôle du navigateur autorise Grok.
+function handleGrok(msg, sendResponse) {
+  if (msg.type === "ENSURE_IMAGINE") {
+    ensureImagineTab()
+      .then((tab) => sendResponse({ ok: true, tabId: tab.id }))
+      .catch((err) => sendResponse({ ok: false, error: String(err) }));
+    return;
+  }
+  ensureImagineTab()
+    .then(async (tab) => {
+      // Nouvel envoi : toujours depuis l'accueil d'Imagine. Resté sur la page d'une ancienne vidéo (/imagine/post/…),
+      // l'image se dépose dans le formulaire de cette page et l'import n'est pas confirmé (constaté le 29/09/2026).
+      if (msg.payload?.type === "SUBMIT_PROMPT" && !isImagineHome(tab.url)) {
+        await chrome.tabs.update(tab.id, { url: IMAGINE_URL, active: true });
+        await waitForComplete(tab.id);
+      }
+      const res = await sendToTab(tab.id, msg.payload);
+      sendResponse(res ?? { ok: false, error: "Pas de réponse de grok.com" });
+    })
+    .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
+}
 
 async function sendToTab(tabId, payload) {
   try {

@@ -632,3 +632,30 @@ input[type="range"] { width: 100%; accent-color: var(--paper); }
 #episode-import input{flex:1;min-width:0}
 .still-card.done { opacity: 0.55; }
 .still-card.done .still-meta span { color: #7fbf7f; }
+
+/* Dossiers de classement choisis dans l'explorateur (folders.js) */
+.folder-row {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 6px 0 2px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 8px;
+  font-size: 12px;
+}
+.folder-row.set { border-style: solid; }
+.folder-row.locked { border-color: var(--amber, #d9a441); }
+.folder-row .folder-label { color: var(--muted); font-weight: 650; }
+.folder-row .folder-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-row .folder-actions { display: flex; gap: 4px; }
+.folder-row .folder-actions button {
+  height: 26px; min-height: 26px; width: auto; margin: 0; padding: 0 8px; font-size: 11px;
+  border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer;
+}
+
+/* Onglet Raccourcis */
+.svc-list { display: grid; gap: 4px; margin-bottom: 12px; font-size: 12px; }
+.svc-dot { color: var(--muted); }
+.svc-dot.ok { color: #6fcf97; }
+.svc-dot.off { color: #eb5757; }
+.shortcut-group { margin: 10px 0 4px; }
+.shortcut-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.shortcut-grid button { margin: 0; width: 100%; min-height: 40px; text-align: left; font-size: 12px; }
+.shortcut-grid button.todo { opacity: 0.55; }
+.shortcut-grid button.live::after { content: " ●"; color: #6fcf97; }

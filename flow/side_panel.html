@@ -158,10 +158,31 @@
 
     <div class="field">
       <div class="top">
-        <span>ID du projet Google Flow</span>
-        <span id="flow-project-status" style="color: var(--muted); font-size: 11px;">Recherche du projet actif…</span>
+        <span>Projet Google Flow (liste partagée avec Agnes)</span>
+        <span id="flow-project-status" style="color: var(--muted); font-size: 11px;"></span>
       </div>
-      <input type="text" id="flow-project-id" placeholder="Identifiant du projet (ex: c9ca385f-46c8-4ab2-bd4e-b31bce53e627)" value="c9ca385f-46c8-4ab2-bd4e-b31bce53e627" />
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="flow-project-select" style="flex:1;min-width:0"></select>
+        <button type="button" class="ghost" id="flow-project-open" title="Ouvrir ce projet dans l'onglet Google Flow (jamais un deuxième onglet)">Ouvrir</button>
+        <button type="button" class="ghost" id="flow-project-remove" title="Retirer ce projet de la liste (rien n'est supprimé chez Google)">Retirer</button>
+      </div>
+      <input type="hidden" id="flow-project-id" value="" />
+      <details id="flow-project-add" style="margin-top:6px">
+        <summary style="cursor:pointer;font-size:12px">Ajouter un projet</summary>
+        <div style="display:grid;gap:6px;margin-top:6px">
+          <input type="text" id="flow-project-new-name" placeholder="Nom (ex. Marketing, compte Pro 1)" />
+          <input type="text" id="flow-project-new-url" placeholder="Lien du projet (barre d'adresse de Flow) ou identifiant" />
+          <input type="text" id="flow-project-new-account" placeholder="Compte Google du projet (adresse e-mail)" />
+          <select id="flow-project-new-tier">
+            <option value="">Abonnement du compte…</option>
+            <option value="PAYGATE_TIER_ONE">Gratuit</option>
+            <option value="PAYGATE_TIER_TWO">Pro</option>
+          </select>
+          <button type="button" id="flow-project-new-save">Ajouter à la liste</button>
+        </div>
+      </details>
+      <p id="flow-check-warn" style="color: var(--danger, #eb5757); font-size: 12px; margin: 6px 0 0;" hidden></p>
+      <p style="color: var(--muted); font-size: 11px; margin: 4px 0 0;">Google Flow ne doit être ouvert qu'une seule fois, tous navigateurs confondus : Lumina vérifie ce navigateur avant chaque envoi, mais ne voit pas les autres navigateurs sans Lumina.</p>
     </div>
 
     <div class="field">
@@ -170,6 +191,26 @@
         <span class="hint">Laisser vide pour seed aléatoire</span>
       </div>
       <input type="text" id="flow-seed" placeholder="Ex: 849201" />
+    </div>
+
+    <div class="field">
+      <div class="top">
+        <span>Rythme anti-restriction</span>
+        <button type="button" class="ghost" id="flow-pace-reset" style="display:none; height:26px; padding:0 8px; font-size:11px;">Reprendre maintenant</button>
+      </div>
+      <select id="flow-pace" title="Écart entre deux générations">
+        <option value="prudent">Prudent — ~30 s entre générations (compte déjà restreint)</option>
+        <option value="normal" selected>Normal — ~18 s entre générations</option>
+        <option value="rapide">Rapide — ~9 s (risque de restriction)</option>
+      </select>
+      <p class="note" id="flow-pace-status" style="margin:4px 0 0;">Rythme normal.</p>
+    </div>
+
+    <div class="field">
+      <div class="top"><span>Dossiers de classement Flow</span></div>
+      <div class="folder-row" data-folder-key="flowImages" data-folder-label="Images Flow"></div>
+      <div class="folder-row" data-folder-key="flowVideos" data-folder-label="Vidéos Flow"></div>
+      <p class="note" style="margin:4px 0 0;">Sans dossier choisi, les fichiers vont dans Téléchargements.</p>
     </div>
 
     <!-- ═══════════ IMAGE PANEL ═══════════ -->
@@ -373,6 +414,8 @@
     </div>
   </div>
 
+  <script src="../folders.js"></script>
+  <script src="../role.js"></script>
   <script src="side_panel.js"></script>
 </body>
 </html>

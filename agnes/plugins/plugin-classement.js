@@ -1,25 +1,70 @@
-// plugins/plugin-classement.js — Classer une carte terminée (29/09/2026)
-// Bouton « 📁 Classer » sur chaque carte du Storyboard : copie l'image, la vidéo et une fiche texte (prompts, notes :
-// réplique, carton de fin, description, hashtags) dans  <dossier racine>/<Projet>/Saison NN/Episode NN/Carte NN - titre/
-// Le dossier racine est choisi une fois (sélecteur de dossier du navigateur) et retenu. Sans ce sélecteur (navigateur
-// ancien), les fichiers sont téléchargés avec le même nom complet. Extension indépendante : elle ne lit que le projet et
-// ses cartes (p.publish.serie / ep s'ils existent, remplis par Publication ou Épisodes), jamais une autre extension.
+// plugins/plugin-classement.js — Classer une carte terminée (29/09/2026 ; mode local le 30/09/2026)
+// Bouton « Classer » sur chaque carte du Storyboard : image, vidéo et fiche texte (prompts, notes : réplique, carton de
+// fin, description, hashtags). Deux rangements au choix :
+//   - LOCAL (par défaut) : via le pont local (prod-fruits, classement_pont.py), dans le dossier Production, par THÉMATIQUE
+//       Serie/<Série>/EpNN/            Images, Video, Fiches (Final : vidéo montée)
+//       Marketing/<Personnage>/<AAAAMMJJ - sujet>/   Images, Video, Fiches
+//       <Autre thématique>/<Titre>/    Images, Video, Fiches   (Film, Court_metrage… ou une thématique créée ici)
+//     fichiers nommés « Carte NN - titre.ext ». Aucun sélecteur de dossier : Claude ou un agent peut aussi classer.
+//   - DOSSIER CHOISI : <dossier racine choisi dans le navigateur>/<Projet>/Saison NN/Episode NN/Carte NN - titre/
+//     (sans sélecteur de dossier, les fichiers sont téléchargés avec le même nom complet).
+// Extension indépendante : elle ne lit que le projet et ses cartes (p.publish.serie / ep s'ils existent), jamais une
+// autre extension. Elle publie AgnesApp.classementLocal(carte) : le dossier local de la carte (utilisé par le moteur
+// Flow manuel pour ranger la vidéo téléchargée), null si aucune thématique n'est réglée.
 AgnesPlugins.register("classement", {
   name: "Classement des cartes",
-  version: "1.0",
+  version: "1.1",
   KEY: "classement:racine",
+  PONT: "http://127.0.0.1:8177",
 
   init: function (core) {
     var self = this;
     this.core = core; this.A = window.AgnesApp;
-    this.panel = core.ui.panel("classement", "📁 Classer la carte");
-    core.ui.addShotAction("📁 Classer", function (shot) { self.open(shot); });
+    this.cfg = core.pluginSettings ? core.pluginSettings("classement", { pont: this.PONT }) : { pont: this.PONT };
+    this.themes = null;
+    this.panel = core.ui.panel("classement", "Classer la carte");
+    core.ui.addShotAction("Classer", function (shot) { self.open(shot); });
+    if (this.A) this.A.classementLocal = function (shot) { return self.localOf(shot); };
     this.panel.body.addEventListener("click", function (e) {
       var b = e.target.closest("[data-cl]"); if (!b) return;
       var act = b.getAttribute("data-cl");
       if (act === "root") self.pickRoot().then(function () { self.render(); }, function (err) { if (err && err.name !== "AbortError") core.toast("Dossier non choisi : " + (err.message || err), "err"); });
       if (act === "go") self.run(b);
     });
+  },
+
+  // ---------- pont local (classement_pont.py) ----------
+  pont: function () { return String((this.cfg && this.cfg.pont) || this.PONT).replace(/\/+$/, ""); },
+  loadThemes: function () {
+    var self = this;
+    return fetch(this.pont() + "/classement/thematiques").then(function (r) { return r.json(); })
+      .then(function (j) { self.themes = j.thematiques || []; self.racine = j.racine || ""; return self.themes; },
+        function () { self.themes = null; return null; });
+  },
+  newTheme: function () {
+    var self = this, nom = (window.prompt("Nom de la nouvelle thématique (dossier créé dans Production) :") || "").trim();
+    if (!nom) return Promise.resolve();
+    return fetch(this.pont() + "/classement/thematique", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nom: nom }) })
+      .then(function (r) { return r.json(); }).then(function (j) {
+        if (j.error) throw new Error(j.error);
+        self.themes = j.thematiques || []; self.values.thematique = nom;
+      }).catch(function (e) { self.core.toast("Thématique non créée : " + (e.message || e), "err"); });
+  },
+  today: function () { var d = new Date(), z = function (n) { return (n < 10 ? "0" : "") + n; }; return d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()); },
+  kindOf: function (theme) { return /^s[eé]rie/i.test(theme || "") ? "serie" : /^marketing/i.test(theme || "") ? "marketing" : "autre"; },
+  // Dossier de l'épisode / de la journée / du titre, sous Production
+  localBase: function (v) {
+    var th = this.clean(v.thematique), nom = this.clean(v.nom), k = this.kindOf(v.thematique);
+    var date = /^\d{8}$/.test(String(v.date || "")) ? String(v.date) : this.today();
+    if (k === "serie") return [th, nom, "Ep" + this.pad(v.episode)];
+    if (k === "marketing") return [th, nom, v.sujet ? date + " - " + this.clean(v.sujet, 40) : date];
+    return [th, nom];
+  },
+  localOf: function (shot) {
+    var v = this.defaults(shot);
+    if (!v.thematique) return null;
+    var base = this.localBase(v).join("/");
+    return { base: base, images: base + "/Images", video: base + "/Video", fiches: base + "/Fiches", nom: this.clean(v.carte, 70) };
   },
 
   supported: function () { return typeof window.showDirectoryPicker === "function"; },
@@ -53,33 +98,69 @@ AgnesPlugins.register("classement", {
   defaults: function (shot) {
     var p = this.core.getProject(), d = p.classement || {}, pub = p.publish || {};
     return { projet: d.projet || pub.serie || p.name || "Projet", saison: d.saison || 1, episode: d.episode || pub.ep || 1,
-      carte: "Carte " + this.pad(this.number(shot)) + " - " + this.titleOf(shot) };
+      carte: "Carte " + this.pad(this.number(shot)) + " - " + this.titleOf(shot),
+      mode: d.mode || "local", thematique: d.thematique || "", nom: d.nom || pub.serie || p.name || "Projet",
+      date: d.date || this.today(), sujet: d.sujet || "" };
   },
   pathOf: function (v) {
     return [this.clean(v.projet), "Saison " + this.pad(v.saison), "Episode " + this.pad(v.episode), this.clean(v.carte, 70)];
   },
 
   // ---------- fenêtre ----------
-  open: function (shot) { this.shot = shot; this.values = this.defaults(shot); var self = this; this.root().then(function () { self.render(); self.panel.open(); }); },
+  open: function (shot) {
+    this.shot = shot; this.values = this.defaults(shot); var self = this;
+    Promise.all([this.root(), this.loadThemes()]).then(function () { self.render(); self.panel.open(); });
+  },
   render: function () {
-    var esc = this.A.esc, v = this.values, s = this.shot, media = this.media(s);
+    var esc = this.A.esc, v = this.values, s = this.shot, media = this.media(s), self = this;
+    var mode = '<div class="field"><label>Rangement</label><select data-cv="mode">' +
+      '<option value="local"' + (v.mode === "local" ? " selected" : "") + '>Local : dossier Production, par thématique (via le pont)</option>' +
+      '<option value="dossier"' + (v.mode === "dossier" ? " selected" : "") + '>Dossier choisi dans le navigateur</option></select></div>';
+    var contenu = '<p class="hint">Contenu : ' + [media.image ? "image" : null, media.video ? "vidéo" : null, "fiche (prompts" + (s.notes ? ", notes : réplique, carton, description, hashtags" : "") + ")"].filter(Boolean).join(" · ") +
+      (s.classement ? '<br>Déjà classée le ' + esc(s.classement.date) + ' dans ' + esc(s.classement.dossier) + ' (les fichiers seront remplacés).' : '') + '</p>';
+    if (v.mode === "local") {
+      var k = this.kindOf(v.thematique), themes = this.themes;
+      var opts = (themes || []).map(function (t) { return '<option' + (t === v.thematique ? " selected" : "") + ">" + esc(t) + "</option>"; }).join("");
+      this.panel.body.innerHTML =
+        '<p class="hint">Copie la carte dans le dossier Production, rangé par thématique. Rien n\'est supprimé d\'Agnes.</p>' + mode +
+        (themes ? "" : '<p class="hint" style="color:var(--danger)">Pont local injoignable (lancer_pont.bat) : relancez-le, ou choisissez « Dossier choisi dans le navigateur ».</p>') +
+        '<div class="grid3"><div class="field"><label>Thématique</label><select data-cv="thematique"><option value="">Choisir…</option>' + opts +
+        '<option value="__new">Nouvelle thématique…</option></select></div>' +
+        '<div class="field"><label>' + (k === "serie" ? "Série" : k === "marketing" ? "Personnage / campagne" : "Titre") + '</label><input type="text" data-cv="nom" value="' + esc(v.nom) + '"></div>' +
+        (k === "serie" ? '<div class="field"><label>Épisode</label><input type="number" min="1" data-cv="episode" value="' + esc(v.episode) + '"></div>' : "") +
+        (k === "marketing" ? '<div class="field"><label>Date (AAAAMMJJ)</label><input type="text" maxlength="8" data-cv="date" value="' + esc(v.date) + '"></div>' : "") +
+        '</div>' +
+        (k === "marketing" ? '<div class="field"><label>Sujet du jour (facultatif)</label><input type="text" data-cv="sujet" value="' + esc(v.sujet) + '"></div>' : "") +
+        '<div class="field"><label>Nom des fichiers de la carte</label><input type="text" data-cv="carte" value="' + esc(v.carte) + '"></div>' +
+        (v.thematique ? '<p class="hint">Dans Production\\' + esc(this.localBase(v).join("\\")) + '\\ : Images, Video et Fiches, fichiers « ' + esc(this.clean(v.carte, 70)) + ' ».</p>' : "") +
+        contenu + '<div class="row-inline"><button class="primary-btn" data-cl="go">Classer</button></div>';
+      this.bindFields();
+      return;
+    }
     var root = this.supported()
-      ? (this.handle ? "📁 <b>" + esc(this.handle.name) + "</b> <button class=\"small-btn\" data-cl=\"root\">Changer…</button>" : "<button class=\"primary-btn\" data-cl=\"root\">Choisir le dossier racine…</button> <span class=\"hint\">(une seule fois, ex. D:\\Productions)</span>")
+      ? (this.handle ? "<b>" + esc(this.handle.name) + "</b> <button class=\"small-btn\" data-cl=\"root\">Changer…</button>" : "<button class=\"primary-btn\" data-cl=\"root\">Choisir le dossier racine…</button> <span class=\"hint\">(une seule fois, ex. D:\\Productions)</span>")
       : "<span class=\"hint\">Ce navigateur ne permet pas de choisir un dossier : les fichiers seront téléchargés (dossier Téléchargements), avec le chemin dans leur nom.</span>";
     this.panel.body.innerHTML =
-      '<p class="hint">Copie la carte terminée dans un dossier rangé par projet, saison et épisode. Rien n\'est supprimé d\'Agnes.</p>' +
+      '<p class="hint">Copie la carte terminée dans un dossier rangé par projet, saison et épisode. Rien n\'est supprimé d\'Agnes.</p>' + mode +
       '<div class="field"><label>Dossier racine</label><div>' + root + '</div></div>' +
       '<div class="grid3">' +
       '<div class="field"><label>Projet</label><input type="text" data-cv="projet" value="' + esc(v.projet) + '"></div>' +
       '<div class="field"><label>Saison</label><input type="number" min="1" data-cv="saison" value="' + esc(v.saison) + '"></div>' +
       '<div class="field"><label>Épisode</label><input type="number" min="1" data-cv="episode" value="' + esc(v.episode) + '"></div></div>' +
       '<div class="field"><label>Dossier de la carte</label><input type="text" data-cv="carte" value="' + esc(v.carte) + '"></div>' +
-      '<p class="hint">Contenu : ' + [media.image ? "image" : null, media.video ? "vidéo" : null, "fiche.md (prompts" + (s.notes ? ", notes : réplique, carton, description, hashtags" : "") + ")"].filter(Boolean).join(" · ") +
-      (s.classement ? '<br>Déjà classée le ' + esc(s.classement.date) + ' dans ' + esc(s.classement.dossier) + ' (les fichiers seront remplacés).' : '') + '</p>' +
-      '<div class="row-inline"><button class="primary-btn" data-cl="go">Classer</button></div>';
+      contenu + '<div class="row-inline"><button class="primary-btn" data-cl="go">Classer</button></div>';
+    this.bindFields();
+  },
+  bindFields: function () {
     var self = this;
     Array.prototype.forEach.call(this.panel.body.querySelectorAll("[data-cv]"), function (el) {
-      el.addEventListener("input", function () { self.values[el.getAttribute("data-cv")] = el.value; });
+      var key = el.getAttribute("data-cv");
+      if (el.tagName === "SELECT") {
+        el.addEventListener("change", function () {
+          if (key === "thematique" && el.value === "__new") return self.newTheme().then(function () { self.render(); });
+          self.values[key] = el.value; self.render();
+        });
+      } else el.addEventListener("input", function () { self.values[key] = el.value; });
     });
   },
 
@@ -118,12 +199,29 @@ AgnesPlugins.register("classement", {
     if (btn) btn.disabled = true;
     var done = function (how) {
       var p = self.core.getProject();
-      p.classement = { projet: v.projet, saison: +v.saison || 1, episode: +v.episode || 1 };
+      p.classement = { projet: v.projet, saison: +v.saison || 1, episode: +v.episode || 1,
+        mode: v.mode, thematique: v.thematique, nom: v.nom, date: v.date, sujet: v.sujet };
       shot.classement = { date: new Date().toLocaleDateString("fr-FR"), dossier: how };
       self.core.saveProject(); if (self.A.renderShots) self.A.renderShots();
       self.panel.close(); self.core.toast("Carte classée : " + how, "ok");
     };
     var fail = function (e) { if (btn) btn.disabled = false; self.core.toast("Classement impossible : " + (e && (e.message || e)), "err"); };
+    if (v.mode === "local") {
+      if (!v.thematique) return fail(new Error("choisissez une thématique"));
+      var base = this.localBase(v), nom = this.clean(v.carte, 70);
+      return this.files(shot, v).then(function (files) {
+        return files.reduce(function (pr, f) {
+          var sub = f.name === "fiche.md" ? "Fiches" : /^image\./.test(f.name) ? "Images" : "Video";
+          var chemin = base.concat([sub, nom + f.name.slice(f.name.lastIndexOf("."))]).join("/");
+          return pr.then(function () {
+            return fetch(self.pont() + "/classement/fichier", { method: "POST", headers: { "X-Chemin": encodeURIComponent(chemin) }, body: f.blob })
+              .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || "refusé par le pont"); });
+          });
+        }, Promise.resolve());
+      }).then(function () { done("Production/" + base.join("/")); }, function (e) {
+        fail(/fetch/i.test(String(e && e.message)) ? new Error("pont local injoignable (lancer_pont.bat)") : e);
+      });
+    }
     this.files(shot, v).then(function (files) {
       if (!self.supported()) return self.download(files, parts).then(function () { done("Téléchargements (" + label + ")"); });
       var go = self.handle ? Promise.resolve(self.handle) : self.pickRoot();

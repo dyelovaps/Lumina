@@ -243,14 +243,14 @@
       '<label class="inline">Sorties <input type="number" class="mini" data-f="outputs" min="1" max="4" value="' + esc(shot.outputs || 1) + '"></label>' +
       '</div>' + (two ? keyBlock(shot) : '') + refsHtml(shot, proj) +
       '<div class="chips">' + skillChips + '<select data-f="addskill" style="width:auto;" aria-label="Ajouter un skill">' + A.skillOptionsHtml(kind) + '</select></div>' +
-      '<details class="more-opts"><summary>Plus d\'options' + (shot.notes ? ' · 📝 Notes' : '') + (shot.classement ? ' · 📁 Classée' : '') + '</summary><div class="grid3">' +
+      '<details class="more-opts"><summary>Plus d\'options' + (shot.notes ? ' · 📝 Notes' : '') + (shot.classement ? ' · Classée' : '') + '</summary><div class="grid3">' +
       '<div class="field"><label>Seed</label><input type="number" data-f="seed" value="' + esc(shot.seed || "") + '" placeholder="Projet : ' + esc(proj.seed || "aléatoire") + '"></div>' +
       '<div class="field"><label>Prompt négatif</label><input type="text" data-f="negative" value="' + esc(shot.negative || "") + '" placeholder="' + esc(proj.negative || "Aucun") + '"></div>' +
       (shot.mode === "i2i" ? '<div class="field"><label>Force de transformation (0–1)</label><input type="number" step="0.05" min="0" max="1" data-f="strength" value="' + esc(shot.strength || "") + '"></div>' : '') +
       '</div>' +
       // 29/09 : notes libres de la carte (script, réplique, carton de fin, description, hashtags…), à la main ou par l'Atelier
       '<div class="field"><label>Notes (script, carton de fin, description, hashtags)</label><textarea data-f="notes" rows="4" placeholder="Rien pour l\'instant">' + esc(shot.notes || "") + '</textarea></div>' +
-      (shot.classement ? '<p class="hint">📁 Classée le ' + esc(shot.classement.date || "") + ' dans ' + esc(shot.classement.dossier || "") + '</p>' : '') +
+      (shot.classement ? '<p class="hint">Classée le ' + esc(shot.classement.date || "") + ' dans ' + esc(shot.classement.dossier || "") + '</p>' : '') +
       (two
         ? '<p class="hint">Prompt image envoyé : ' + esc(A.buildPrompt(A.stageView(shot, "image"), proj)) + '</p><p class="hint">Prompt vidéo envoyé : ' + esc(A.buildPrompt(A.stageView(shot, "video"), proj)) + '</p>'
         : '<p class="hint">Prompt envoyé : ' + esc(A.buildPrompt(shot, proj)) + '</p>') + '</details>' +

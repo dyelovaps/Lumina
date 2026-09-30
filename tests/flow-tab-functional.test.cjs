@@ -8,7 +8,15 @@ const root = path.join(__dirname, '..');
 const sidePanelHtmlPath = path.join(root, 'flow', 'side_panel.html');
 const sidePanelJsPath = path.join(root, 'flow', 'side_panel.js');
 
-function createMockEnvironment() {
+const TEST_PROJECT = 'aa93cad6-1b97-4b4f-96eb-d717e89bc7fc';
+
+function createMockEnvironment({ check = { ok: true, blocking: false, tabs: 1, warning: '' }, projects } = {}) {
+  // Liste de projets partagée avec Agnes (chrome.storage.local « luminaFlowProjects »)
+  const store = {
+    luminaZoom: '1.15',
+    luminaFlowProjects: projects || { list: [{ id: TEST_PROJECT, nom: 'Test', url: '', compte: 'test@exemple.fr', tier: 'PAYGATE_TIER_TWO' }], actif: TEST_PROJECT },
+  };
+  const messages = [];
   const elements = new Map();
   const listeners = new Map();
   const postRequests = [];
@@ -314,11 +322,12 @@ function createMockEnvironment() {
       sendMessage: (msg, callback) => {
         if (msg.type === 'STATUS') callback?.({ agentConnected: true, state: 'idle', metrics: {} });
         if (msg.type === 'REQUEST_LOG') callback?.({ log: [] });
+        if (msg.type === 'FLOW_CHECK') { messages.push(msg); callback?.(check); }
       },
       lastError: null,
       onMessage: { addListener: () => {} },
     },
-    storage: { local: { get: (keys, cb) => cb({ luminaZoom: '1.15' }), set: () => {} } },
+    storage: { local: { get: (keys, cb) => cb({ ...store }), set: (obj) => Object.assign(store, obj) } },
   };
 
   const context = {
@@ -335,7 +344,7 @@ function createMockEnvironment() {
   const source = fs.readFileSync(sidePanelJsPath, 'utf8');
   vm.runInNewContext(source, context);
 
-  return { context, elements, postRequests, triggerDOMContentLoaded: () => listeners.get('DOMContentLoaded')?.() };
+  return { context, elements, postRequests, store, messages, triggerDOMContentLoaded: () => listeners.get('DOMContentLoaded')?.() };
 }
 
 test('Flow HTML contains all required elements for the 6 generation modes and options', () => {
@@ -355,23 +364,55 @@ test('Flow HTML contains all required elements for the 6 generation modes and op
   assert.match(html, /id="flow-project-id"/);
 });
 
-test('Extracts UUID from full Google Flow project URL', () => {
+test('Ajouter un projet : identifiant extrait du lien, projet choisi et enregistré dans la liste partagée', async () => {
+  const env = createMockEnvironment({ projects: { list: [], actif: '' } });
+  env.triggerDOMContentLoaded();
+  await new Promise((r) => setTimeout(r, 10));
+  env.context.document.getElementById('flow-project-new-name').value = 'Compte Pro 1';
+  env.context.document.getElementById('flow-project-new-url').value = 'https://flow.google.com/project/BB93CAD6-1B97-4B4F-96EB-D717E89BC7FC';
+  env.context.document.getElementById('flow-project-new-account').value = 'Pro1@Exemple.fr';
+  env.context.document.getElementById('flow-project-new-tier').value = 'PAYGATE_TIER_TWO';
+  env.context.document.getElementById('flow-project-new-save').click();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(env.context.document.getElementById('flow-project-id').value, 'bb93cad6-1b97-4b4f-96eb-d717e89bc7fc');
+  const saved = env.store.luminaFlowProjects;
+  assert.equal(saved.actif, 'bb93cad6-1b97-4b4f-96eb-d717e89bc7fc');
+  assert.equal(saved.list[0].compte, 'pro1@exemple.fr');
+  assert.equal(saved.list[0].tier, 'PAYGATE_TIER_TWO');
+});
+
+test('Flow ouvert deux fois : avertissement affiché, aucune requête envoyée', async () => {
+  const warning = 'Google Flow est ouvert 2 fois (onglets ou fenêtres). Fermez-le partout sauf une fois.';
+  const env = createMockEnvironment({ check: { ok: false, blocking: true, tabs: 2, warning } });
+  env.triggerDOMContentLoaded();
+  await new Promise((r) => setTimeout(r, 10));
+  env.context.document.getElementById('flow-prompts').value = 'Un phare';
+  env.context.document.getElementById('run-flow-image').click();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(env.postRequests.length, 0);
+  assert.equal(env.context.document.getElementById('flow-check-warn').textContent, warning);
+  assert.equal(env.messages[0].compte, 'test@exemple.fr');
+});
+
+test('Génération : abonnement du compte du projet joint à la demande', async () => {
   const env = createMockEnvironment();
   env.triggerDOMContentLoaded();
-  const input = env.elements.get('flow-project-id');
-  input.value = 'https://flow.google.com/project/aa93cad6-1b97-4b4f-96eb-d717e89bc7fc';
-  input.dispatchEvent('input');
-  assert.equal(input.value, 'aa93cad6-1b97-4b4f-96eb-d717e89bc7fc');
+  await new Promise((r) => setTimeout(r, 10));
+  env.context.document.getElementById('flow-prompts').value = 'Un phare';
+  env.context.document.getElementById('run-flow-image').click();
+  await new Promise((r) => setTimeout(r, 10));
+  const req = env.postRequests.find((r) => r.url.endsWith('/flow/generate-image'));
+  assert.equal(req.body.user_paygate_tier, 'PAYGATE_TIER_TWO');
 });
 
 test('Text to Image (t2i) sends correct payload with model, aspect ratio, count and seed', async () => {
   const env = createMockEnvironment();
   env.triggerDOMContentLoaded();
 
-  const prompts = env.elements.get('flow-prompts');
-  const proj = env.elements.get('flow-project-id');
-  const seed = env.elements.get('flow-seed');
-  const runBtn = env.elements.get('run-flow-image');
+  const prompts = env.context.document.getElementById('flow-prompts');
+  const proj = env.context.document.getElementById('flow-project-id');
+  const seed = env.context.document.getElementById('flow-seed');
+  const runBtn = env.context.document.getElementById('run-flow-image');
 
   prompts.value = 'A futuristic city at dusk';
   proj.value = 'aa93cad6-1b97-4b4f-96eb-d717e89bc7fc';
@@ -394,9 +435,9 @@ test('Text to Video (t2v) sends correct payload to Omni text-to-video endpoint',
   const env = createMockEnvironment();
   env.triggerDOMContentLoaded();
 
-  const prompts = env.elements.get('flow-prompts');
-  const proj = env.elements.get('flow-project-id');
-  const runBtn = env.elements.get('run-flow-video');
+  const prompts = env.context.document.getElementById('flow-prompts');
+  const proj = env.context.document.getElementById('flow-project-id');
+  const runBtn = env.context.document.getElementById('run-flow-video');
 
   prompts.value = 'A cinematic drone shot over snow mountains';
   proj.value = 'aa93cad6-1b97-4b4f-96eb-d717e89bc7fc';
@@ -416,20 +457,20 @@ test('Image to Image (i2i) uploads base image and calls edit-image', async () =>
   const env = createMockEnvironment();
   env.triggerDOMContentLoaded();
 
-  const btnI2I = env.elements.get('flow-image-modes').children.find((c) => c.dataset.mode === 'i2i');
+  const btnI2I = env.context.document.getElementById('flow-image-modes').children.find((c) => c.dataset.mode === 'i2i');
   btnI2I.click();
 
-  const baseFile = env.elements.get('flow-image-base-file');
+  const baseFile = env.context.document.getElementById('flow-image-base-file');
   baseFile.files = [{ name: 'base.png', type: 'image/png' }];
   baseFile.dispatchEvent('change');
   await new Promise((r) => setTimeout(r, 10));
 
-  const prompts = env.elements.get('flow-prompts');
-  const proj = env.elements.get('flow-project-id');
+  const prompts = env.context.document.getElementById('flow-prompts');
+  const proj = env.context.document.getElementById('flow-project-id');
   prompts.value = 'Make it a neon cyberpunk city';
   proj.value = 'aa93cad6-1b97-4b4f-96eb-d717e89bc7fc';
 
-  const runBtn = env.elements.get('run-flow-image');
+  const runBtn = env.context.document.getElementById('run-flow-image');
   runBtn.click();
   await new Promise((r) => setTimeout(r, 20));
 
@@ -446,20 +487,20 @@ test('Image to Video (i2v) uploads start frame and calls generate-video', async 
   const env = createMockEnvironment();
   env.triggerDOMContentLoaded();
 
-  const btnI2V = env.elements.get('flow-video-modes').children.find((c) => c.dataset.mode === 'i2v');
+  const btnI2V = env.context.document.getElementById('flow-video-modes').children.find((c) => c.dataset.mode === 'i2v');
   btnI2V.click();
 
-  const startFile = env.elements.get('flow-video-start-file');
+  const startFile = env.context.document.getElementById('flow-video-start-file');
   startFile.files = [{ name: 'start.png', type: 'image/png' }];
   startFile.dispatchEvent('change');
   await new Promise((r) => setTimeout(r, 10));
 
-  const prompts = env.elements.get('flow-prompts');
-  const proj = env.elements.get('flow-project-id');
+  const prompts = env.context.document.getElementById('flow-prompts');
+  const proj = env.context.document.getElementById('flow-project-id');
   prompts.value = 'Animate waves crashing';
   proj.value = 'aa93cad6-1b97-4b4f-96eb-d717e89bc7fc';
 
-  const runBtn = env.elements.get('run-flow-video');
+  const runBtn = env.context.document.getElementById('run-flow-video');
   runBtn.click();
   await new Promise((r) => setTimeout(r, 20));
 
@@ -473,20 +514,20 @@ test('Ingredient to Video (r2v) uploads visual references and calls generate-vid
   const env = createMockEnvironment();
   env.triggerDOMContentLoaded();
 
-  const charFile = env.elements.get('flow-file-char');
+  const charFile = env.context.document.getElementById('flow-file-char');
   charFile.files = [{ name: 'character.png', type: 'image/png' }];
   charFile.dispatchEvent('change');
   await new Promise((r) => setTimeout(r, 10));
 
-  const btnR2V = env.elements.get('flow-video-modes').children.find((c) => c.dataset.mode === 'r2v');
+  const btnR2V = env.context.document.getElementById('flow-video-modes').children.find((c) => c.dataset.mode === 'r2v');
   btnR2V.click();
 
-  const prompts = env.elements.get('flow-prompts');
-  const proj = env.elements.get('flow-project-id');
+  const prompts = env.context.document.getElementById('flow-prompts');
+  const proj = env.context.document.getElementById('flow-project-id');
   prompts.value = 'Character walking in forest';
   proj.value = 'aa93cad6-1b97-4b4f-96eb-d717e89bc7fc';
 
-  const runBtn = env.elements.get('run-flow-video');
+  const runBtn = env.context.document.getElementById('run-flow-video');
   runBtn.click();
   await new Promise((r) => setTimeout(r, 20));
 

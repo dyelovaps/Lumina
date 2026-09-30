@@ -128,7 +128,7 @@ test('Classement : extension indépendante, chemin Projet / Saison / Épisode / 
   const proj = { name: 'Anthony', shots, library: [{ id: 'l1', name: 'Anthony' }], publish: { serie: 'La méthode AIDA', ep: 2 } };
   const core = { ui: { panel: () => ({ body: { addEventListener() {} } }), addShotAction: (l) => actions.push(l) }, getProject: () => proj, store: {} };
   C.init(core);
-  assert.deepEqual(actions, ['📁 Classer']);
+  assert.deepEqual(actions, ['Classer']);
   shots[1].notes = 'Carte 02 — Journée — problème-solution · publication\n- Réplique : « Deux. »\n- PUBLICATION : serie = AIDA - 02 · titre = Tu laisses un blanc ? · appel = Suis la page.';
   shots[1].ingredients = ['l1'];
   const v = C.defaults(shots[1]);
@@ -141,6 +141,27 @@ test('Classement : extension indépendante, chemin Projet / Saison / Épisode / 
   assert.match(sheet, /Références : Anthony/);
   assert.match(sheet, /## Notes[\s\S]*Réplique : « Deux. »/);
   assert.doesNotMatch(fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-classement.js'), 'utf8'), /AgnesPlugins\.get\(/);
+});
+
+test('Classement local (30/09/2026) : Production/<Thématique>/…, dates AAAAMMJJ, sans sélecteur de dossier', () => {
+  const { plugins, shots } = load('plugin-classement.js');
+  const C = plugins.classement;
+  const proj = { name: 'Anthony', shots, library: [], publish: {} };
+  C.init({ ui: { panel: () => ({ body: { addEventListener() {} } }), addShotAction() {} }, getProject: () => proj, store: {} });
+  assert.deepEqual(Array.from(C.localBase({ thematique: 'Serie', nom: 'Engrenage', episode: 3 })), ['Serie', 'Engrenage', 'Ep03']);
+  assert.deepEqual(Array.from(C.localBase({ thematique: 'Marketing', nom: 'Anthony', date: '20260930', sujet: "L'accroche : AIDA" })), ['Marketing', 'Anthony', "20260930 - L'accroche AIDA"]);
+  assert.deepEqual(Array.from(C.localBase({ thematique: 'Marketing', nom: 'Anthony', date: '30/09' })).slice(0, 2), ['Marketing', 'Anthony']);
+  assert.match(C.localBase({ thematique: 'Marketing', nom: 'Anthony', date: 'mauvais' })[2], /^\d{8}$/);
+  assert.deepEqual(Array.from(C.localBase({ thematique: 'Court_metrage', nom: 'Le bus' })), ['Court_metrage', 'Le bus']);
+  assert.equal(C.localOf(shots[0]), null, 'aucune thématique réglée : rien de local');
+  proj.classement = { thematique: 'Marketing', nom: 'Anthony', date: '20260930', sujet: 'accroche' };
+  const loc = C.localOf(shots[0]);
+  assert.equal(loc.video, 'Marketing/Anthony/20260930 - accroche/Video');
+  assert.match(loc.nom, /^Carte 01 - /);
+  assert.equal(C.defaults(shots[0]).mode, 'local');
+  const src = fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-classement.js'), 'utf8');
+  assert.match(src, /"\/classement\/fichier", \{ method: "POST", headers: \{ "X-Chemin": encodeURIComponent\(chemin\) \}/);
+  assert.doesNotMatch(src, /📁/);
 });
 
 test('Classement est proposé dans ⚙ et actif par défaut', () => {

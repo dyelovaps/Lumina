@@ -180,7 +180,7 @@ AgnesPlugins.register("atelier", {
   // L'ÉQUIPE (consignes par défaut, modifiables ; collez-y vos consignes de Gems)
   // =========================================================
   COMMON: "Tu fais partie de l'équipe de production d'Agnes Studio Pro, une app qui produit des séries courtes générées par IA " +
-    "(format vertical TikTok/Reels ; images par Agnes Image 2.5 ou ChatGPT, vidéos de 4 à 12 s par Agnes Video 2.5 ou Grok). " +
+    "(format vertical TikTok/Reels ; images par Agnes Image 2.5 ou ChatGPT, vidéos de 4 à 12 s par Agnes Video 2.5, Grok ou Google Flow). " +
     "Réponds en français, sauf pour les prompts et l'ADN visuel, en anglais. Travaille uniquement à partir des ENTRÉES fournies : " +
     "n'invente pas de personnage, de lieu ou de fait qui contredirait les étapes précédentes. Si une entrée manque, dis-le en une phrase puis fais au mieux. " +
     "Pas de texte, sous-titres ni musique dans les prompts d'image ou de vidéo (dialogues, musique et titres sont gérés à part). " +
@@ -768,7 +768,7 @@ AgnesPlugins.register("atelier", {
       "- Les messages « ▸ N. Agent a terminé » viennent d'appels directs de l'utilisateur (@N) : tiens-en compte.\n" +
       "- Prompts des cartes du Storyboard (« prompt parfait », placement des personnages, angle, voiture…) : confie-les à a16 (Directeur de plans) en précisant les numéros de cartes et la demande de l'utilisateur, puis applique son travail avec update_shots en donnant agent_id \"a16\" (sans recopier les prompts).\n" +
       "- Si aucun agent ne convient à la demande, propose d'en créer un avec create_agent (consignes complètes, format de sortie, entrées et contexte utiles), puis lance-le. N'en crée pas un qui double un agent existant.\n" +
-      "- Générations (generate_shots) : annonce le nombre de cartes, l'étape et les moteurs (quotas) ; une carte d'abord pour un nouveau style ou personnage, fais valider, puis les autres ; vidéos seulement quand les images sont validées. Grok sert uniquement à la vidéo ; si Grok est bloqué, arrête et préviens l'utilisateur.\n" +
+      "- Générations (generate_shots) : annonce le nombre de cartes, l'étape et les moteurs (quotas) ; une carte d'abord pour un nouveau style ou personnage, fais valider, puis les autres ; vidéos seulement quand les images sont validées. Grok et Flow servent uniquement à la vidéo (Flow consomme les crédits Google) ; si Grok ou Flow est bloqué, arrête et préviens l'utilisateur.\n" +
       "- Vidéos d'avatar pour les réseaux (marketing) : utilise les outils marketing_* (agent Marketing branché par le pont local). Avant marketing_generate_day, si l'utilisateur n'a pas choisi la méthode du jour, lis marketing_state et demande-lui : « Qu'est-ce qu'on fait aujourd'hui : AIDA, PAS… ? » en citant les fiches actives. marketing_generate_day dépose un document « Marketing — date » : lis-le avec get_document et suis ses CONSIGNES POUR LE CHEF dans l'ordre, une étape à la fois. Ne reformule jamais les répliques d'un livrable marketing. " +
       "Une journée peut être RENVOYÉE après réécriture (même nom de document) : la dernière version remplace entièrement la précédente. " +
       "Si les cartes de cette journée existent déjà dans le Storyboard (la consigne donne leurs numéros ; sinon get_storyboard), N'UTILISE PAS send_to_lot, qui créerait des cartes en double : " +
@@ -1068,9 +1068,10 @@ AgnesPlugins.register("atelier", {
     var picked = this.shotsByNumbers(a.plans), missing = picked.filter(function (p) { return !p.shot; }).map(function (p) { return p.n; });
     if (!picked.length) return "Aucun numéro de carte donné.";
     if (missing.length) return "Cartes introuvables : " + missing.join(", ") + " (voir get_storyboard). Rien n'a été lancé.";
-    if (etape !== "image" && m && m.cfg.video === "grok") {
-      if (m.cfg.grokBloque) return "Grok est bloqué par sécurité : " + m.cfg.grokBloque + " Rien n'a été lancé : préviens l'utilisateur (⚙ → Moteurs).";
-      if (!m.canGrok()) return "Grok indisponible : Agnes n'est pas ouverte depuis Lumina. Rien n'a été lancé.";
+    if (etape !== "image" && m && (m.cfg.video === "grok" || m.cfg.video === "flow")) {
+      var nom = m.cfg.video === "flow" ? "Flow" : "Grok", bloque = m.cfg[m.cfg.video + "Bloque"];
+      if (bloque) return nom + " est bloqué par sécurité : " + bloque + " Rien n'a été lancé : préviens l'utilisateur (⚙ → Moteurs).";
+      if (!m.canGrok()) return nom + " indisponible : Agnes n'est pas ouverte depuis Lumina. Rien n'a été lancé.";
     }
     var done = [];
     picked.forEach(function (p) { var j = etape ? A.enqueueStage(p.shot, etape) : A.enqueueShot(p.shot); if (j) done.push(p.n); });

@@ -631,11 +631,13 @@ ol li { margin: 8px 0; }
           </select>
         </div>
       </header>
+      <p id="role-note" class="hint" style="color: var(--danger, #eb5757); margin: 4px 0;" hidden></p>
       <nav class="tabs">
         <button type="button" data-tab="control" class="on">Grok</button>
         <button type="button" data-tab="agnes">Agnes</button>
         <button type="button" data-tab="flow">Google Flow</button>
         <button type="button" data-tab="queue">File</button>
+        <button type="button" data-tab="shortcuts">Raccourcis</button>
         <button type="button" data-tab="settings">Réglages</button>
       </nav>
       <section id="flow" class="page">
@@ -923,6 +925,21 @@ ol li { margin: 8px 0; }
         <button type="button" class="ghost" id="export-journal">Exporter le journal</button>
       </section>
 
+      <section id="shortcuts" class="page">
+        <p class="k">Services</p>
+        <div class="svc-list">
+          <div class="svc"><span class="svc-dot" id="svc-lanceur">●</span> Lanceur (127.0.0.1:8178)</div>
+          <div class="svc"><span class="svc-dot" id="svc-pont">●</span> Pont prod-fruits (127.0.0.1:8177)</div>
+          <div class="svc"><span class="svc-dot" id="svc-flowkit">●</span> FlowKit / Google Flow (127.0.0.1:8100)</div>
+        </div>
+        <div id="shortcut-list" class="empty">Chargement…</div>
+        <p class="err" id="shortcut-err" hidden></p>
+        <div class="row">
+          <button type="button" class="ghost" id="shortcut-refresh">Actualiser</button>
+        </div>
+        <p class="note">Chaque bouton exécute une commande déclarée dans <b>outils/lanceur/lanceur.json</b>. Démarrez d’abord le lanceur (double-clic sur <b>Lancer_lanceur.bat</b>, ou placez un raccourci dans <i>shell:startup</i> pour qu’il démarre avec Windows).</p>
+      </section>
+
       <section id="settings" class="page">
         <div class="field">
           <div class="top"><span>Prompts simultanés</span><span id="c-label">1</span></div>
@@ -1012,18 +1029,22 @@ ol li { margin: 8px 0; }
         <div class="field">
           <span class="k">Dossier Images</span>
           <input id="dir-images" type="text" value="Images" />
+          <div class="folder-row" data-folder-key="images" data-folder-label="Images"></div>
         </div>
         <div class="field">
           <span class="k">Dossier Clip vidéo</span>
           <input id="dir-clips" type="text" value="Clip video" />
+          <div class="folder-row" data-folder-key="clips" data-folder-label="Clips vidéo"></div>
         </div>
         <div class="field">
           <span class="k">Dossier Video complete</span>
           <input id="dir-complete" type="text" value="Video complete" />
+          <div class="folder-row" data-folder-key="complete" data-folder-label="Vidéo complète"></div>
         </div>
         <div class="field">
           <span class="k">Dossier Script</span>
           <input id="dir-script" type="text" value="Script" />
+          <div class="folder-row" data-folder-key="script" data-folder-label="Script"></div>
         </div>
         <label class="switch">
           <span>
@@ -1032,9 +1053,13 @@ ol li { margin: 8px 0; }
           </span>
           <input id="copy-complete" type="checkbox" />
         </label>
-        <p class="note">Fichiers Grok : Téléchargements/Lumina/Images/01-titre.jpg et …/Clip video/01-titre.mp4. Version 1.9.0.</p>
+        <p class="note">« Choisir… » ouvre l’explorateur Windows : les fichiers de ce type sont alors enregistrés directement dans le dossier choisi (ex. un épisode de prod-fruits). Sans dossier choisi : Téléchargements/Lumina/Images/01-titre.jpg et …/Clip video/01-titre.mp4.</p>
+        <button type="button" class="ghost" id="folders-authorize">Réautoriser tous les dossiers</button>
+        <p class="note">Après un redémarrage de Chrome, l’accès est redemandé au prochain « Lancer » ou via ce bouton. Choisissez « Autoriser à chaque visite » pour ne plus être sollicité. Version 1.13.0.</p>
       </section>
     </div>
+    <script src="folders.js"></script>
+    <script src="role.js"></script>
     <script src="sidepanel.js"></script>
     <script src="agnes-bridge.js"></script>
   </body>

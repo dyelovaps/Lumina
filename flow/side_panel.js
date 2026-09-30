@@ -69,6 +69,136 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// ── Classement : dossier choisi (../folders.js) sinon Téléchargements ──
+async function saveFlowFile(key, name, blob) {
+  const folders = globalThis.LuminaFolders;
+  if (folders) {
+    const res = await folders.save(key, name, blob);
+    if (res.ok) return res.path;
+    if (res.reason === 'permission') console.warn(`Dossier ${key} non autorisé (bouton « Réautoriser ») — copie dans Téléchargements.`);
+  }
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+  return null;
+}
+
+function authorizeFolders() {
+  void globalThis.LuminaFolders?.authorizeAll();
+}
+
+// ── Rythme anti-restriction ──────────────────────────────────
+//
+// Mêmes préréglages que flow/background.js (clé luminaFlowPace). Le panneau
+// espace ses prompts et ses sondages ; le service worker garde le dernier mot
+// (file unique + repos exponentiel quand Google Flow signale une limite).
+
+const PACE_UI = {
+  prudent: { genGapMs: 30000, pollMs: 15000, jitter: 0.35 },
+  normal:  { genGapMs: 18000, pollMs: 10000, jitter: 0.3 },
+  rapide:  { genGapMs: 9000,  pollMs: 6000,  jitter: 0.25 },
+};
+let paceName = 'normal';
+let lastGenSentAt = 0;
+
+function paceUi() {
+  return PACE_UI[paceName] || PACE_UI.normal;
+}
+
+function jitter(ms) {
+  const j = paceUi().jitter;
+  return Math.round(ms * (1 - j / 2 + Math.random() * j));
+}
+
+function askPace() {
+  return new Promise((resolve) => {
+    let done = false;
+    try {
+      chrome.runtime.sendMessage({ type: 'PACE_STATUS' }, (r) => {
+        done = true;
+        resolve(chrome.runtime.lastError ? null : r || null);
+      });
+    } catch {
+      done = true;
+      resolve(null);
+    }
+    setTimeout(() => { if (!done) resolve(null); }, 1500);
+  });
+}
+
+function isCooldownError(e) {
+  return /FLOW_COOLDOWN|RESOURCE_EXHAUSTED|UNUSUAL|429|too many requests/i.test(String(e?.message || e || ''));
+}
+
+/* Attend son tour avant une génération : écart avec la précédente (avec aléa)
+ * puis fin d'une éventuelle pause anti-restriction. */
+async function waitForPace(progressEl, label, shouldContinue = () => true) {
+  const gapLeft = lastGenSentAt ? lastGenSentAt + jitter(paceUi().genGapMs) - Date.now() : 0;
+  const until = Date.now() + Math.max(0, gapLeft);
+  while (Date.now() < until && shouldContinue()) {
+    if (progressEl) progressEl.textContent = `${label} — pause de rythme ${Math.ceil((until - Date.now()) / 1000)}s…`;
+    await sleep(Math.min(1000, until - Date.now()));
+  }
+  for (;;) {
+    if (!shouldContinue()) return;
+    const st = await askPace();
+    const left = st?.cooldownLeftMs || 0;
+    renderPaceStatus(st);
+    if (left <= 0) break;
+    if (progressEl) progressEl.textContent = `${label} — Google Flow limite les requêtes : reprise dans ${Math.ceil(left / 1000)}s…`;
+    await sleep(Math.min(5000, left));
+  }
+  lastGenSentAt = Date.now();
+}
+
+function renderPaceStatus(st) {
+  const el = document.getElementById('flow-pace-status');
+  if (!el) return;
+  const left = st?.cooldownLeftMs || 0;
+  const reset = document.getElementById('flow-pace-reset');
+  if (left > 0) {
+    el.textContent = `Pause anti-restriction : reprise dans ${Math.ceil(left / 1000)}s (${st.lastReason || 'limite Flow'})`;
+    el.style.color = 'var(--amber)';
+    if (reset) reset.style.display = '';
+  } else {
+    el.textContent = `Rythme ${paceName} : ~${Math.round(paceUi().genGapMs / 1000)}s entre deux générations.`;
+    el.style.color = 'var(--muted)';
+    if (reset) reset.style.display = 'none';
+  }
+}
+
+function initPace() {
+  const sel = document.getElementById('flow-pace');
+  const apply = (val) => {
+    paceName = PACE_UI[val] ? val : 'normal';
+    if (sel) sel.value = paceName;
+    renderPaceStatus(null);
+  };
+  try {
+    chrome.storage.local.get(['luminaFlowPace'], (bag) => apply(bag?.luminaFlowPace));
+  } catch { apply('normal'); }
+  if (sel) {
+    sel.addEventListener('change', (e) => {
+      apply(e.target.value);
+      try { chrome.storage.local.set({ luminaFlowPace: paceName }); } catch { /* hors extension */ }
+    });
+  }
+  const reset = document.getElementById('flow-pace-reset');
+  if (reset) {
+    reset.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'PACE_RESET' }, (st) => {
+        if (chrome.runtime.lastError) return;
+        renderPaceStatus(st);
+      });
+    });
+  }
+}
+
 // ── Local FlowKit API helper ─────────────────────────────────
 //
 // Every /flow/* route is mounted under /api in the agent (see main.py:
@@ -77,6 +207,13 @@ function sleep(ms) {
 // directly 404s — that was the root cause of every "nothing happens" report.
 
 async function flowPost(path, body) {
+  // Toute génération passe par la vérification (projet de la liste, une seule page Flow, bon compte)
+  // et part avec l'abonnement du compte du projet.
+  if (/^\/flow\/(generate|edit-image|upload-image)/.test(path)) {
+    const p = await flowGuard();
+    if (body && body.project_id && body.project_id !== p.id) throw new Error('Le projet de la demande ne correspond pas au projet choisi dans la liste : rien n’a été envoyé.');
+    if (body && !body.user_paygate_tier && !/upload-image/.test(path)) body = { ...body, user_paygate_tier: p.tier };
+  }
   const res = await fetch(`${FLOW_API}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -585,15 +722,8 @@ function wireResultActions(card, { mediaId, projectId }) {
           throw new Error(msg);
         }
         const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
         const seq = card.dataset.seq;
-        a.download = seq ? `${seq}.jpg` : `flow-${mediaId}-${quality}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        await saveFlowFile('flowImages', seq ? `${seq}.jpg` : `flow-${mediaId}-${quality}.jpg`, blob);
       } catch (e) {
         alert(`Export ${quality.toUpperCase()} impossible : ${e.message || e}`);
       } finally {
@@ -676,7 +806,7 @@ function finishVideoResult(card, { url, error }) {
 // /flow/check-status). Both are real batch-operation shapes from the agent;
 // see agent/services/flow_client.py and agent/services/omni_flash.py.
 
-async function pollVideoResult(submitted, projectId, { shouldContinue = () => true, onTick, intervalMs = 5000, timeoutMs = 900000 } = {}) {
+async function pollVideoResult(submitted, projectId, { shouldContinue = () => true, onTick, intervalMs = null, timeoutMs = 900000 } = {}) {
   let workflows = submitted && submitted.workflows;
   let operations = submitted && submitted.operations;
   if ((!workflows || !workflows.length) && (!operations || !operations.length)) {
@@ -687,7 +817,11 @@ async function pollVideoResult(submitted, projectId, { shouldContinue = () => tr
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (!shouldContinue()) throw new Error('Arrêté par l’utilisateur.');
-    await sleep(intervalMs);
+    // Sondage espacé, avec aléa, et qui ralentit après 2 min : un rendu vidéo
+    // prend plusieurs minutes, sonder toutes les 5 s ne fait qu'alerter Flow.
+    const base = intervalMs || paceUi().pollMs;
+    const slow = Date.now() - start > 120000 ? 1.8 : 1;
+    await sleep(jitter(Math.min(30000, base * slow)));
     const elapsed = Math.round((Date.now() - start) / 1000);
     if (onTick) onTick(elapsed);
 
@@ -753,7 +887,7 @@ function initImagePanel() {
 
   const runBtn = document.getElementById('run-flow-image');
   const stopBtn = document.getElementById('stop-flow-image');
-  if (runBtn) runBtn.addEventListener('click', () => { if (!imageRunning) runImageBatch(); });
+  if (runBtn) runBtn.addEventListener('click', () => { authorizeFolders(); if (!imageRunning) runImageBatch(); });
   if (stopBtn) stopBtn.addEventListener('click', () => { imageRunning = false; });
 }
 
@@ -803,10 +937,13 @@ async function runImageBatch() {
       return _manualRefIds;
     };
 
+    const retried = new Set();
     for (let i = 0; i < prompts.length && imageRunning; i++) {
       const rawPrompt = prompts[i];
       const { tags, clean } = parseSceneRefTags(rawPrompt);
       const prompt = clean || rawPrompt;               // prompt envoyé au modèle, sans les @tags
+      await waitForPace(progressEl, `Image ${i + 1}/${prompts.length}`, () => imageRunning);
+      if (!imageRunning) break;
       progressEl.textContent = `Image ${i + 1}/${prompts.length} — envoi…`;
       const seed = baseSeed !== null ? baseSeed + i * 97 : undefined;
 
@@ -850,6 +987,11 @@ async function runImageBatch() {
           addResult({ kind: 'image', prompt, error: `Variante ${f.index} : ${f.error}` });
         });
       } catch (e) {
+        if (isCooldownError(e) && !retried.has(i)) {
+          retried.add(i);
+          i--; // même prompt, après la pause anti-restriction
+          continue;
+        }
         addResult({ kind: 'image', prompt, error: e.message || String(e) });
       }
     }
@@ -916,7 +1058,7 @@ function initVideoPanel() {
 
   const runBtn = document.getElementById('run-flow-video');
   const stopBtn = document.getElementById('stop-flow-video');
-  if (runBtn) runBtn.addEventListener('click', () => { if (!videoRunning) runVideoBatch(); });
+  if (runBtn) runBtn.addEventListener('click', () => { authorizeFolders(); if (!videoRunning) runVideoBatch(); });
   if (stopBtn) stopBtn.addEventListener('click', () => { videoRunning = false; });
 }
 
@@ -977,9 +1119,12 @@ async function runVideoBatch() {
       refIds = await getSelectedReferenceMediaIds(projectId, { max: 7 });
     }
 
+    const retried = new Set();
     for (let i = 0; i < prompts.length && videoRunning; i++) {
       const prompt = prompts[i];
       const sceneId = `scene-${Date.now()}-${i}`;
+      await waitForPace(progressEl, `Vidéo ${i + 1}/${prompts.length}`, () => videoRunning);
+      if (!videoRunning) break;
       progressEl.textContent = `Vidéo ${i + 1}/${prompts.length} — envoi…`;
       let card = null;
 
@@ -1018,6 +1163,11 @@ async function runVideoBatch() {
         });
         finishVideoResult(card, { url: result.url });
       } catch (e) {
+        if (!card && isCooldownError(e) && !retried.has(i)) {
+          retried.add(i);
+          i--; // même prompt, après la pause anti-restriction
+          continue;
+        }
         if (card) finishVideoResult(card, { error: e.message || String(e) });
         else addResult({ kind: 'video', prompt, error: e.message || String(e) });
       }
@@ -1056,44 +1206,215 @@ function initGenTypeTabs() {
 
 // ── Project ID field ───────────────────────────────────────────
 
-function initProjectIdField() {
-  const el = document.getElementById('flow-project-id');
-  if (!el) return;
-  el.addEventListener('input', () => {
-    const val = el.value.trim();
-    const match = val.match(/project\/([a-f0-9-]{36})/i);
-    if (match && match[1]) {
-      el.value = match[1];
-      const statusEl = document.getElementById('flow-project-status');
-      if (statusEl) {
-        statusEl.textContent = `Projet extrait : ${match[1].slice(0, 8)}…`;
-        statusEl.style.color = 'var(--sage)';
-      }
+// Liste des projets Flow, partagée avec Agnes (même clé chrome.storage.local, lue aussi par
+// agnes/plugins/plugin-moteurs.js) : { list: [{ id, nom, url, compte, tier }], actif }.
+// Le projet choisi ici est celui qu'utilise Agnes, et inversement.
+const FLOW_PROJECTS_KEY = 'luminaFlowProjects';
+const PROJECT_UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+let flowProjects = { list: [], actif: '' };
+
+function activeFlowProject() {
+  return flowProjects.list.find((p) => p.id === flowProjects.actif) || null;
+}
+
+function flowProjectUrl(p) {
+  // Lien collé depuis Flow en priorité ; sinon l'ancienne adresse labs.google, redirigée par Google vers flow.google.com.
+  return p.url || `https://labs.google/fx/tools/flow/project/${p.id}`;
+}
+
+// Accès en rappels (callbacks) : fonctionne avec toutes les versions de Chrome.
+function flowStorageGet(key) {
+  return new Promise((resolve) => chrome.storage.local.get(key, (d) => resolve(d || {})));
+}
+
+function flowMessage(msg, ms = 8000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (!done) { done = true; resolve(r || null); } };
+    try {
+      chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; finish(r); });
+    } catch {
+      finish(null);
     }
+    setTimeout(() => finish(null), ms);
   });
 }
 
-async function detectActiveProject() {
-  const statusEl = document.getElementById('flow-project-status');
-  const inputEl = document.getElementById('flow-project-id');
-  if (!statusEl || !inputEl) return;
+// La liste de référence est gardée par le pont local (prod-fruits, GET/POST /flow/projets), commun aux deux
+// profils Chrome (« Principal » et « Flow seulement ») et à Agnes. chrome.storage.local n'en garde qu'une copie,
+// utilisée si le pont est arrêté.
+const PONT = 'http://127.0.0.1:8177';
 
+async function pontJson(path, init) {
   try {
-    const res = await fetch(`${FLOW_API}/active-project`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.project_id) {
-        inputEl.value = data.project_id;
-        statusEl.textContent = `Projet actif : ${data.project_name || data.project_id}`;
-        statusEl.style.color = 'var(--sage)';
-        return;
-      }
+    const res = await fetch(PONT + path, init);
+    const data = await res.json();
+    return res.ok ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadFlowProjects() {
+  const data = await flowStorageGet(FLOW_PROJECTS_KEY);
+  const v = data[FLOW_PROJECTS_KEY];
+  const local = { list: Array.isArray(v?.list) ? v.list : [], actif: v?.actif || '' };
+  const pont = await pontJson('/flow/projets');
+  if (pont && Array.isArray(pont.list)) {
+    if (!pont.maj && local.list.length) {
+      // Première fois : la liste de ce navigateur devient celle du pont.
+      flowProjects = local;
+      await saveFlowProjects();
+    } else {
+      flowProjects = { list: pont.list, actif: pont.actif || '' };
+      if (JSON.stringify(flowProjects) !== JSON.stringify(local)) chrome.storage.local.set({ [FLOW_PROJECTS_KEY]: flowProjects });
+    }
+  } else {
+    flowProjects = local;
+  }
+  renderFlowProjects();
+}
+
+async function saveFlowProjects() {
+  chrome.storage.local.set({ [FLOW_PROJECTS_KEY]: flowProjects });
+  const res = await pontJson('/flow/projets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flowProjects),
+  });
+  if (!res) showFlowWarning('Pont local injoignable (lancer_pont.bat) : la liste n’est enregistrée que dans ce navigateur.');
+}
+
+function renderFlowProjects() {
+  const sel = document.getElementById('flow-project-select');
+  const hidden = document.getElementById('flow-project-id');
+  const statusEl = document.getElementById('flow-project-status');
+  if (!sel) return;
+  const tierName = (t) => (t === 'PAYGATE_TIER_TWO' ? 'Pro' : t === 'PAYGATE_TIER_ONE' ? 'Gratuit' : 'abonnement ?');
+  sel.innerHTML = flowProjects.list.length
+    ? flowProjects.list.map((p) => `<option value="${escHtml(p.id)}">${escHtml(p.nom)} — ${escHtml(p.compte || 'compte ?')} (${tierName(p.tier)})</option>`).join('')
+    : '<option value="">Aucun projet : ajoutez-en un ci-dessous</option>';
+  sel.value = activeFlowProject() ? flowProjects.actif : (flowProjects.list[0]?.id || '');
+  const p = activeFlowProject();
+  if (hidden) hidden.value = p ? p.id : '';
+  if (statusEl) {
+    statusEl.textContent = p ? `${p.id.slice(0, 8)}…` : '';
+    statusEl.style.color = 'var(--muted)';
+  }
+}
+
+function initProjectIdField() {
+  const sel = document.getElementById('flow-project-select');
+  if (!sel) return;
+  sel.addEventListener('change', async () => {
+    flowProjects.actif = sel.value;
+    await saveFlowProjects();
+    renderFlowProjects();
+    void refreshFlowCheck();
+  });
+  document.getElementById('flow-project-open')?.addEventListener('click', async () => {
+    const p = activeFlowProject();
+    if (!p) return;
+    const res = await flowMessage({ type: 'FLOW_OPEN_PROJECT', url: flowProjectUrl(p) });
+    if (!res?.ok) showFlowWarning(res?.warning || 'Ouverture impossible.');
+    else setTimeout(() => void refreshFlowCheck(), 4000);
+  });
+  document.getElementById('flow-project-remove')?.addEventListener('click', async () => {
+    const p = activeFlowProject();
+    if (!p || !confirm(`Retirer « ${p.nom} » de la liste ? (Rien n'est supprimé chez Google Flow.)`)) return;
+    flowProjects.list = flowProjects.list.filter((x) => x.id !== p.id);
+    flowProjects.actif = flowProjects.list[0]?.id || '';
+    await saveFlowProjects();
+    renderFlowProjects();
+  });
+  document.getElementById('flow-project-new-save')?.addEventListener('click', async () => {
+    const val = (id) => (document.getElementById(id)?.value || '').trim();
+    const raw = val('flow-project-new-url');
+    const m = raw.match(PROJECT_UUID_RE);
+    const nom = val('flow-project-new-name');
+    const compte = val('flow-project-new-account').toLowerCase();
+    const tier = val('flow-project-new-tier');
+    if (!nom || !m || !tier) {
+      showFlowWarning("Pour ajouter un projet : un nom, le lien du projet (ou son identifiant) et l'abonnement du compte.");
+      return;
+    }
+    if (compte && !/^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(compte)) {
+      showFlowWarning('Adresse du compte Google non reconnue.');
+      return;
+    }
+    const id = m[1].toLowerCase();
+    const entry = { id, nom: nom.slice(0, 60), url: /^https:\/\//.test(raw) ? raw : '', compte, tier };
+    flowProjects.list = [...flowProjects.list.filter((x) => x.id !== id), entry];
+    flowProjects.actif = id;
+    await saveFlowProjects();
+    for (const f of ['flow-project-new-name', 'flow-project-new-url', 'flow-project-new-account', 'flow-project-new-tier']) {
+      const el = document.getElementById(f);
+      if (el) el.value = '';
+    }
+    const add = document.getElementById('flow-project-add');
+    if (add) add.open = false;
+    renderFlowProjects();
+    showFlowWarning('');
+  });
+  // L'autre navigateur modifie la liste (par le pont) : relue à chaque retour sur le panneau et toutes les 30 s.
+  globalThis.addEventListener?.('focus', () => void loadFlowProjects());
+  if (typeof setInterval === 'function') setInterval(() => void loadFlowProjects(), 30000);
+  // Agnes (ou un autre panneau) modifie la liste : on suit.
+  chrome.storage.onChanged?.addListener((changes, area) => {
+    if (area === 'local' && changes[FLOW_PROJECTS_KEY]) void loadFlowProjects();
+  });
+  chrome.tabs?.onRemoved?.addListener(() => void refreshFlowCheck());
+  chrome.tabs?.onUpdated?.addListener((_, info) => { if (info.status === 'complete') void refreshFlowCheck(); });
+}
+
+function showFlowWarning(text) {
+  const el = document.getElementById('flow-check-warn');
+  if (!el) return;
+  el.textContent = text || '';
+  el.hidden = !text;
+}
+
+// Bilan des onglets et comptes Flow (flow/background.js → FLOW_CHECK).
+async function refreshFlowCheck() {
+  const p = activeFlowProject();
+  const res = (await flowMessage({ type: 'FLOW_CHECK', compte: p?.compte || '' })) ||
+    { ok: false, blocking: true, warning: 'Vérification de Google Flow impossible : rechargez Lumina (chrome://extensions). Rien n’est envoyé.' };
+  showFlowWarning(res.warning || '');
+  return res;
+}
+
+// Avant toute génération : un projet complet choisi, une seule page Flow, le bon compte.
+async function flowGuard() {
+  const R = globalThis.LuminaRole;
+  if (R) {
+    const role = await R.get();
+    if (!R.allows(role, 'flow')) throw new Error(R.refusal(role, 'flow'));
+  }
+  await loadFlowProjects(); // la liste a pu changer dans Agnes ou dans l'autre navigateur
+  const p = activeFlowProject();
+  if (!p) throw new Error('Choisissez un projet Google Flow dans la liste (ou ajoutez-en un).');
+  if (!p.tier) throw new Error(`Précisez l'abonnement du compte du projet « ${p.nom} » (retirez-le puis ajoutez-le à nouveau).`);
+  const res = await refreshFlowCheck();
+  if (!res || res.blocking) throw new Error(res?.warning || 'Google Flow n’est pas prêt : rien n’a été envoyé.');
+  return p;
+}
+
+// Ancienne saisie : le projet d'Agnes (réglage « flowProjet ») ou celui de FlowKit rejoint la liste une fois,
+// avec l'abonnement à préciser (aucune génération tant qu'il ne l'est pas).
+async function detectActiveProject() {
+  await loadFlowProjects();
+  if (flowProjects.list.length) return;
+  try {
+    const res = await fetch(`${FLOW_API}/flow/status`);
+    const data = res.ok ? await res.json() : null;
+    if (data?.flow_project_id && PROJECT_UUID_RE.test(data.flow_project_id)) {
+      flowProjects = { list: [{ id: data.flow_project_id, nom: 'Projet par défaut de FlowKit', url: '', compte: '', tier: '' }], actif: data.flow_project_id };
+      await saveFlowProjects();
+      renderFlowProjects();
     }
   } catch {
-    /* service local not listening on 8100 */
+    /* service local arrêté */
   }
-  statusEl.textContent = 'Projet manuel (service local indisponible ou aucun projet actif)';
-  statusEl.style.color = 'var(--muted)';
 }
 
 // ── Bulk download (Télécharger tout 2K / 4K) ──────────────────
@@ -1116,14 +1437,7 @@ async function downloadAllImages(quality) {
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = seq ? `${seq}.jpg` : `flow-${mediaId}-${quality}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      await saveFlowFile('flowImages', seq ? `${seq}.jpg` : `flow-${mediaId}-${quality}.jpg`, blob);
       await sleep(400); // évite de saturer le navigateur / l'agent
     } catch (e) {
       console.warn(`Export ${quality} échoué pour ${mediaId} :`, e.message);
@@ -1139,7 +1453,7 @@ function initBulkDownload() {
     b.type = 'button';
     b.id = id;
     b.textContent = label;
-    b.addEventListener('click', () => downloadAllImages(q));
+    b.addEventListener('click', () => { authorizeFolders(); downloadAllImages(q); });
     return b;
   };
   clearBtn.parentNode.insertBefore(mk('flow-dl-all-2k', 'Télécharger tout (2K)', '2k'), clearBtn);
@@ -1220,7 +1534,7 @@ function ensureVideoQueueSection() {
   const results = document.getElementById('flow-results-section');
   if (results && results.parentNode) results.parentNode.insertBefore(sec, results.nextSibling);
   else document.body.appendChild(sec);
-  sec.querySelector('#flow-vq-run').addEventListener('click', () => { if (!videoQueueRunning) runVideoQueue(); });
+  sec.querySelector('#flow-vq-run').addEventListener('click', () => { authorizeFolders(); if (!videoQueueRunning) runVideoQueue(); });
   sec.querySelector('#flow-vq-clear').addEventListener('click', () => {
     if (videoQueueRunning) return;
     videoQueue = []; vqSave(); renderVideoQueue();
@@ -1281,6 +1595,7 @@ async function runVideoQueue() {
 
   for (let i = 0; i < videoQueue.length; i++) {
     const e = videoQueue[i];
+    await waitForPace(prog, `Clip ${i + 1}/${videoQueue.length}`);
     if (prog) prog.textContent = `Clip ${i + 1}/${videoQueue.length}…`;
     vqSetStatus(e.id, 'Envoi…');
     try {
@@ -1316,11 +1631,7 @@ async function downloadVideo(url, title) {
   const name = `${title}.mp4`;
   try {
     const blob = await (await fetch(url)).blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl; a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+    await saveFlowFile('flowVideos', name, blob);
   } catch {
     window.open(url, '_blank'); // CORS : ouverture pour téléchargement manuel
   }
@@ -1345,6 +1656,9 @@ function fetchLog() {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'STATUS_PUSH') {
     fetchStatus();
+  }
+  if (msg.type === 'PACE_PUSH') {
+    renderPaceStatus(msg.pace);
   }
   if (msg.type === 'REQUEST_LOG_UPDATE') {
     if (msg.log) updateRequestLog(msg.log);
@@ -1420,6 +1734,8 @@ function initZoom() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initZoom();
+  initPace();
+  globalThis.LuminaFolders?.mount(document);
   fetchStatus();
   fetchLog();
   initIngredients();

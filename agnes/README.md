@@ -93,7 +93,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | [19 — Extraire](docs/19-extracteur.md) | Veille TikTok (meilleures vidéos d'une catégorie), TikTok par lien, kit yt-dlp, script (Whisper) converti en prompts pour Le lot, images d'une vidéo ; tout enregistré dans le projet |
 | [22 — AutoCaption](docs/22-autocaption.md) | Sous-titres animés et stylés (TikTok, karaoké, mot par mot…) posés après la génération, dans l'Assemblage et le kit FFmpeg ; exports .srt / .ass |
 | [25 — Mentions @ et #](docs/25-mentions.md) | `@[Personnage]` coche sa référence, `#[Skill]` place un skill dans le texte ; suggestions en tapant @ ou # |
-| [24 — Moteurs de génération](docs/24-moteurs.md) | Images par ChatGPT (via le pont local) ou Agnes, vidéos par Grok (via Lumina) ou Agnes |
+| [24 — Moteurs de génération](docs/24-moteurs.md) | Images par ChatGPT (via le pont local) ou Agnes, vidéos par Grok ou Google Flow (via Lumina) ou Agnes |
 | [23 — Lumina et sauvegarde](docs/23-lumina.md) | Ouvrir Agnes dans l'extension Lumina, plans → Grok Imagine, rendus → prises, pilote auto ; sauvegarde complète et restauration |
 | [27 — Calculateur de répliques](docs/27-repliques.md) | Onglet Répliques : caractères, durée, ce qu'il faut ajouter ou retirer ; réglages modifiables (TikTok 10 s, série, court métrage, voix-off), calibrage de la vitesse ; utilisé par le Chef de l'Atelier |
 | [26 — Classement des cartes](docs/26-classement.md) | Bouton 📁 Classer : image, vidéo et fiche (prompts, notes, carton, description, hashtags) copiées dans Projet / Saison / Épisode sur votre ordinateur |
@@ -148,7 +148,7 @@ Agnes_production/
     ├── plugin-planning.js      Planning
     ├── plugin-atelier.js       Atelier IA (agents IA multi-fournisseurs)
     ├── plugin-mentions.js      Mentions @ (références) et # (skills) dans les prompts
-    ├── plugin-moteurs.js       Moteurs : images Agnes/ChatGPT, vidéos Agnes/Grok
+    ├── plugin-moteurs.js       Moteurs : images Agnes/ChatGPT, vidéos Agnes/Grok/Flow
     ├── plugin-lumina.js        Lumina (plans → Grok, rendus → prises)
     ├── plugin-backup.js        Sauvegarde complète / restauration
     └── plugin-captions.js      AutoCaption (sous-titres animés)
@@ -202,6 +202,10 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
 ## Nouveautés
 
 ### 3.11 — octobre 2026
+- **Flow manuel** ([24](docs/24-moteurs.md)) : Google refuse les générations lancées par une extension depuis le 22/09/2026. Agnes prépare (image envoyée dans le projet Flow, prompt copié), vous cliquez Générer puis Télécharger dans Flow, et la vidéo revient toute seule dans la carte. Mode par défaut ; le mode automatique est gardé.
+- **Classement local par thématique** ([26](docs/26-classement.md)) : « Classer » range la carte dans `Production\<Thématique>\…` (Serie, Film, Marketing, Court_metrage, nouvelle thématique…), dates AAAAMMJJ, via le pont, sans dossier à choisir. Le mode « dossier choisi » est gardé. Plus d'emoji sur le bouton.
+- **Rôle du navigateur** (Lumina) : Tout, Principal (Grok, Agnes) ou Flow seulement, pour utiliser Flow sur un autre compte Google sans aucun doublon ; liste des projets Flow partagée par le pont.
+- **Vidéos par Google Flow** ([24](docs/24-moteurs.md)) : troisième moteur vidéo, en plus d'Agnes et de Grok (rien de retiré). Dans Agnes ouverte depuis Lumina, avec le service FlowKit lancé : image de départ, début + fin, scène verrouillée, références (7 au plus) ; Omni Flash ou Veo 3.1 ; 1 vidéo par envoi, jamais de renvoi, garde-fou « Flow bloqué », bouton « Voir mes crédits Flow ». Badges et boutons des moteurs sans emojis.
 - **Télécharger l'image de départ** ([02](docs/02-storyboard.md)) : bouton « Télécharger l'image » dans le bloc Image de départ des cartes Texte → Image → Vidéo, avant même l'animation.
 - **Garde-fous des répliques** ([27](docs/27-repliques.md)) : plusieurs interlocuteurs (pastille du personnage coché), réplique validée par l'agent Marketing ou « Garder telle quelle », proposition du Chef refusée avant de vous être montrée si elle ne tient pas le réglage.
 - **Atelier IA** : correctif du premier démarrage avec des clés .env ; le Chef remplace une réplique de carte (`set_replique`, avec autorisation).

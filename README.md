@@ -2,6 +2,100 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Agnes : Google Flow, troisième moteur vidéo (1.13.6, 30/09/2026)
+
+Copie `agnes/` mise à jour (`npm run sync:agnes`) :
+- **Moteur vidéo « flow »** dans `plugins/plugin-moteurs.js`, en plus d'Agnes et Grok (rien de retiré) : ⚙ → Moteurs → Vidéos,
+  ou badge des cartes (Agnes → Grok → Flow). Agnes (ouverte depuis Lumina) appelle directement l'API HTTP du service FlowKit local
+  (`http://127.0.0.1:8100/api/flow/…` : `status`, `upload-image` en base64, `generate-video`, `generate-video-refs`,
+  `generate-video-omni-text`, `check-status`, `check-omni-status`, `credits`) ; Lumina exécute dans l'onglet flow.google.com
+  comme pour son onglet Google Flow. Aucun changement dans `flowkit-local/` (ni son tableau de bord), aucun code FlowKit
+  copié dans Agnes.
+- **Liste de projets Flow partagée** (clé `chrome.storage.local` « luminaFlowProjects » : `{ list: [{ id, nom, url, compte, tier }],
+  actif }`), éditable des deux côtés : onglet Google Flow de Lumina (`flow/side_panel.*`, remplace le champ « ID du projet ») et
+  ⚙ → Moteurs d'Agnes. Ajouter (nom, lien ou identifiant, compte Google, abonnement Gratuit / Pro), Retirer, **Ouvrir** (dans
+  l'onglet Flow existant, jamais un deuxième). Le projet actif est le même partout ; chaque génération part avec son
+  `project_id` et son `user_paygate_tier`. Aucune génération sans projet choisi ni abonnement précisé.
+- **Vérification avant tout envoi** (`flow/background.js`, messages `FLOW_CHECK` et `FLOW_OPEN_PROJECT`) : pages Flow de ce
+  navigateur (plus d'une, ou aucune : bloqué), autre navigateur relié à FlowKit (`/health` → plus d'une connexion : bloqué), compte
+  lu dans la page Flow comparé à celui du projet (différent : bloqué ; illisible : avertissement seulement). Avertissement en texte
+  simple sous la liste. Panneau : toute requête `generate`, `edit-image` et `upload-image` passe par `flowGuard()`.
+- **Rôle de ce navigateur** (`role.js`, petite fenêtre Lumina) — deux profils Chrome avec deux comptes Google, sans doublon :
+  « **Tout** » (défaut, comme avant), « **Principal** » (Grok, Agnes, pilote, file ; Flow coupé) et « **Flow seulement** »
+  (Grok, Agnes, pilote et file coupés : rien n'est pris au pont). La fenêtre affiche le compte du profil (`chrome.identity`,
+  autorisations `identity` et `identity.email`) et grise les boutons interdits. Blocages réels : `SEND_TO_TAB` et
+  `ENSURE_IMAGINE` (background.js), `runBatch`, `runLuminaQueue`, `pilotTick` (sidepanel.js), `openAgnes`, connexion FlowKit,
+  `OPEN_FLOW_TAB` et `FLOW_OPEN_PROJECT` (flow/background.js), `flowGuard` (flow/side_panel.js).
+- **Pont local** (`prod-fruits/flow_pont.py`, relancer `lancer_pont.bat`) : `GET/POST /flow/projets` = liste de référence des
+  projets (commune aux deux profils et à Agnes ; `chrome.storage.local` en garde une copie de secours) ; `GET/POST /flow/etat` =
+  bilan déposé par le profil Flow (pages Flow, compte, connexions FlowKit, pause anti-restriction), toutes les ~25 s et à chaque
+  changement d'onglet. Agnes en rôle Principal le lit avant chaque envoi : absent ou de plus de 60 s, Flow désactivé, deux pages
+  Flow, mauvais compte ou pause = rien n'est envoyé. Ces routes ne distribuent aucun travail.
+- **Flow manuel** (défaut depuis le 30/09/2026) : depuis le 22/09, Google refuse les générations lancées par une extension
+  (`PUBLIC_ERROR_UNUSUAL_ACTIVITY` ; FlowKit amont contourne ce blocage, **pas repris ici**). Agnes envoie l'image dans le
+  projet Flow et copie le prompt ; l'utilisatrice clique Générer puis Télécharger ; le pont (`POST /flow/recuperer`,
+  `prod-fruits/classement_pont.py`) déplace la vidéo de Téléchargements vers `Production/<thématique>/…/Video` et Agnes la
+  range dans la carte. Mode automatique gardé (réglage « Mode Flow »).
+- **Classement local** (extension Classement d'Agnes) : `Production/<Thématique>/…` via le pont (`/classement/thematiques`,
+  `/classement/thematique`, `/classement/fichier`, `/classement/lire`), écriture limitée à Production.
+- Réglages Agnes : Omni Flash / Veo 3.1, 360p / 720p, adresse FlowKit, **Tester FlowKit**, **Voir mes crédits Flow** (le solde
+  n'est plus lisible par FlowKit depuis flow.google.com : le bouton le dit).
+- Garde-fous : une vidéo à la fois, 1 vidéo par envoi, jamais de renvoi ; **Flow bloqué** si plusieurs vidéos pour un envoi ou si
+  l'envoi est coupé en route (on ne sait pas s'il est parti) ; attente 15 min au plus. Avant chaque envoi, Agnes lit le rythme
+  anti-restriction de Lumina (`PACE_STATUS`) et **n'envoie rien pendant une pause** ; `FLOW_COOLDOWN` renvoyé par FlowKit =
+  message clair, sans blocage. Sondage toutes les 15 s, puis 20 s après 2 min.
+- Chef de l'Atelier / `agnes.py moteurs video=flow` : Flow accepté, garde-fou « Flow bloqué » respecté par `generate_shots`.
+- Badges et boutons des moteurs sans emojis.
+- Prérequis : les modifications locales de `flowkit-local` (upload `image_base64`) — ne pas les perdre.
+- Tests : `tests/agnes-flow.test.cjs` (faux FlowKit, aucune génération). **Aucune génération Flow réelle testée à ce jour.**
+
+## Dossiers, rythme anti-restriction Flow, Raccourcis (1.13, branche `claude/amazing-allen-dug6x3` récupérée le 30/09/2026)
+
+#### Classement dans les dossiers de votre choix
+
+Dans **Réglages**, chaque type de fichier (Images, Clips vidéo, Vidéo complète,
+Script) a un bouton **Choisir…** qui ouvre l’explorateur Windows. Les fichiers
+de ce type sont alors écrits directement dans ce dossier (n’importe où, pas
+seulement sous Téléchargements). Même chose dans l’onglet **Google Flow**
+(« Dossiers de classement Flow » : images et vidéos). **Retirer** revient à
+Téléchargements. Chrome redemande l’accès après un redémarrage : il est
+redonné au clic sur « Lancer » ou via **Réautoriser** ; choisir « Autoriser à chaque
+visite » évite la question. Si un dossier choisi a été assemblé, `concat.txt`
+et `assembler.bat` sont écrits à côté des clips.
+
+#### Rythme anti-restriction Google Flow
+
+Google Flow restreignait le compte car les générations (chacune avec un
+reCAPTCHA neuf) partaient en rafale et l’état des vidéos était sondé toutes les
+5 s. Désormais :
+
+- toutes les requêtes Flow passent par une **file unique** (jamais deux en même temps) ;
+- **écart minimal entre deux générations**, avec une part d’aléa : Prudent ~30 s,
+  Normal ~18 s (défaut), Rapide ~9 s — réglable dans l’onglet Google Flow ;
+- sondage des vidéos toutes les 6–15 s selon le rythme, ralenti après 2 min ;
+- dès que Flow signale une limite (429, `RESOURCE_EXHAUSTED`, reCAPTCHA refusé…),
+  **pause automatique** de 1 min, puis 2, 4… jusqu’à 15 min ; aucune
+  génération n’est envoyée pendant la pause, le lot reprend seul et retente
+  le prompt concerné une fois. « Reprendre maintenant » annule la pause.
+
+Conseils : laissez l’onglet flow.google.com ouvert et visible de temps en
+temps, n’enchaînez pas des centaines de générations d’affilée, et passez en
+**Prudent** si le compte a déjà été restreint.
+
+#### Onglet Raccourcis (commandes au clic)
+
+Boutons qui lancent vos outils locaux (pont prod-fruits, FlowKit, Agnes
+production, agent Marketing, Claude Code) et ouvrent vos dossiers de projet.
+Une extension Chrome ne peut pas lancer de programme elle-même : c’est le petit
+serveur `outils/lanceur/lumina_lanceur.py` (Python 3, sans dépendance) qui le
+fait, uniquement pour les commandes listées dans `outils/lanceur/lanceur.json`,
+et uniquement à la demande de l’extension.
+
+1. Double-cliquez sur `outils/lanceur/Lancer_lanceur.bat` (ou mettez un raccourci
+   dans `shell:startup` pour le démarrage avec Windows).
+2. Complétez les lignes `A_COMPLETER` de `lanceur.json` (commande qui démarre
+   Agnes, l’agent Marketing, FlowKit), puis **Actualiser** dans l’onglet.
+
 ## Agnes : Chef plus clair, notes, classement, calculateur de répliques (1.13.5, 29–30/09/2026)
 
 Copie `agnes/` mise à jour (`npm run sync:agnes`) :

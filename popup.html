@@ -53,6 +53,16 @@
       .brand em:empty { display: none; }
       .label { margin: 4px 2px -2px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
       .hint { margin: 2px 2px 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+
+      /* Rôle de ce navigateur (role.js) */
+      .role { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+      .role .who { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .role .who b { color: var(--fg); font-weight: 600; }
+      .role select { font: inherit; color: var(--fg); background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+      .role .why { font-size: 11px; color: var(--muted); margin: 0; }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      button:disabled:hover { background: var(--bg-2); border-color: var(--line); }
+      button.primary:disabled:hover { background: var(--paper); }
     </style>
   </head>
   <body>
@@ -69,6 +79,17 @@
           <span>Grok · Agnes · Flow</span>
         </div>
         <em id="ver"></em>
+      </div>
+
+      <div class="role">
+        <span class="who">Ce navigateur : <b id="role-profile">…</b></span>
+        <label class="who" for="role-select">Rôle de ce navigateur</label>
+        <select id="role-select">
+          <option value="tout">Tout (Grok, Agnes, Flow)</option>
+          <option value="principal">Principal (Grok, Agnes, sans Flow)</option>
+          <option value="flow">Flow seulement</option>
+        </select>
+        <p class="why" id="role-why"></p>
       </div>
 
       <button id="open-panel" type="button" class="primary">
@@ -92,6 +113,7 @@
 
       <p class="hint">Gardez l’onglet Grok ouvert pendant les générations. Après une mise à jour : rechargez Lumina dans chrome://extensions.</p>
     </div>
+    <script src="role.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

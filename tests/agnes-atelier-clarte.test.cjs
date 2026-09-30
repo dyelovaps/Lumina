@@ -135,7 +135,7 @@ test('Classement : extension indépendante, chemin Projet / Saison / Épisode / 
   assert.equal(v.projet, 'La méthode AIDA');
   assert.equal(v.episode, 2);
   assert.equal(v.carte, 'Carte 02 - Tu laisses un blanc');
-  assert.equal(C.defaults(Object.assign({}, shots[1], { notes: 'Carte 02 — Journée · 12:30' })).carte, 'Carte 01 - Journée');
+  assert.equal(C.defaults(Object.assign({}, shots[1], { notes: 'Carte 02 — Journée · 12:30' })).carte, 'Carte 02 - Journée');
   assert.deepEqual(Array.from(C.pathOf({ projet: 'A/B: C', saison: 1, episode: 12, carte: 'x?' })), ['A B C', 'Saison 01', 'Episode 12', 'x']);
   const sheet = C.sheet(shots[1], v);
   assert.match(sheet, /Références : Anthony/);
@@ -159,6 +159,8 @@ test('Classement local (30/09/2026) : Production/<Thématique>/…, dates AAAAMM
   assert.equal(loc.video, 'Marketing/Anthony/20260930 - accroche/Video');
   assert.match(loc.nom, /^Carte 01 - /);
   assert.equal(C.defaults(shots[0]).mode, 'local');
+  // copie de la carte (pendant une génération) : numéro retrouvé par l'identifiant, pas « 01 »
+  assert.match(C.localOf(Object.assign({}, shots[1])).nom, /^Carte 02 - /);
   const src = fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-classement.js'), 'utf8');
   assert.match(src, /"\/classement\/fichier", \{ method: "POST", headers: \{ "X-Chemin": encodeURIComponent\(chemin\) \}/);
   assert.doesNotMatch(src, /📁/);

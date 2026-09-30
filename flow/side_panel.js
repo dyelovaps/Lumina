@@ -1356,6 +1356,16 @@ function initProjectIdField() {
     renderFlowProjects();
     showFlowWarning('');
   });
+  // Diagnostic (lecture seule) de la page Flow, déposé au pont pour Claude
+  document.getElementById('flow-describe')?.addEventListener('click', async () => {
+    const out = document.getElementById('flow-describe-out');
+    if (out) out.textContent = '…';
+    const r = await flowMessage({ type: 'FLOW_DESCRIBE' }, 15000);
+    if (out) out.textContent = !r ? 'Pas de réponse (rechargez Lumina).'
+      : !r.ok ? r.error
+        : `Diagnostic fait : ${r.champs?.length || 0} champ(s), ${r.boutons?.length || 0} bouton(s) lus` + (r.pont ? ', envoyé à Claude (pont).' : ' ; pont injoignable.');
+    if (out) out.style.color = r?.ok ? 'var(--sage, #9ec99b)' : 'var(--danger, #eb5757)';
+  });
   // L'autre navigateur modifie la liste (par le pont) : relue à chaque retour sur le panneau et toutes les 30 s.
   globalThis.addEventListener?.('focus', () => void loadFlowProjects());
   if (typeof setInterval === 'function') setInterval(() => void loadFlowProjects(), 30000);

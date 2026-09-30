@@ -907,7 +907,7 @@ function broadcastStatus() {
   chrome.runtime.sendMessage({ type: 'STATUS_PUSH' }).catch(() => {});
 }
 
-const FLOW_MESSAGES = new Set(['PACE_STATUS', 'PACE_RESET', 'STATUS', 'DISCONNECT', 'RECONNECT', 'REQUEST_LOG', 'OPEN_FLOW_TAB', 'REFRESH_TOKEN', 'TEST_CAPTCHA', 'TRPC_MEDIA_URLS', 'FLOW_CHECK', 'FLOW_OPEN_PROJECT']);
+const FLOW_MESSAGES = new Set(['PACE_STATUS', 'PACE_RESET', 'STATUS', 'DISCONNECT', 'RECONNECT', 'REQUEST_LOG', 'OPEN_FLOW_TAB', 'REFRESH_TOKEN', 'TEST_CAPTCHA', 'TRPC_MEDIA_URLS', 'FLOW_CHECK', 'FLOW_OPEN_PROJECT', 'FLOW_DESCRIBE', 'FLOW_PREPARE']);
 chrome.runtime.onMessage.addListener((msg, _, reply) => {
   if (!FLOW_MESSAGES.has(msg?.type)) return false;
   ensureInitialized().then(() => handleFlowMessage(msg, reply))
@@ -1023,6 +1023,16 @@ function handleFlowMessageAllowed(msg, reply) {
   if (msg.type === 'TRPC_MEDIA_URLS') {
     handleTrpcMediaUrls(msg.trpcUrl, msg.body);
     reply({ ok: true });
+    return true;
+  }
+
+  if (msg.type === 'FLOW_PREPARE') {
+    prepareFlowComposer(msg).then(reply).catch((e) => reply({ ok: false, error: String(e?.message || e) }));
+    return true;
+  }
+
+  if (msg.type === 'FLOW_DESCRIBE') {
+    describeFlowPage().then(reply).catch((e) => reply({ ok: false, error: String(e?.message || e) }));
     return true;
   }
 
@@ -1161,6 +1171,204 @@ chrome.storage.onChanged?.addListener((changes, area) => {
     if (ws) ws.close();
   });
 });
+
+// ─── Diagnostic de la page Flow (lecture seule, 30/09/2026) ───
+//
+// Décrit la zone de saisie de la page Flow (champs de texte, boutons, sélecteurs de fichier) pour préparer
+// l'injection du prompt SANS envoi (l'utilisatrice clique Générer elle-même). Lecture seule, dans l'espace isolé
+// de l'extension : aucun clic, aucune écriture, rien n'est exécuté dans la page, reCAPTCHA n'est pas touché.
+// Le résultat est déposé au pont (POST /flow/diagnostic) pour Claude.
+async function describeFlowPage() {
+  const tabs = await chrome.tabs.query({ url: flowUrls });
+  if (tabs.length !== 1) return { ok: false, error: `Google Flow doit être ouvert une seule fois (${tabs.length} page(s) trouvée(s)).` };
+  const [res] = await chrome.scripting.executeScript({
+    target: { tabId: tabs[0].id },
+    func: () => {
+      const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+      const box = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]; };
+      const attrs = (el) => ({
+        tag: el.tagName.toLowerCase(), id: el.id || '', name: el.getAttribute('name') || '', role: el.getAttribute('role') || '',
+        placeholder: el.getAttribute('placeholder') || '', aria: el.getAttribute('aria-label') || '',
+        cls: String(el.className || '').slice(0, 120), editable: el.isContentEditable || false, box: box(el),
+        text: (el.innerText || el.value || '').trim().slice(0, 60),
+      });
+      const champs = [...document.querySelectorAll('textarea, input[type="text"], input:not([type]), [contenteditable="true"], [role="textbox"]')]
+        .filter(vis).slice(0, 20).map(attrs);
+      const boutons = [...document.querySelectorAll('button, [role="button"]')].filter(vis).slice(0, 80)
+        .map((b) => ({ text: (b.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 40), aria: b.getAttribute('aria-label') || '',
+          disabled: Boolean(b.disabled || b.getAttribute('aria-disabled') === 'true'), box: box(b) }));
+      const fichiers = [...document.querySelectorAll('input[type="file"]')].map((f) => ({ accept: f.accept || '', multiple: f.multiple, id: f.id || '' }));
+      return { url: location.pathname, titre: document.title, champs, boutons, fichiers, vue: [innerWidth, innerHeight] };
+    },
+  });
+  const rapport = { ok: true, date: new Date().toISOString(), ...(res?.result || {}) };
+  try {
+    await fetch(PONT_URL + '/flow/diagnostic', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rapport) });
+    rapport.pont = true;
+  } catch {
+    rapport.pont = false;
+  }
+  return rapport;
+}
+
+// ─── Préparation de la zone de saisie Flow, SANS envoi (30/09/2026) ───
+//
+// Pour le mode manuel d'Agnes : dans l'unique page Flow, Lumina choisit l'image de départ (et de fin) par son nom
+// exact (« Carte NN - titre.jpg », envoyée par Agnes dans le projet) via Début / Fin → « Sélectionner une image » →
+// « Ajouter au prompt », puis écrit le prompt dans la zone de saisie comme un collage. Elle lit les réglages
+// affichés (« Vidéo · 720p · 8 s … ») pour les comparer à la carte. Elle NE CLIQUE JAMAIS sur « Lancer la
+// génération » : l'utilisatrice génère elle-même (seul ce clic déclenche le contrôle anti-robot de Google).
+// Espace isolé de l'extension : reCAPTCHA n'est pas touché.
+async function prepareFlowComposer({ images = [], ingredients = [], prompt = '', reglages = null } = {}) {
+  const tabs = await chrome.tabs.query({ url: flowUrls });
+  if (tabs.length !== 1) return { ok: false, error: `Google Flow doit être ouvert une seule fois (${tabs.length} page(s) trouvée(s)).` };
+  await chrome.tabs.update(tabs[0].id, { active: true });
+  if (tabs[0].windowId != null) await chrome.windows.update(tabs[0].windowId, { focused: true }).catch(() => {});
+  const [res] = await chrome.scripting.executeScript({
+    target: { tabId: tabs[0].id },
+    args: [images, ingredients, prompt, reglages],
+    func: async (images, ingredients, prompt, reglages) => {
+      const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+      const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+      const txt = (el) => (el.innerText || '').trim().replace(/\s+/g, ' ');
+      const boutons = () => [...document.querySelectorAll('button, [role="button"]')].filter(vis);
+      const attendre = async (trouver, ms = 6000) => {
+        const fin = Date.now() + ms;
+        while (Date.now() < fin) { const el = trouver(); if (el) return el; await pause(150); }
+        return null;
+      };
+      // Appui complet (souris + clic), comme un vrai clic ; jamais sur « Lancer la génération »
+      const appuyer = (el) => {
+        if (!el || /lancer la g[ée]n[ée]ration/i.test(el.getAttribute('aria-label') || '')) throw new Error('bouton interdit');
+        const r = el.getBoundingClientRect(), o = { bubbles: true, cancelable: true, view: window, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
+        for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) el.dispatchEvent(new (t.startsWith('pointer') ? PointerEvent : MouseEvent)(t, o));
+        el.click();
+      };
+      const etapes = [];
+      const editeur = document.querySelector('.ProseMirror[contenteditable="true"]');
+      if (!editeur) return { ok: false, error: 'Zone de saisie de Flow introuvable : ouvrez le projet sur l’écran de création.', etapes };
+
+      // 0) Réglages (menu « Vidéo · 720p · 8 s … ») AVANT les images : changer de mode pourrait les effacer.
+      //    Modèle d'abord (il décide des durées proposées), puis mode Images, format, résolution, durée, x1.
+      const regEtapes = [];
+      if (reglages) {
+        const declencheur = () => boutons().find((b) => (b.getAttribute('aria-label') || '') === 'Déclencheur des paramètres');
+        const d0 = declencheur();
+        if (!d0) regEtapes.push('menu des réglages introuvable');
+        else {
+          appuyer(d0);
+          const menu = await attendre(() => boutons().find((b) => /^(4|6|8|10) s$/.test(txt(b)) || txt(b) === 'x1'));
+          if (!menu) regEtapes.push('menu des réglages non ouvert');
+          else {
+            const choisir = async (etiquette, trouver) => {
+              const b = await attendre(trouver, 3000);
+              if (!b) { regEtapes.push(etiquette + ' : introuvable'); return false; }
+              appuyer(b); await pause(350); return true;
+            };
+            const court = (b) => txt(b).length <= 24;
+            await choisir('onglet Vidéo', () => boutons().find((b) => court(b) && /(^|\s)Vidéo$/.test(txt(b))));
+            if (reglages.modele) {
+              const liste = boutons().find((b) => (b.getAttribute('aria-label') || '') === 'Sélectionner une famille de modèles');
+              if (!liste) regEtapes.push('choix du modèle introuvable');
+              else if (!txt(liste).startsWith(reglages.modele)) {
+                appuyer(liste);
+                await choisir('modèle ' + reglages.modele, () => boutons().find((b) => txt(b).endsWith(reglages.modele) && b !== liste));
+              }
+            }
+            if (reglages.mode) await choisir('mode ' + reglages.mode, () => boutons().find((b) => court(b) && txt(b).endsWith(' ' + reglages.mode)));
+            if (reglages.format) await choisir('format ' + reglages.format, () => boutons().find((b) => court(b) && txt(b).endsWith(reglages.format)));
+            if (reglages.resolution) await choisir(reglages.resolution, () => boutons().find((b) => txt(b) === reglages.resolution));
+            if (reglages.duree) await choisir(reglages.duree, () => boutons().find((b) => txt(b) === reglages.duree));
+            await choisir('x1', () => boutons().find((b) => txt(b) === 'x1'));
+            // fermeture du menu : Échap, puis clic sur le déclencheur s'il est encore ouvert
+            document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+            await pause(300);
+            if (boutons().some((b) => txt(b) === 'x1')) { const d1 = declencheur(); if (d1) appuyer(d1); await pause(300); }
+          }
+        }
+      }
+
+      // Zone de saisie : le bloc qui contient l'éditeur ET le bouton des réglages (on n'agit que là-dedans)
+      let zone = editeur.parentElement;
+      while (zone && !zone.querySelector('[aria-label="Déclencheur des paramètres"]')) zone = zone.parentElement;
+      zone = zone || document.body;
+      const dansZone = () => [...zone.querySelectorAll('button, [role="button"]')].filter(vis);
+
+      // 0 bis) Images restées d'une carte précédente (image de début/fin ou ingrédients) : retirées de la zone de saisie
+      for (let n = 0; n < 10; n++) {
+        const croix = dansZone().find((b) => /^Ingrédient( image)?$/.test(b.getAttribute('aria-label') || '') && /^cancel/.test(txt(b)));
+        if (!croix) break;
+        appuyer(croix); await pause(300);
+      }
+
+      // Choix d'une image par son nom dans « Sélectionner une image », puis « Ajouter au prompt »
+      const choisirImage = async (ouvrir, nom, libelle) => {
+        appuyer(ouvrir);
+        const item = await attendre(() => boutons().find((b) => txt(b) === nom || txt(b).endsWith(' ' + nom) || txt(b).startsWith(nom)));
+        if (!item) {
+          etapes.push(`${libelle} « ${nom} » introuvable dans la liste`);
+          const fermer = boutons().find((b) => (b.getAttribute('aria-label') || '') === 'Fermer');
+          if (fermer) appuyer(fermer);
+          return false;
+        }
+        appuyer(item);
+        const ajouter = await attendre(() => boutons().find((b) => txt(b) === 'Ajouter au prompt' && !b.disabled));
+        if (!ajouter) { etapes.push(`« Ajouter au prompt » introuvable pour « ${nom} »`); return false; }
+        appuyer(ajouter);
+        await attendre(() => !boutons().some((b) => txt(b) === 'Ajouter au prompt') || null, 4000);
+        etapes.push(`${libelle} : ${nom}`);
+        return true;
+      };
+
+      // 1 bis) Mode Ingrédients : pas de Début / Fin, les images deviennent des références du prompt
+      for (const nom of ingredients.slice(0, 7)) {
+        const ajout = dansZone().find((b) => (b.getAttribute('aria-label') || '') === 'Ajouter des ingrédients au champ du prompt');
+        if (!ajout) { etapes.push('bouton « Ajouter des ingrédients » introuvable'); break; }
+        await choisirImage(ajout, nom, 'image référence');
+      }
+
+      // 1) Mode Images : Début (puis Fin) → image par son nom → « Ajouter au prompt »
+      const roles = ['Début', 'Fin'];
+      for (let i = 0; i < images.length && i < 2; i++) {
+        const nom = images[i];
+        const role = dansZone().find((b) => txt(b) === roles[i]);
+        if (!role) { etapes.push(`bouton « ${roles[i]} » introuvable`); continue; }
+        await choisirImage(role, nom, 'image ' + roles[i].toLowerCase());
+      }
+
+      // 2) Prompt : remplace le contenu de la zone de saisie, comme un collage
+      let promptOk = false;
+      if (prompt) {
+        editeur.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, prompt);
+        await pause(300);
+        promptOk = txt(editeur).startsWith(prompt.slice(0, 40).replace(/\s+/g, ' ').trim());
+        if (!promptOk) {
+          // repli : collage simulé (ProseMirror gère l'événement « paste »)
+          const dt = new DataTransfer();
+          dt.setData('text/plain', prompt);
+          editeur.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+          await pause(300);
+          promptOk = txt(editeur).includes(prompt.slice(0, 40).replace(/\s+/g, ' ').trim());
+        }
+        etapes.push(promptOk ? 'prompt écrit' : 'prompt non écrit');
+      }
+
+      // 3) Réglages affichés (lecture seule)
+      const etiquette = boutons().find((b) => (b.getAttribute('aria-label') || '') === 'Déclencheur des paramètres');
+      return {
+        ok: true, prompt: promptOk,
+        images: etapes.filter((e) => /^image (début|fin) :/.test(e)).length,
+        references: etapes.filter((e) => e.startsWith('image référence :')).length,
+        reglagesEtapes: regEtapes,
+        reglages: etiquette ? txt(etiquette).replace(/crop_(\d+)_(\d+)/, '$1:$2') : '',
+        etapes,
+      };
+    },
+  });
+  return res?.result || { ok: false, error: 'Aucune réponse de la page Flow.' };
+}
 
 // Ouvre un projet dans l'onglet Flow existant (jamais un deuxième onglet Flow).
 async function openFlowProject(url) {

@@ -13,7 +13,7 @@ const PROJET = 'e067066d-bb30-4c33-ab39-3507c02eefc9';
 function flow({ cfg = {}, status = { connected: true, flow_project_id: PROJET }, submit, polls, submitFails = false, pace = { cooldownLeftMs: 0, strikes: 0, preset: 'normal' },
   projets = { list: [{ id: PROJET, nom: 'Marketing', url: '', compte: 'pro@exemple.fr', tier: 'PAYGATE_TIER_TWO' }], actif: PROJET },
   check = { ok: true, blocking: false, tabs: 1, email: 'pro@exemple.fr', accountChecked: true, warning: '' },
-  role = 'tout', pont = null, classement } = {}) {
+  role = 'tout', pont = null, classement, prepare = null } = {}) {
   const pontCalls = [], clip = [];
   const calls = [], messages = [];
   let recupN = 0;
@@ -55,7 +55,7 @@ function flow({ cfg = {}, status = { connected: true, flow_project_id: PROJET },
   const context = {
     fetch, setTimeout, clearTimeout, navigator: { clipboard: { writeText: (t) => { clip.push(t); return Promise.resolve(); } } },
     chrome: {
-      runtime: { id: 'lumina', sendMessage(msg, cb) { messages.push(msg); if (msg.type === 'PACE_STATUS') cb(pace); if (msg.type === 'FLOW_CHECK') cb(check); } },
+      runtime: { id: 'lumina', sendMessage(msg, cb) { messages.push(msg); if (msg.type === 'PACE_STATUS') cb(pace); if (msg.type === 'FLOW_CHECK') cb(check); if (msg.type === 'FLOW_PREPARE') cb(prepare); } },
       storage: { local: { get(key, cb) { cb(key === 'luminaRole' ? { luminaRole: role } : { luminaFlowProjects: projets }); }, set() {} } },
     },
     AgnesPlugins: { register(id, obj) { plugin = obj; } },
@@ -220,7 +220,8 @@ test('Lumina : même clé de liste des deux côtés, vérification FLOW_CHECK av
   assert.match(SRC, /FLOW_PROJECTS_KEY: "luminaFlowProjects"/);
   assert.match(panel, /const FLOW_PROJECTS_KEY = 'luminaFlowProjects';/);
   assert.ok(panel.includes('(generate|edit-image|upload-image)/.test(path)) {\n    const p = await flowGuard();'));
-  assert.match(bg, /'FLOW_CHECK', 'FLOW_OPEN_PROJECT'\]/);
+  assert.match(bg, /'FLOW_CHECK', 'FLOW_OPEN_PROJECT', 'FLOW_DESCRIBE'/);
+  assert.match(bg, /async function describeFlowPage()/);
   assert.match(bg, /Fermez-le partout sauf une fois, dans tous vos navigateurs/);
 });
 
@@ -342,7 +343,7 @@ test('Flow manuel (défaut) : image envoyée dans le projet, prompt copié, AUCU
   assert.equal(err, undefined);
   assert.equal(f.sent().length, 0, 'jamais de /flow/generate en manuel');
   assert.equal(f.calls.filter((c) => c.route === '/flow/upload-image').length, 1);
-  assert.equal(f.calls.find((c) => c.route === '/flow/upload-image').body.file_name, 'Carte 01 - accroche.jpg');
+  assert.match(f.calls.find((c) => c.route === '/flow/upload-image').body.file_name, /^Carte 01 - accroche - \d{6}\.jpg$/);
   assert.match(f.clip[0], /A woman smiles[\s\S]*No music/);
   const rec = f.pontCalls.filter((c) => c.route === '/flow/recuperer');
   assert.equal(rec.length, 2);
@@ -374,4 +375,58 @@ test('Flow manuel : réglage proposé dans ⚙, « Manuel » par défaut, « Aut
   assert.match(SRC, /flowMode: "manuel" \}\);/);
   assert.match(SRC, /<option value="manuel">Manuel : Agnes prépare/);
   assert.match(SRC, /<option value="auto">Automatique par FlowKit \(refusé par Google depuis le 22\/09\/2026\)/);
+});
+
+test('Flow manuel : image (par son nom) et prompt déposés dans Flow SANS envoi ; réglages différents signalés', async () => {
+  const f = flow({ cfg: { flowMode: 'manuel' }, classement: LOC,
+    prepare: { ok: true, prompt: true, images: 1, reglages: 'Vidéo · 720p · 8 s 9:16 x1', etapes: ['image début : Carte 01 - accroche.jpg', 'prompt écrit'] },
+    pont: { recuperer: [{ trouve: true, chemin: LOC.video + '/Carte 01 - accroche.mp4' }] } });
+  const { job, err } = await f.run({ mode: 'i2v', sourceRef: 'a', duration: 10 });
+  assert.equal(err, undefined);
+  const prep = f.messages.find((m) => m.type === 'FLOW_PREPARE');
+  assert.match(prep.images[0], /^Carte 01 - accroche - \d{6}\.jpg$/);
+  assert.equal(prep.images[0], f.calls.find((c) => c.route === '/flow/upload-image').body.file_name, 'Lumina cherche exactement le nom envoyé');
+  assert.match(prep.prompt, /A woman smiles/);
+  assert.equal(JSON.stringify(prep.reglages), JSON.stringify({ modele: 'Omni 1.1 Flash', mode: 'Images', format: '9:16', resolution: '720p', duree: '10 s' }));
+  assert.match(job.warning, /8 s.*la carte demande 10 s/);
+  assert.equal(f.sent().length, 0);
+});
+
+test('Flow manuel, rôle Principal : pas de dépôt (Flow est dans l’autre navigateur), prompt copié', async () => {
+  const BON = { etat: { role: 'flow', tabs: 1, email: 'pro@exemple.fr', agentConnections: 1, warning: '', blocking: false, flowActive: true, pace: { cooldownLeftMs: 0 } }, age_s: 3 };
+  const f = flow({ cfg: { flowMode: 'manuel' }, role: 'principal', classement: LOC,
+    pont: { etat: BON, recuperer: [{ trouve: true, chemin: LOC.video + '/x.mp4' }] } });
+  await f.run({ mode: 'i2v', sourceRef: 'a' });
+  assert.ok(!f.messages.some((m) => m.type === 'FLOW_PREPARE'));
+  assert.equal(f.clip.length, 1);
+});
+
+test('Lumina : la préparation de Flow ne clique jamais « Lancer la génération »', () => {
+  const bg = fs.readFileSync(path.join(__dirname, '..', 'flow', 'background.js'), 'utf8');
+  const fn = bg.slice(bg.indexOf('async function prepareFlowComposer'), bg.indexOf('// Ouvre un projet dans l'));
+  assert.match(fn, /if \(!el \|\| \/lancer la g\[ée\]n\[ée\]ration\/i\.test\(el\.getAttribute\('aria-label'\) \|\| ''\)\) throw new Error\('bouton interdit'\);/);
+  assert.doesNotMatch(fn, /Lancer la génération'\)\s*\.click|aria-label="Lancer/);
+  assert.match(bg, /'FLOW_DESCRIBE', 'FLOW_PREPARE'\]/);
+});
+
+test('Flow manuel, carte « Ingrédients » : références envoyées (« Carte NN - ref - Nom.jpg ») et ajoutées comme ingrédients, mode Ingrédients', async () => {
+  const f = flow({ cfg: { flowMode: 'manuel' }, classement: LOC,
+    prepare: { ok: true, prompt: true, images: 0, references: 2, reglages: 'Vidéo · 720p · 10 s 9:16 x1', etapes: [] },
+    pont: { recuperer: [{ trouve: true, chemin: LOC.video + '/x.mp4' }] } });
+  const { err } = await f.run({ mode: 'ingr_v', ingredients: ['1', '2'] });
+  assert.equal(err, undefined);
+  const up = f.calls.filter((c) => c.route === '/flow/upload-image').map((c) => c.body.file_name);
+  assert.match(up[0], /^Carte 01 - accroche - ref - Ref 1 - \d{6}\.jpg$/);
+  assert.match(up[1], /^Carte 01 - accroche - ref - Ref 2 - \d{6}\.jpg$/);
+  const prep = f.messages.find((m) => m.type === 'FLOW_PREPARE');
+  assert.deepEqual(Array.from(prep.images), []);
+  assert.deepEqual(Array.from(prep.ingredients), up);
+  assert.equal(prep.reglages.mode, 'Ingrédients');
+  assert.equal(f.sent().length, 0);
+});
+
+test('Lumina : zone de saisie vidée des images d’une carte précédente, ingrédients par « Ajouter des ingrédients »', () => {
+  const bg = fs.readFileSync(path.join(__dirname, '..', 'flow', 'background.js'), 'utf8');
+  assert.match(bg, /\/\^Ingrédient\( image\)\?\$\/\.test\(b\.getAttribute\('aria-label'\)/);
+  assert.match(bg, /=== 'Ajouter des ingrédients au champ du prompt'/);
 });

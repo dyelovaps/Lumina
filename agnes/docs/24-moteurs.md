@@ -61,7 +61,11 @@ Concerne toutes les images : plans Texte → Image / Image → Image, **image de
     1. elle envoie l'image de départ dans le projet Flow (sous le nom « Carte NN - titre ») ;
     2. elle copie le prompt vidéo (sinon : bouton « Prompt final » de la carte) ;
     3. elle affiche les réglages à choisir dans Flow.
-  - **Vous**, dans Flow : l'image, le prompt (Ctrl + V), le modèle, la durée, le format, puis **Générer**, puis **Télécharger** quand la vidéo est prête.
+  - **Réglages automatiques** : avant le dépôt, Lumina règle le menu de Flow d'après la carte : Vidéo, modèle (Omni 1.1 Flash, ou Veo 3.1 - Quality), mode Images ou Ingrédients, format, résolution, durée, x1. Toute option introuvable est signalée sur la carte.
+  - **Zone de saisie vidée** : les images restées d'une carte précédente sont retirées, uniquement dans la zone de saisie.
+  - **Cartes « Ingrédients »** (ou Texte → Vidéo avec références) : il n'y a pas de Début / Fin dans ce mode. Les références de la carte sont envoyées dans le projet (« Carte NN - ref - Nom.jpg »), puis ajoutées par « Ajouter des ingrédients au champ du prompt » (7 au plus).
+  - **Dépôt automatique dans Flow** (navigateur en rôle « Tout ») : Lumina ouvre « Début » (et « Fin »), choisit l'image par son nom (« Carte NN - titre.jpg ») → « Ajouter au prompt », puis écrit le prompt dans la zone de saisie. Elle lit les réglages affichés (ex. « Vidéo · 720p · 8 s ») et prévient sur la carte s'ils ne correspondent pas (durée, format). Elle ne clique **jamais** sur « Lancer la génération ». En rôle « Principal » (Flow dans l'autre navigateur), pas de dépôt : le prompt est copié.
+  - **Vous**, dans Flow : vérifiez l'image, le prompt et les réglages (modèle, durée, format), puis **Générer**, puis **Télécharger** quand la vidéo est prête. Si le dépôt a échoué, faites-le vous-même : l'image se choisit via Début, et le prompt se colle avec Ctrl + V.
   - Le **pont** repère la vidéo arrivée dans Téléchargements **après** le lancement. Il la **déplace** dans le dossier Production de la carte (`…\Video\Carte NN - titre.mp4`, voir [26](26-classement.md) ; sans thématique : `Production\_A_classer\<projet>\Video`), et Agnes la range dans la carte (prise « Flow »).
   - Une seule carte attend à la fois ; 45 minutes au plus. Aucune génération n'est lancée par Agnes : pas de risque pour le compte.
   - **Automatique** : gardé tel quel (tout ce qui suit), pour le jour où Flow l'accepterait à nouveau. Aujourd'hui, il est refusé.

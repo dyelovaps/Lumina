@@ -87,7 +87,12 @@ AgnesPlugins.register("classement", {
     return (s.length > (max || 60) ? s.slice(0, max || 60).trim() : s) || "Sans titre";
   },
   pad: function (n) { n = parseInt(n, 10) || 1; return n < 10 ? "0" + n : String(n); },
-  number: function (shot) { var A = this.A; return A.sortedShots(this.core.getProject()).indexOf(shot) + 1; },
+  // Par identifiant : pendant une génération, la carte reçue peut être une copie de celle du projet (30/09/2026)
+  number: function (shot) {
+    var list = this.A.sortedShots(this.core.getProject()), i = list.indexOf(shot);
+    if (i === -1 && shot) i = list.findIndex(function (s) { return s.id === shot.id; });
+    return i + 1;
+  },
   titleOf: function (shot) {
     // titre de publication de la vidéo (notes d'un livrable marketing), sinon 1re ligne des notes, sinon début du prompt
     var notes = String(shot.notes || ""), m = /titre = ([^·\n]+)/.exec(notes);

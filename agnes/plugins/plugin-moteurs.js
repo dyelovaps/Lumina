@@ -844,7 +844,7 @@ AgnesPlugins.register("moteurs", {
     var warn = function (t) { notes.push(t); job.warning = notes.join(" · "); A.emitJob(job); };
     if (this.cfg.flowBloque) return Promise.reject({ display: "Flow est bloqué par sécurité : " + this.cfg.flowBloque + " Réactivez-le dans ⚙ → Moteurs de génération." });
     var starts = m === "frames" ? [shot.startRef, shot.endRef] : m === "i2v" ? [shot.sourceRef] : [];
-    var num = A.sortedShots ? A.sortedShots(proj).indexOf(shot) + 1 : 0;
+    var num = A.sortedShots ? A.sortedShots(proj).findIndex(function (s) { return s === shot || s.id === shot.id; }) + 1 : 0;
     var loc = A.classementLocal ? A.classementLocal(shot) : null;
     dest = loc ? { dossier: loc.video, nom: loc.nom } : {
       dossier: "_A_classer/" + String(proj.name || "Projet").replace(/[<>:"\/\\|?*\x00-\x1f]+/g, " ").trim().slice(0, 50) + "/Video",
@@ -876,32 +876,71 @@ AgnesPlugins.register("moteurs", {
       return Promise.all(starts.map(function (r) { return self.startImage(r, shot, proj); }));
     }).then(function (imgs) {
       imgs = imgs.filter(Boolean);
+      // Cartes « Ingrédients » (ou Texte → Vidéo avec références) sans image de départ : les références partent
+      // dans le projet Flow (« Carte NN - ref - Nom.jpg ») et Lumina les ajoute comme ingrédients du prompt.
+      var withRefs = m === "t2v" || m === "ingr_v";
+      var ingr = !imgs.length && withRefs ? (shot.ingredients || []).slice(0, 7) : [];
+      if (withRefs && (shot.ingredients || []).length > 7) warn("Flow : 7 références au plus");
+      return Promise.all(ingr.map(function (id) { return self.libData(proj, id, 1024); })).then(function (refs) {
+        return { imgs: imgs, refs: refs.filter(Boolean) };
+      });
+    }).then(function (x) {
+      var imgs = x.imgs, refs = x.refs;
       if (starts.length && imgs.length !== starts.length) throw { display: "Image de départ introuvable pour ce plan." };
       if (m === "i2v" && shot.i2v === "anchor") warn("Scène verrouillée : dans Flow, mettez la même image en début et en fin");
       // Images envoyées dans le projet Flow (sans crédit, sans jeton anti-robot) ; si FlowKit est arrêté, l'utilisatrice
       // les importe elle-même (bouton « Télécharger l'image » de la carte).
-      var noms = [];
-      return imgs.reduce(function (pr, u, i) {
-        var nom = dest.nom + (imgs.length > 1 ? (i ? " - fin" : " - debut") : "") + ".jpg";
+      var noms = [], refNoms = [];
+      // Nom unique à chaque envoi (heure HHMMSS) : Lumina choisit exactement l'image qui vient de partir, jamais une
+      // ancienne du même nom (bug du 30/09/2026 : la carte 02 était partie avec l'image de la carte 01).
+      var d0 = new Date(), z = function (n) { return (n < 10 ? "0" : "") + n; }, stamp = z(d0.getHours()) + z(d0.getMinutes()) + z(d0.getSeconds());
+      var envois = imgs.map(function (u, i) { return { data: u, nom: dest.nom + (imgs.length > 1 ? (i ? " - fin" : " - debut") : "") + " - " + stamp + ".jpg", liste: noms }; })
+        .concat(refs.map(function (r) { return { data: r.data, nom: dest.nom + " - ref - " + String(r.nom || "reference").replace(/[<>:"\/\\|?*]+/g, " ").trim().slice(0, 40) + " - " + stamp + ".jpg", liste: refNoms }; }));
+      return envois.reduce(function (pr, e) {
+        var u = e.data, nom = e.nom;
         return pr.then(function () {
           var mime = (String(u).match(/^data:([^;,]+)/) || [])[1] || "image/jpeg";
           return self.flowPost("/flow/upload-image", { image_base64: u, mime_type: mime, project_id: entry.id, file_name: nom }, job.signal)
-            .then(function () { noms.push(nom); }, function (e) {
+            .then(function () { e.liste.push(nom); }, function (err) {
+              var e = err;
               if (e && e.cancelled) throw e;
               warn("Image non envoyée dans Flow (" + (e && e.display || "FlowKit") + ") : importez-la vous-même depuis la carte");
             });
         });
-      }, Promise.resolve()).then(function () { return noms; });
-    }).then(function (noms) {
+      }, Promise.resolve()).then(function () { return { noms: noms, refNoms: refNoms }; });
+    }).then(function (envoye) {
+      var noms = envoye.noms, refNoms = envoye.refNoms;
       var copie = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(prompt).then(function () { return true; }, function () { return false; }) : Promise.resolve(false);
-      return copie.then(function (ok) {
+      // Rôle « Tout » : Lumina dépose l'image (par son nom) et le prompt dans la zone de saisie de Flow, SANS envoyer.
+      // Rôle « Principal » (Flow dans l'autre navigateur) : pas d'accès à sa page, le prompt reste copié.
+      var depot = self.flowRole().then(function (role) {
+        if (role !== "tout") return null;
+        // Réglages voulus pour la carte, appliqués par Lumina dans le menu de Flow (libellés de Flow au 30/09/2026)
+        var reglages = { modele: self.cfg.flowModel === "veo" ? "Veo 3.1 - Quality" : "Omni 1.1 Flash", mode: m === "ingr_v" ? "Ingrédients" : "Images",
+          format: ratio, resolution: self.cfg.flowRes === "360p" ? "360p" : "720p", duree: duration + " s" };
+        return self.flowMsg({ type: "FLOW_PREPARE", images: noms, ingredients: refNoms, prompt: prompt, reglages: reglages }, 90000);
+      });
+      return Promise.all([copie, depot]).then(function (x) {
+        var ok = x[0], prep = x[1];
+        var attendu = duration + " s", reg = prep && prep.reglages || "";
+        if (prep && prep.ok) {
+          if (refNoms.length && (prep.references || 0) < refNoms.length) warn("Références non toutes ajoutées dans Flow (" + (prep.references || 0) + "/" + refNoms.length + ") : ajoutez-les vous-même (Ajouter des ingrédients)");
+          if (noms.length && prep.images < noms.length) warn("Image non déposée dans Flow (" + (prep.etapes || []).join(", ") + ") : choisissez-la vous-même (Début)");
+          if (!prep.prompt) warn("Prompt non déposé dans Flow : collez-le (Ctrl + V)");
+          if ((prep.reglagesEtapes || []).length) warn("Réglages Flow à vérifier : " + prep.reglagesEtapes.join(", "));
+          if (reg && reg.indexOf(attendu) === -1) warn("Réglages Flow affichés : « " + reg + " » ; la carte demande " + attendu + " et " + ratio + " : corrigez-les avant de générer");
+        } else if (prep) warn("Dépôt dans Flow impossible (" + (prep.error || "sans réponse") + ") : image et prompt à mettre vous-même");
+        var depose = prep && prep.ok && prep.prompt && prep.images >= noms.length && (prep.references || 0) >= refNoms.length;
         shot.lastRequest = { moteur: "flow (manuel)", projet: entry.nom + " (" + entry.id + ")", modele: self.cfg.flowModel === "veo" ? "Veo 3.1" : "Omni Flash",
           duree: duration, resolution: self.cfg.flowRes || "720p", format: ratio, images: noms, rangement: "Production/" + dest.dossier + "/" + dest.nom + ".mp4" };
         depuis = Date.now() / 1000;
-        job.info = "Flow (manuel), à vous dans Flow : " + (noms.length ? "image « " + noms.join(" » puis « ") + " », " : "") +
-          (ok ? "collez le prompt (Ctrl + V)" : "copiez le prompt (bouton « Prompt final » de la carte)") + ", " +
-          (self.cfg.flowModel === "veo" ? "Veo 3.1" : "Omni Flash") + ", " + duration + " s, " + ratio + ", " + (self.cfg.flowRes || "720p") +
-          ", puis Générer ; quand la vidéo est prête : Télécharger. Agnes la reprend toute seule.";
+        job.info = depose
+          ? "Flow (manuel) : image et prompt déposés dans Flow. Vérifiez " + (self.cfg.flowModel === "veo" ? "Veo 3.1" : "Omni Flash") + ", " + duration + " s, " + ratio +
+            ", " + (self.cfg.flowRes || "720p") + ", puis Générer ; quand la vidéo est prête : Télécharger. Agnes la reprend toute seule."
+          : "Flow (manuel), à vous dans Flow : " + (noms.length ? "image « " + noms.join(" » puis « ") + " », " : "") +
+            (ok ? "collez le prompt (Ctrl + V)" : "copiez le prompt (bouton « Prompt final » de la carte)") + ", " +
+            (self.cfg.flowModel === "veo" ? "Veo 3.1" : "Omni Flash") + ", " + duration + " s, " + ratio + ", " + (self.cfg.flowRes || "720p") +
+            ", puis Générer ; quand la vidéo est prête : Télécharger. Agnes la reprend toute seule.";
         A.emitJob(job);
         self.core.toast("Flow (manuel) : carte " + num + " prête. Dans Flow, cliquez Générer puis Télécharger.", "ok");
         return self.flowWaitDownload(job, dest, depuis);

@@ -16,6 +16,11 @@ AgnesPlugins.register("atelier", {
       cfg.primary = "agnes"; cfg.fallback = true; cfg.customBase = "";
       cfg.save();
     }
+    // 30/09 : clés reçues du .env avant tout réglage (cles-env.js remplit cfg.keys) → le reste de la configuration manquait
+    if (!cfg.models) cfg.models = {};
+    if (!cfg.primary) cfg.primary = "agnes";
+    if (cfg.fallback === undefined) cfg.fallback = true;
+    if (cfg.customBase === undefined) cfg.customBase = "";
     // Agnes (clé de l'app) devient le principal, sauf si un autre fournisseur a déjà été choisi avec sa clé
     if (!cfg.agnesChecked) { if (!(cfg.keys[cfg.primary])) cfg.primary = "agnes"; cfg.agnesChecked = true; cfg.save(); }
     this.cfg = cfg; this.agents = []; this.sel = "a1"; this.busy = false; this.pending = null;
@@ -163,6 +168,9 @@ AgnesPlugins.register("atelier", {
       if (b.getAttribute("data-imp") === "apply") self.applyImport(); else { self.imp = null; self.renderImport(); }
     });
     $("atMsgs").addEventListener("click", function (e) {
+      var cp = e.target.closest("[data-copy]"), op = e.target.closest("[data-open]");
+      if (cp) { var pre = cp.parentNode.querySelector("code"); self.copyText(pre ? pre.textContent : "", cp); return; }
+      if (op) { self.openPath(op.getAttribute("data-open"), op); return; }
       var b = e.target.closest("[data-auth]"); if (!b || !self.pending) return;
       self.resolvePending(b.getAttribute("data-auth"));
     });
@@ -500,7 +508,40 @@ AgnesPlugins.register("atelier", {
     var blocs = this.parseLot(d.content), nums = (cartes || []).map(Number).filter(function (n) { return n > 0; });
     if (!blocs.length) throw { display: "Aucun bloc « 01 — … / IMAGE : / VIDÉO : » dans « " + d.name + " »." };
     if (nums.length !== blocs.length) throw { display: "Le LOT de « " + d.name + " » a " + blocs.length + " bloc(s) mais " + nums.length + " carte(s) indiquée(s) : donne un numéro de carte par bloc (get_storyboard)." };
-    return this.applyPlans(blocs.map(function (b, i) { return { plan: nums[i], image: b.image, video: b.video }; }));
+    var out = this.applyPlans(blocs.map(function (b, i) { return { plan: nums[i], image: b.image, video: b.video }; }));
+    if (this.cardNotesOf(d.content).length) out += " " + this.applyCardNotes(d.name, nums);
+    return out;
+  },
+  // 29/09 — sections « ### Carte NN » d'un livrable marketing : réplique, montage, carton de fin, publication, description, hashtags
+  cardNotesOf: function (content) {
+    var t = String(content || "").replace(/\r/g, ""), out = [];
+    t.split(/\n(?=###\s+Carte\s+\d+)/).forEach(function (b) {
+      if (!/^###\s+Carte\s+\d+/.test(b)) return;
+      out.push(b.split(/\n(?=##\s)/)[0].replace(/^###\s+/, "").trim());
+    });
+    return out;
+  },
+  applyCardNotes: function (name, cartes) {
+    var q = String(name || "").toLowerCase(), docs = this.project().docs || [];
+    var d = docs.find(function (x) { return x.name.toLowerCase() === q; }) || docs.find(function (x) { return x.name.toLowerCase().indexOf(q) !== -1; });
+    if (!d) throw { display: "Document « " + name + " » introuvable." };
+    var notes = this.cardNotesOf(d.content), nums = (cartes || []).map(Number).filter(function (n) { return n > 0; });
+    if (!notes.length) throw { display: "Aucune section « ### Carte NN » dans « " + d.name + " »." };
+    var A = window.AgnesApp, p = this.core.getProject(), shots = A.sortedShots(p), done = [];
+    nums.forEach(function (n, i) { var s = shots[n - 1]; if (s && notes[i]) { s.notes = notes[i] + "\n\n(source : " + d.name + ")"; done.push(n); } });
+    if (!done.length) throw { display: "Aucune carte trouvée parmi " + nums.join(", ") + "." };
+    this.core.saveProject(); if (A.renderShots) A.renderShots();
+    return "Notes (réplique, carton de fin, description, hashtags) recopiées sur les cartes " + done.map(function (n) { return "#" + n; }).join(", ") + " : « Plus d'options → Notes ».";
+  },
+  fichePreview: function (slug) {
+    return this.marketingCall("GET", "/marketing/fiche?fiche=" + encodeURIComponent(slug || "")).then(function (f) {
+      return "Fiche « " + f.titre + " » (" + f.fiche + ") — statut " + f.statut + (f.peut_valider ? "" : " — BLOQUÉE par le garde-fou") + "\n" +
+        (f.resume ? f.resume + "\n" : "") + "\nNOTIONS (ce qu'Anthony pourra dire) :\n" +
+        f.notions.map(function (n, i) { return (i + 1) + ". " + n.label + " — problème : " + n.probleme + " → solution : " + n.solution + " → bénéfice : " + n.benefice + (n.mode === "decryptage" ? " [décryptage]" : ""); }).join("\n") +
+        (f.blocages.length ? "\n\nBLOCAGES :\n- " + f.blocages.join("\n- ") : "") +
+        (f.sources.length ? "\n\nSOURCES :\n- " + f.sources.join("\n- ") : "") +
+        "\n\nFICHIER :\n`" + f.fichier + "`\n\nCOMMANDE (terminal) pour valider :\n```bash\n" + f.commandes.valider + "\n```\npour rejeter :\n```bash\n" + f.commandes.rejeter + "\n```";
+    });
   },
   // Écrit les prompts dans les cartes (numéros du Storyboard) ; les mentions @[Nom] cochent les références
   applyPlans: function (plans) {
@@ -674,7 +715,10 @@ AgnesPlugins.register("atelier", {
     { type: "function", function: { name: "marketing_generate_day", description: "Agent Marketing : prépare une journée de 3 vidéos d'avatar de 10 s (éducative, problème-solution, démonstration), validées, et ajoute le livrable « Marketing — date » aux documents de l'Atelier. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { methode: { type: "string", description: "Fiche méthode du jour choisie par l'utilisateur : identifiant donné par marketing_state (ex. aida, pas, avant-apres, conseil-express)" },
         date: { type: "string", description: "AAAA-MM-JJ (défaut : aujourd'hui)" }, topic: { type: "string" }, audience: { type: "string" }, offer: { type: "string" }, objective: { type: "string" },
-        trend: { type: "number", description: "Numéro d'une piste de veille (facultatif)" }, pillar: { type: "string" }, cluster: { type: "string" }, environment: { type: "string" } } } } },
+        trend: { type: "number", description: "Numéro d'une piste de veille (facultatif)" }, pillar: { type: "string" }, cluster: { type: "string" }, environment: { type: "string" },
+        garder: { type: "string", description: "Journée RÉÉCRITE en partie : vidéos déjà publiées à garder telles quelles (educatif, probleme_solution, demonstration ou matin, midi, soir, séparées par des virgules). Les autres sont réécrites avec le procédé actuel, même sujet et même méthode." },
+        notions: { type: "string", description: "Notion imposée par créneau, ex. « midi=mot_peut_etre, soir=mot_imaginez » (série AIDA : une lettre par vidéo). Notions : marketing_fiche." },
+        suite_demain: { type: "boolean", description: "La série continue le lendemain : carton du soir « La suite demain à 8 h »." } } } } },
     { type: "function", function: { name: "marketing_get_day", description: "Agent Marketing : (re)met le livrable d'une journée déjà préparée dans les documents de l'Atelier. Sans autorisation.",
       parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } },
     { type: "function", function: { name: "marketing_validate", description: "Agent Marketing : revalide les 3 vidéos d'une journée (durée, CTA, doublons…). Lecture et contrôle, sans autorisation.",
@@ -685,6 +729,18 @@ AgnesPlugins.register("atelier", {
       parameters: { type: "object", properties: { fiche: { type: "string", description: "identifiant de la formation (marketing_ressources)" }, video: { type: "number", description: "numéro i de la vidéo (0 = première)" } }, required: ["fiche"] } } },
     { type: "function", function: { name: "marketing_recherche_sujet", description: "Agent Marketing : cherche sur internet un sujet absent des ressources locales et de la veille (recherche web de Codex, Hacker News, Reddit ; pages hors sujet écartées), crée la fiche « web-… » et en extrait les notions. La fiche reste « à valider » par l'utilisatrice. Prend 1 à 3 minutes. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { sujet: { type: "string" }, forums: { type: "boolean", description: "inclure Hacker News et Reddit (témoignages) ; défaut oui" } }, required: ["sujet"] } } },
+    { type: "function", function: { name: "mesurer_replique", description: "Mesure une ou plusieurs répliques (une par ligne, « NOM : texte » accepté) avec le Calculateur de répliques : caractères espaces compris, mots, durée estimée, et combien de caractères ajouter ou retirer pour tenir le réglage (anthony = TikTok 10 s, serie, court, voixoff, ou un réglage de l'utilisateur). À utiliser AVANT de proposer ou valider une réplique. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: { texte: { type: "string" }, reglage: { type: "string", description: "anthony (défaut), serie, court, voixoff, ou l'identifiant d'un réglage de l'utilisateur" } }, required: ["texte"] } } },
+    { type: "function", function: { name: "set_replique", description: "Remplace la réplique entre guillemets (« … ») du prompt d'une carte du Storyboard par une nouvelle version, sans toucher au reste du prompt. Mesure-la d'abord avec mesurer_replique. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { carte: { type: "number", description: "Numéro de la carte (#N)" }, replique: { type: "string", description: "Nouvelle réplique, sans guillemets" }, index: { type: "number", description: "N-ième réplique du prompt (1 par défaut)" } }, required: ["carte", "replique"] } } },
+    { type: "function", function: { name: "marketing_fiches", description: "Agent Marketing : liste des fiches connaissances (statut, notions, blocages) avec l'ADRESSE de chaque fichier sur l'ordinateur et celle du dossier. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "marketing_fiche", description: "Agent Marketing : une fiche connaissance en clair (notions : problème → solution → bénéfice, blocages du garde-fou, sources), son ADRESSE et les COMMANDES terminal (montrer, valider, rejeter). Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: { fiche: { type: "string" } }, required: ["fiche"] } } },
+    { type: "function", function: { name: "marketing_decider_fiche", description: "Valide ou rejette une fiche connaissance. L'utilisatrice voit les notions dans la demande d'autorisation : SON clic « Autoriser » est sa décision. Ne l'utilise que si elle a demandé de valider ou rejeter cette fiche. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { fiche: { type: "string" }, decision: { type: "string", enum: ["valider", "rejeter"] } }, required: ["fiche", "decision"] } } },
+    { type: "function", function: { name: "marketing_notes_cartes", description: "Recopie sur les cartes du Storyboard la fiche de chaque vidéo d'un document « Marketing — date » (réplique, montage, CARTON DE FIN, publication, description, hashtags), dans « Notes » de la carte. Les prompts ne changent pas. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { document: { type: "string" }, cartes: { type: "array", items: { type: "number" }, description: "Numéros des cartes, dans l'ordre des vidéos 01, 02, 03" } }, required: ["document", "cartes"] } } },
     { type: "function", function: { name: "marketing_extraire_fiche", description: "Agent Marketing : extrait les notions d'une formation (documents + transcriptions). La fiche passe « à valider » : seule l'utilisatrice la valide. Refusé si la fiche a déjà des notions, sauf ecraser (copie gardée). Nécessite l'autorisation.",
       parameters: { type: "object", properties: { fiche: { type: "string" }, ecraser: { type: "boolean" } }, required: ["fiche"] } } }
   ],
@@ -698,6 +754,11 @@ AgnesPlugins.register("atelier", {
     var p = this.core.getProject();
     return "Tu es le CHEF DE PRODUCTION d'Agnes Studio Pro. Tu coordonnes une équipe d'agents d'écriture et tu fais le lien avec l'app. " +
       "Tu parles français, brièvement, comme un directeur de production : tu annonces ce que tu vas faire, pourquoi, puis tu le fais avec les outils.\n\n" +
+      "CLARTÉ POUR L'UTILISATEUR (il ne programme pas)\n- Ne lui parle jamais en noms d'outils (marketing_fiche, update_shots…) : dis ce que tu fais en mots simples (« je lis la fiche », « je mets à jour les cartes 4 à 6 »).\n" +
+      "- Donne toujours l'ADRESSE COMPLÈTE d'un fichier ou d'un dossier de l'ordinateur, entre accents graves : `D:\\dossier\\fiche.yaml` (elle devient cliquable et s'ouvre dans l'Explorateur).\n" +
+      "- Quand une action se fait aussi dans un terminal, donne la commande prête à coller dans un bloc ```bash, avec le cd vers le bon dossier : un bouton Copier apparaît.\n" +
+      "- Dans l'app, indique où cliquer (onglet → bouton).\n" +
+      "- Répliques : avant de proposer, corriger ou valider une réplique (marketing, série, court métrage), mesure-la avec mesurer_replique et donne le nombre de caractères et la durée ; propose une version qui tient le réglage. Pour remplacer une réplique dans une carte, appelle directement set_replique : sa demande d'autorisation montre le texte exact, ne demande pas de confirmation par écrit avant.\n\n" +
       "RÈGLES\n- Tu n'écris pas toi-même le contenu créatif : tu le confies à l'agent compétent (run_agent), avec une consigne précise.\n" +
       "- Respecte l'ordre de la chaîne : un agent ne travaille que si ses entrées existent. Propose l'étape suivante logique.\n" +
       "- Pour ranger dans l'app, lis d'abord le travail (get_output), puis utilise l'outil de destination avec le contenu exact, sans le réécrire (sauf pour extraire les fiches de la Bible).\n" +
@@ -714,6 +775,9 @@ AgnesPlugins.register("atelier", {
       "l'étape Le lot devient update_shots avec document (nom du document) et cartes (leurs numéros, dans l'ordre 01, 02, 03). Ne crée de nouvelles cartes qu'avec l'accord explicite de l'utilisateur. " +
       "Ressources locales (formations sur l'ordinateur) : marketing_ressources pour voir les formations « à transcrire », transcrire_ressource (une vidéo à la fois : Extraire → Whisper, puis contrôle de la sortie par l'agent Marketing), puis marketing_extraire_fiche ; ne valide jamais une fiche toi-même : c'est l'utilisateur qui valide. " +
       "Sujet absent des ressources et de la veille : marketing_recherche_sujet (internet, forums = témoignages, fiche à valider). " +
+      "Fiches à valider : quand l'utilisateur veut valider ou rejeter une fiche, lis-la (marketing_fiche), résume ses notions en clair, donne l'adresse du fichier et la commande, puis marketing_decider_fiche : il voit les notions dans l'autorisation et décide en cliquant. Ne le propose jamais sans sa demande. " +
+      "Journée déjà publiée en partie mais écrite avec l'ancien procédé : marketing_generate_day avec la même date et garder (ex. « educatif »), puis update_shots document + cartes pour les cartes existantes. " +
+      "Après la création des cartes d'une journée (ou update_shots document), marketing_notes_cartes recopie réplique, carton de fin, description et hashtags sur les cartes. " +
       "Avant chaque étape (Bible, Le lot, publication, générations), relis le document avec get_document et ne reprends JAMAIS un sujet, un lieu, " +
       "une tenue ou une réplique d'une version lue plus tôt dans la conversation ; en cas de doute, relis-le et cite le sujet et les lieux lus.\n\n" +
       "ÉQUIPE ET ÉTAT\n" + team + "\n\nAPP\nProjet : " + (p ? p.name : "?") + " · " + (p ? p.shots.length : 0) + " plan(s) dans le Storyboard\n" +
@@ -725,6 +789,41 @@ AgnesPlugins.register("atelier", {
     if (chat.length <= 40) return chat.slice();
     for (var i = chat.length - 40; i < chat.length; i++) if (chat[i].role === "user") return chat.slice(i);
     return chat.slice(-10);
+  },
+  // 30/09 — demande envoyée au Chef par une autre extension (ex. compteur de répliques d'une carte)
+  ask: function (text) {
+    if (this.busy) { this.core.toast("Le chef travaille déjà : réessayez dans un instant.", "err"); return false; }
+    if (this.pending) { this.core.toast("Répondez d'abord à la demande d'autorisation en attente (Atelier IA).", "err"); return false; }
+    var st = this.project(); st.chat.push({ role: "user", content: text }); this.core.saveProject(); this.renderChat();
+    if (window.AgnesApp.showView) window.AgnesApp.showView("view_atelier");
+    this.managerStep(0); return true;
+  },
+  // 30/09 — garde-fou : une réplique proposée par le Chef qui ne tient pas le réglage du projet (Calculateur de répliques)
+  // ne vous est pas présentée ; elle lui revient avec la raison. Sans l'extension, pas de contrôle (rien ne bloque).
+  repliqueHorsReglage: function (a) {
+    var rp = window.AgnesPlugins && AgnesPlugins.get("repliques"); if (!rp || !rp.mesurer) return "";
+    var texte = String(a.replique || "").replace(/[«»"“”]/g, "").trim(), id = rp.reglageProjet ? rp.reglageProjet() : undefined;
+    var x = rp.mesurer(texte, id).repliques[0], r = rp.get(id) || {};
+    if (!x) return "REFUSÉ avant de la montrer à l'utilisateur : réplique vide.";
+    var raisons = x.statut === "ok" ? [] : x.alertes.filter(function (t) { return !/^phrase longue/.test(t); });
+    if (/[:;]/.test(texte)) raisons.push("deux-points ou point-virgule interdits (la voix les lit mal) : écris « par exemple, » au lieu de « ex: »");
+    if (!raisons.length) return "";
+    return "REFUSÉ avant de la montrer à l'utilisateur : « " + texte + " » fait " + x.caracteres + " caractères (réglage « " + r.nom + " » : " + (r.min || 0) + " à " + (r.max || "∞") +
+      ") — " + raisons.join(" ; ") + ". Écris une autre version, mesure-la avec mesurer_replique et attends le résultat, puis rappelle set_replique.";
+  },
+  // Remplace la n-ième réplique entre guillemets (« … » ou " … ") du prompt d'une carte, sans toucher au reste
+  setReplique: function (carte, texte, index) {
+    var A = window.AgnesApp, p = this.core.getProject(), s = A.sortedShots(p)[(+carte || 0) - 1];
+    if (!s) throw { display: "Carte #" + carte + " introuvable." };
+    var n = Math.max(0, (+index || 1) - 1), i = -1, done = false, clean = String(texte || "").replace(/[«»"“”]/g, "").trim();
+    if (!clean) throw { display: "Réplique vide." };
+    s.prompt = String(s.prompt || "").replace(/«\s*([^»]*?)\s*»|“([^”]*)”|"([^"]*)"/g, function (all, a, b, c) {
+      i++; if (i !== n) return all; done = true;
+      return all.charAt(0) === "«" ? "« " + clean + " »" : all.charAt(0) === "“" ? "“" + clean + "”" : '"' + clean + '"';
+    });
+    if (!done) throw { display: "La carte #" + carte + " n'a pas de réplique n°" + (n + 1) + " entre guillemets." };
+    this.core.saveProject(); if (A.renderShots) A.renderShots();
+    return "Réplique " + (n + 1) + " de la carte #" + carte + " remplacée (" + clean.length + " caractères) : « " + clean + " »";
   },
   managerSend: function () {
     var st = this.project(), ta = document.getElementById("atInput"), text = ta.value.trim();
@@ -795,7 +894,8 @@ AgnesPlugins.register("atelier", {
     });
   },
   NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true,
-    generate_shots: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true, marketing_recherche_sujet: true },
+    generate_shots: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true, marketing_recherche_sujet: true,
+    marketing_decider_fiche: true, marketing_notes_cartes: true, set_replique: true },
   handleCalls: function (calls, depth) {
     var self = this, st = this.project(), results = [];
     function next(i) {
@@ -811,7 +911,11 @@ AgnesPlugins.register("atelier", {
           results.push({ id: c.id, name: c.name, content: String(out).slice(0, 20000) }); next(i + 1);
         }, function (e) { results.push({ id: c.id, name: c.name, content: "ÉCHEC : " + (e.display || e.message || e) }); next(i + 1); });
       };
-      if (auto || !self.NEEDS_AUTH[c.name]) go(true);
+      var refus = c.name === "set_replique" ? self.repliqueHorsReglage(c.args || {}) : "";
+      if (refus) { results.push({ id: c.id, name: c.name, content: refus }); next(i + 1); }   // 30/09 : garde-fou avant l'autorisation
+      else if (auto || !self.NEEDS_AUTH[c.name]) go(true);
+      else if (c.name === "marketing_decider_fiche") self.fichePreview(c.args.fiche).then(function (t) { c.preview = t; }, function (e) { c.preview = "Fiche illisible : " + (e.message || e); })
+        .then(function () { self.pending = { call: c, go: go }; self.setBusy("En attente de votre autorisation"); self.renderChat(); });
       else { self.pending = { call: c, go: go }; self.setBusy("En attente de votre autorisation"); self.renderChat(); }
     }
     next(0);
@@ -839,12 +943,18 @@ AgnesPlugins.register("atelier", {
       case "generate_shots": return this.describeGeneration(a);
       case "marketing_state": return "Lire l'état de l'agent Marketing";
       case "marketing_veille": return "Agent Marketing : lancer la veille internet";
-      case "marketing_generate_day": return "Agent Marketing : préparer les 3 vidéos du " + (a.date || "jour") + " — méthode " + (a.methode || "par défaut") + (a.topic ? " — sujet « " + a.topic + " »" : "") + " (écrites avec " + this.marketingModelLabel() + ")";
+      case "marketing_generate_day": return "Agent Marketing : " + (a.garder ? "réécrire la journée du " + (a.date || "jour") + " en gardant « " + a.garder + " »" : "préparer les 3 vidéos du " + (a.date || "jour")) + " — méthode " + (a.methode || (a.garder ? "celle de la journée" : "par défaut")) + (a.topic ? " — sujet « " + a.topic + " »" : "") + " (écrites avec " + this.marketingModelLabel() + ")";
       case "marketing_get_day": return "Agent Marketing : reprendre le livrable du " + (a.date || "?");
       case "marketing_validate": return "Agent Marketing : revalider la journée du " + (a.date || "?");
       case "marketing_ressources": return "Lire les ressources locales (formations et vidéos)";
       case "transcrire_ressource": return "Transcrire la vidéo n°" + (a.video || 0) + " de « " + (a.fiche || "?") + " » (Extraire → Whisper), puis contrôle et ajout à la fiche";
       case "marketing_recherche_sujet": return "Agent Marketing : chercher « " + (a.sujet || "?") + " » sur internet" + (a.forums === false ? "" : " (avec Hacker News et Reddit)") + ", puis fiche à valider";
+      case "mesurer_replique": return "Mesurer la réplique (caractères et durée)";
+      case "set_replique": return "Remplacer la réplique de la carte #" + (a.carte || "?") + " par : « " + (a.replique || "") + " » (" + String(a.replique || "").length + " caractères)";
+      case "marketing_fiches": return "Lire la liste des fiches connaissances";
+      case "marketing_fiche": return "Lire la fiche « " + (a.fiche || "?") + " »";
+      case "marketing_decider_fiche": return (a.decision === "rejeter" ? "REJETER" : "VALIDER") + " la fiche « " + (a.fiche || "?") + " » (votre décision : relisez les notions ci-dessous)";
+      case "marketing_notes_cartes": return "Recopier réplique, carton de fin, description et hashtags de « " + (a.document || "?") + " » dans les notes des cartes " + (a.cartes || []).map(function (x) { return "#" + x; }).join(", ");
       case "marketing_extraire_fiche": return "Agent Marketing : extraire les notions de « " + (a.fiche || "?") + " »" + (a.ecraser ? " (en remplaçant les notions actuelles, copie gardée)" : "") + " — fiche à valider ensuite";
       default: return c.name;
     }
@@ -905,6 +1015,22 @@ AgnesPlugins.register("atelier", {
           (e.erreur ? "\nExtraction : " + e.erreur : "\nNotions (" + e.notions + ", " + e.blocages + " blocage(s)) — fiche à valider par l'utilisatrice :\n" +
             (e.apercu || []).map(function (x) { return "- " + x; }).join("\n"));
       });
+      case "marketing_fiches": return this.marketingCall("GET", "/marketing/fiches").then(function (d) {
+        return "Dossier des fiches : `" + d.dossier + "`\n" + d.fiches.map(function (f) {
+          return "- " + f.fiche + " · " + f.statut + " · " + f.notions + " notion(s)" + (f.blocages ? " · " + f.blocages + " blocage(s)" : "") + " · fichier `" + f.fichier + "`";
+        }).join("\n") + (d.a_valider.length ? "\nÀ valider par l'utilisatrice : " + d.a_valider.join(", ") : "\nAucune fiche à valider.");
+      });
+      case "marketing_fiche": return this.fichePreview(a.fiche);
+      case "set_replique": return this.setReplique(a.carte, a.replique, a.index);
+      case "mesurer_replique": {
+        var rp = window.AgnesPlugins && AgnesPlugins.get("repliques");
+        if (!rp || !rp.resume) return "Mesure impossible : activez l'extension « Calculateur de répliques » (⚙ → Extensions). Compte en attendant les caractères espaces compris.";
+        return rp.resume(a.texte || "", a.reglage);
+      }
+      case "marketing_decider_fiche": return this.marketingCall("POST", "/marketing/fiche/decision", { fiche: a.fiche, decision: a.decision }).then(function (d) {
+        return "Fiche « " + d.fiche + " » : " + (d.statut === "valide" ? "VALIDÉE par l'utilisatrice — Anthony peut s'en servir" : "rejetée") + ". Fichier : `" + d.fichier + "`";
+      });
+      case "marketing_notes_cartes": return this.applyCardNotes(a.document, a.cartes);
       case "marketing_extraire_fiche": return this.marketingCall("POST", "/marketing/extraire", { fiche: a.fiche, ecraser: !!a.ecraser }).then(function (d) {
         return "Fiche « " + d.fiche + " » : " + d.notions + " notion(s), " + d.blocages + " blocage(s) du garde-fou, statut " + d.statut +
           " (l'utilisatrice valide).\n" + d.apercu.map(function (x) { return "- " + x; }).join("\n");
@@ -989,11 +1115,12 @@ AgnesPlugins.register("atelier", {
   },
   marketingDay: function (a) {
     var self = this, body = { methode: a.methode, date: a.date, topic: a.topic, audience: a.audience, offer: a.offer, objective: a.objective,
-      trend: a.trend, pillar: a.pillar, cluster: a.cluster, environment: a.environment, llm: this.marketingModel() };
+      trend: a.trend, pillar: a.pillar, cluster: a.cluster, environment: a.environment, garder: a.garder, notions: a.notions, suite_demain: !!a.suite_demain, llm: this.marketingModel() };
     return this.marketingCall("POST", "/marketing/journee", body).then(function (d) {
       self.addDoc(d.livrable_nom, d.livrable, "agent Marketing", true);
       return "Journée du " + d.date + " (méthode " + (d.methodes || []).join(", ") + ", pilier " + d.pilier + ") : " + (d.pret ? "3/3 vidéos prêtes" : "au moins une vidéo à corriger") + ".\n" +
         d.videos.map(function (v) { return "- " + v.type + " [" + v.statut + ", " + v.duree_s + " s, " + v.generateur + "] " + v.hook + (v.erreurs.length ? " — " + v.erreurs.join(" ; ") : ""); }).join("\n") +
+        "\nDossier des fichiers de la journée : `" + d.dossier + "`" +
         "\nDocument « " + d.livrable_nom + " » ajouté : lis-le avec get_document et suis ses CONSIGNES POUR LE CHEF.";
     });
   },
@@ -1136,12 +1263,30 @@ AgnesPlugins.register("atelier", {
   },
   // Markdown des réponses (titres, gras, italique, listes, tableaux, code, liens) → HTML.
   // Tout le texte est échappé AVANT la mise en forme : aucun HTML venant de l'IA n'est interprété.
+  // 29/09 — adresses d'un dossier ou d'un fichier de l'ordinateur (C:\…, D:\…) : cliquables (pont → Explorateur) + copiables
+  isPath: function (t) { return /^[a-zA-Z]:[\\\/][^<>|?*\n]*$/.test(String(t).replace(/&amp;/g, "&").trim()); },
+  pathHtml: function (escaped) {
+    var raw = escaped.replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+    return '<code class="at-path">' + escaped + '</code><button type="button" class="at-open" data-open="' + window.AgnesApp.esc(raw) + '" title="Ouvrir dans l\'Explorateur (pont local) — sinon l\'adresse est copiée">📂</button>';
+  },
+  copyText: function (t, btn) {
+    var done = function () { if (btn) { var o = btn.textContent; btn.textContent = "✓ Copié"; setTimeout(function () { btn.textContent = o; }, 1500); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, function () { window.prompt("Copiez :", t); });
+    else window.prompt("Copiez :", t);
+  },
+  openPath: function (path, btn) {
+    var self = this;
+    fetch(this.pont() + "/ouvrir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chemin: path }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (!j.ok) throw new Error(j.error || "refusé"); self.core.toast("Ouvert dans l'Explorateur : " + path, "ok"); })
+      .catch(function (e) { self.copyText(path, btn); self.core.toast("Adresse copiée (" + (e.message || "pont local injoignable") + ") : collez-la dans l'Explorateur.", "err"); });
+  },
   md: function (text) {
-    var esc = window.AgnesApp.esc, codes = [];
+    var self = this, esc = window.AgnesApp.esc, codes = [];
     var t = String(text || "").replace(/\r/g, "").replace(/```[^\n]*\n([\s\S]*?)```/g, function (_, c) { codes.push(c.replace(/\n$/, "")); return "\u0000" + (codes.length - 1) + "\u0000"; });
     var inline = function (s) {
       return esc(s)
-        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/`([^`]+)`/g, function (_, c) { return self.isPath(c) ? self.pathHtml(c) : "<code>" + c + "</code>"; })
         .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, function (_, a, b) { return "<strong>" + (a || b) + "</strong>"; })
         .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)|(^|[^_\w])_([^_\n]+)_(?!\w)/g, function (_, p1, a, p2, b) { return (p1 || p2 || "") + "<em>" + (a || b) + "</em>"; })
         .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
@@ -1151,7 +1296,7 @@ AgnesPlugins.register("atelier", {
     var cells = function (l) { return l.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return c.trim(); }); };
     while (i < lines.length) {
       var l = lines[i], m;
-      if (/^\u0000\d+\u0000$/.test(l.trim())) { flush(); out.push("<pre><code>" + esc(codes[+l.trim().slice(1, -1)]) + "</code></pre>"); i++; continue; }
+      if (/^\u0000\d+\u0000$/.test(l.trim())) { flush(); out.push('<div class="at-code"><button type="button" class="at-copy" data-copy="1" title="Copier">📋 Copier</button><pre><code>' + esc(codes[+l.trim().slice(1, -1)]) + "</code></pre></div>"); i++; continue; }
       if (!l.trim()) { flush(); i++; continue; }
       if ((m = l.match(/^\s*(#{1,6})\s+(.*)$/))) { flush(); out.push("<h" + Math.min(6, m[1].length + 2) + ">" + inline(m[2].replace(/\s*#+\s*$/, "")) + "</h" + Math.min(6, m[1].length + 2) + ">"); i++; continue; }
       if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push("<hr>"); i++; continue; }
@@ -1206,10 +1351,11 @@ AgnesPlugins.register("atelier", {
         : (list ? '<div class="at-msg tool">' + who("Chef de production") + '</div>' : '')) + list;
     }).join("");
     if (this.pending) {
-      var c = this.pending.call, preview = c.name === "run_agent" ? c.args.request : c.name === "bible_upsert" ? (c.args.entries || []).map(function (e) { return e.name + (e.dna ? " — " + e.dna : ""); }).join("\n") + (c.args.series_style ? "\nStyle : " + c.args.series_style : "")
+      var c = this.pending.call, preview = c.preview ? c.preview : c.name === "run_agent" ? c.args.request : c.name === "bible_upsert" ? (c.args.entries || []).map(function (e) { return e.name + (e.dna ? " — " + e.dna : ""); }).join("\n") + (c.args.series_style ? "\nStyle : " + c.args.series_style : "")
         : c.name === "send_to_lot" ? c.args.script : c.name === "send_to_scenario" ? c.args.text : JSON.stringify(c.args, null, 1);
       html += '<div class="at-auth"><b>Autorisation demandée :</b> ' + esc(this.describe(c)) +
-        '<pre>' + esc(String(preview || "").slice(0, 1500)) + (String(preview || "").length > 1500 ? "\n…" : "") + '</pre>' +
+        (c.preview ? '<div class="at-msg md" style="max-width:100%;margin:6px 0">' + this.md(c.preview) + '</div>'
+          : '<pre>' + esc(String(preview || "").slice(0, 1500)) + (String(preview || "").length > 1500 ? "\n…" : "") + '</pre>') +
         '<div class="row-inline"><button class="primary-btn" data-auth="yes">Autoriser</button><button class="small-btn" data-auth="no">Refuser</button></div></div>';
     }
     el.innerHTML = html || '<p class="hint">Dites au chef de production ce que vous voulez faire : « Voici mon idée… », « Continue la chaîne », « Range les personnages dans la Bible », « Envoie l\'épisode 1 dans Le lot ».</p>';

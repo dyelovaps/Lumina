@@ -156,7 +156,7 @@
       '<div class="row-inline" style="margin-top:8px">' +
       '<button class="small-btn" data-act="genkey"' + (busy ? " disabled" : "") + '>' + (keys.length ? "Nouvelle image" : "Générer l'image") + '</button>' +
       '<button class="small-btn" data-act="animate"' + (busy || !cur ? " disabled" : "") + '>Animer cette image →</button>' +
-      (cur ? '<button class="small-btn" data-act="viewkey">Agrandir</button><button class="small-btn" data-act="delkey">Supprimer l\'image</button>' : '') +
+      (cur ? '<button class="small-btn" data-act="viewkey">Agrandir</button><button class="small-btn" data-act="dlkey">Télécharger l\'image</button><button class="small-btn" data-act="delkey">Supprimer l\'image</button>' : '') +
       '<label class="inline" title="Sinon, le plan s\'arrête sur « image à valider »"><input type="checkbox" data-f="autoAnimate"' + (shot.autoAnimate ? " checked" : "") + '> Animer sans attendre ma validation</label></div></div>';
   }
   function lockHtml(shot) {
@@ -243,11 +243,15 @@
       '<label class="inline">Sorties <input type="number" class="mini" data-f="outputs" min="1" max="4" value="' + esc(shot.outputs || 1) + '"></label>' +
       '</div>' + (two ? keyBlock(shot) : '') + refsHtml(shot, proj) +
       '<div class="chips">' + skillChips + '<select data-f="addskill" style="width:auto;" aria-label="Ajouter un skill">' + A.skillOptionsHtml(kind) + '</select></div>' +
-      '<details class="more-opts"><summary>Plus d\'options</summary><div class="grid3">' +
+      '<details class="more-opts"><summary>Plus d\'options' + (shot.notes ? ' · 📝 Notes' : '') + (shot.classement ? ' · 📁 Classée' : '') + '</summary><div class="grid3">' +
       '<div class="field"><label>Seed</label><input type="number" data-f="seed" value="' + esc(shot.seed || "") + '" placeholder="Projet : ' + esc(proj.seed || "aléatoire") + '"></div>' +
       '<div class="field"><label>Prompt négatif</label><input type="text" data-f="negative" value="' + esc(shot.negative || "") + '" placeholder="' + esc(proj.negative || "Aucun") + '"></div>' +
       (shot.mode === "i2i" ? '<div class="field"><label>Force de transformation (0–1)</label><input type="number" step="0.05" min="0" max="1" data-f="strength" value="' + esc(shot.strength || "") + '"></div>' : '') +
-      '</div>' + (two
+      '</div>' +
+      // 29/09 : notes libres de la carte (script, réplique, carton de fin, description, hashtags…), à la main ou par l'Atelier
+      '<div class="field"><label>Notes (script, carton de fin, description, hashtags)</label><textarea data-f="notes" rows="4" placeholder="Rien pour l\'instant">' + esc(shot.notes || "") + '</textarea></div>' +
+      (shot.classement ? '<p class="hint">📁 Classée le ' + esc(shot.classement.date || "") + ' dans ' + esc(shot.classement.dossier || "") + '</p>' : '') +
+      (two
         ? '<p class="hint">Prompt image envoyé : ' + esc(A.buildPrompt(A.stageView(shot, "image"), proj)) + '</p><p class="hint">Prompt vidéo envoyé : ' + esc(A.buildPrompt(A.stageView(shot, "video"), proj)) + '</p>'
         : '<p class="hint">Prompt envoyé : ' + esc(A.buildPrompt(shot, proj)) + '</p>') + '</details>' +
       '<div class="shot-actions">' + acts + '</div>' +
@@ -279,6 +283,7 @@
     }
     renderSelBar();
     fillLivePreviews(proj);
+    AgnesCore.emit("shots:render", proj);   // 30/09 : les extensions peuvent compléter les cartes (compteur de répliques…)
   };
 
   // Aperçu direct (vidéo/image lue depuis le fichier local ou l'URL d'Agnes) quand la miniature n'a pas pu être créée
@@ -387,7 +392,8 @@
 
   function downloadTake(shot, take, proj) {
     var idx = A.sortedShots(proj).indexOf(shot) + 1;
-    var name = String(idx).padStart(2, "0") + "_" + A.slugify(shot.prompt) + "_prise" + (shot.takes.indexOf(take) + 1) + (take.kind === "video" ? ".mp4" : ".png");
+    var n = (shot.takes || []).indexOf(take), tag = n !== -1 ? "_prise" + (n + 1) : "_image" + ((shot.keyTakes || []).indexOf(take) + 1);   // image de départ : _image1, _image2…
+    var name = String(idx).padStart(2, "0") + "_" + A.slugify(shot.imagePrompt && n === -1 ? shot.imagePrompt : shot.prompt) + tag + (take.kind === "video" ? ".mp4" : ".png");
     A.getTakeBlobOrFetch(take).then(function (b) {
       var href = b ? URL.createObjectURL(b) : take.remoteUrl;
       if (!href) { A.toast("Fichier indisponible.", "err"); return; }
@@ -474,6 +480,7 @@
       }
       case "animate": A.enqueueStage(shot, "video", proj); return;
       case "viewkey": { var kt = A.keyTake(shot); if (kt) A.openLightbox(kt); return; }
+      case "dlkey": { var dk = A.keyTake(shot); if (dk) downloadTake(shot, dk, proj); return; }   // 30/09 : image de départ (Texte → Image → Vidéo)
       case "delkey": {
         var k = A.keyTake(shot); if (!k || !window.confirm("Supprimer cette image de départ ?")) return;
         AgnesStore.delBlob("take:" + k.id); A.forgetUrl("take:" + k.id);

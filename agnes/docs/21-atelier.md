@@ -171,6 +171,10 @@ Il connaît à chaque message l'état de chaque agent, votre Bible, votre Biblio
 | Lancer des générations (images ou vidéos) sur des cartes précises | **Toujours** (l'aperçu indique le nombre de cartes et le moteur) |
 | Agent Marketing : lire son état, reprendre ou revalider une journée | Non |
 | Agent Marketing : veille internet, préparer une journée de 3 vidéos | **Toujours** |
+| Lire les fiches connaissances, mesurer une réplique | Non |
+| Valider ou rejeter une fiche connaissance (votre décision) | **Toujours** |
+| Recopier réplique, carton, description, hashtags dans les Notes des cartes | **Toujours** |
+| Remplacer la réplique d'une carte (après contrôle du Calculateur de répliques) | **Toujours** |
 
 Chaque demande s'affiche dans la discussion avec un **aperçu du contenu** : **Autoriser** ou **Refuser**. Après un refus, le chef ne recommence pas sans vous le demander.
 
@@ -369,3 +373,38 @@ trouve 4 à 6 pages fiables, Hacker News et Reddit apportent des témoignages (j
 hors sujet sont écartées. Une fiche « web-… » est créée avec les liens des sources, ses notions sont extraites et contrôlées
 (chaque notion doit citer un passage des pages ; aucun chiffre inventé). **Vous validez la fiche** avant qu'Anthony s'en serve.
 Sans Codex : Google Actualités (France et États-Unis) en secours.
+
+## Un Chef plus clair (29/09/2026)
+
+### Adresses et commandes
+- Le Chef donne l'**adresse complète** des fichiers et dossiers de l'ordinateur (fiche, journée marketing…). Le bouton **📂** à côté l'ouvre dans l'Explorateur Windows (le pont local doit être lancé ; il montre le dossier, il n'ouvre ni n'exécute jamais un fichier). Sans pont, l'adresse est copiée : collez-la dans la barre de l'Explorateur.
+- Quand une action peut aussi se faire dans un terminal, il donne la **commande prête à coller**, dans un bloc avec un bouton **📋 Copier**.
+- Il parle en mots simples (« je lis la fiche », « je mets à jour les cartes 4 à 6 »), pas en noms d'outils.
+
+### Valider ou rejeter une fiche connaissance
+Dites au chef : « Montre-moi les fiches à valider », puis « Valide la fiche AIDA » (ou « rejette… »).
+1. Il lit la fiche et vous la résume ; il donne son adresse et la commande terminal.
+2. La demande d'autorisation affiche **toutes les notions** (problème → solution → bénéfice), les blocages éventuels et les sources.
+3. **Autoriser** = vous validez (ou rejetez). Une fiche bloquée par le garde-fou ne peut pas être validée : le message l'indique.
+Il ne propose jamais de valider une fiche sans votre demande.
+
+| Vous écrivez | Il fait |
+|---|---|
+| « Quelles fiches sont à valider ? » | Liste des fiches, statut, nombre de notions, adresse de chaque fichier |
+| « Montre-moi la fiche Kahneman » | Notions en clair, sources, adresse, commandes |
+| « Valide la fiche Kahneman » | Demande d'autorisation avec les notions : votre clic décide |
+
+### Journée déjà publiée en partie
+Une vidéo du matin est publiée, mais celles de 12 h 30 et 18 h 30 ont été écrites avec l'ancien procédé ? Demandez : « Réécris la journée du 28/09 en gardant la vidéo du matin ». Le chef prépare la journée avec **garder** : la vidéo gardée ne change pas ; les autres sont réécrites (répliques, prompts, carton de fin, description, hashtags), sur le même sujet et avec la même méthode, sans reprendre ses phrases. Si la notion d'origine n'existe plus (fiche réextraite), une notion de la même fiche est prise. Ensuite il met à jour les cartes existantes (aucune carte en double).
+
+### Carton de fin, description et hashtags sur les cartes
+Chaque vidéo du document « Marketing — date » a maintenant une **DESCRIPTION** (à coller sous la vidéo) et des **HASHTAGS** (écrits par l'IA, contrôlés : pas de chiffre inventé, pas de « je » ; sinon repris du script), en plus du **CARTON DE FIN**. Après la création (ou la mise à jour) des cartes, le chef les recopie dans **Plus d'options → Notes** de chaque carte, avec votre accord. Le bouton **📁 Classer** ([26](26-classement.md)) les emporte dans `fiche.md`.
+
+### Mesurer une réplique
+Le chef mesure une réplique avant de la proposer ou de la valider, avec le [Calculateur de répliques](27-repliques.md) : nombre de caractères, durée, ce qu'il faut ajouter ou retirer. Demandez : « Mesure cette réplique pour une série : … ».
+
+### Premier démarrage avec des clés .env
+Correctif du 30/09 : dans une installation neuve dont les clés viennent du fichier .env (pont local), l'Atelier ne s'ouvrait pas (réglages des fournisseurs incomplets). Il démarre maintenant avec Agnes AI en principal et le repli automatique.
+
+### Les documents sous la discussion
+Les documents (📎) sont enregistrés **dans le projet ouvert**. Si des documents semblent avoir disparu, vérifiez le projet actif (onglet Projet) : ceux ajoutés dans un autre projet (ou avant une duplication) y sont restés.

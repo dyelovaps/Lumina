@@ -80,7 +80,7 @@ Autres extensions utilisables depuis la vôtre : `AgnesPlugins.get("stills").add
 `AgnesApp.montageOverlays.push(prep)` : `prep({ proj, W, H, total, marks: [{ t, len, shot }] })` est appelé au lancement du rendu (positions réelles des plans) et renvoie `null` ou une fonction `draw(ctx, now)` appelée à chaque image, après l'étalonnage (c'est ce qu'utilise AutoCaption). Côté kit FFmpeg, une extension `captions` qui expose `kitAss(W, H, marks)` voit son fichier .ass incrusté en dernière étape.
 
 ### Événements — `core.on(nom, fn)`
-`ready` · `render` · `view:change` (id de l'onglet) · `project:change` · `shot:done` · `shot:error` · `shot:change` · `job:update` · `montage:done` (`{ blob }`) · `panel:close`
+`ready` · `render` · `view:change` (id de l'onglet) · `project:change` · `shots:render` (les cartes du Storyboard viennent d'être dessinées : une extension peut les compléter, ex. le compteur de répliques) · `shot:done` · `shot:error` · `shot:change` · `job:update` · `montage:done` (`{ blob }`) · `panel:close`
 
 ### Classes CSS disponibles
 Bouton de choix de fichier : `<label class="small-btn">Importer…<input type="file" hidden></label>`. Case ou bouton radio avec son texte : `<label class="inline"><input type="checkbox"> Texte</label>`. Deux cartes côte à côte : placez-les dans une grille à part (la règle `.card + .card` ajoute une marge au-dessus de la seconde ; voir `.cap-grid`).

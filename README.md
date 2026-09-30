@@ -2,6 +2,25 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Agnes : Chef plus clair, notes, classement, calculateur de répliques (1.13.5, 29–30/09/2026)
+
+Copie `agnes/` mise à jour (`npm run sync:agnes`) :
+- **Atelier IA** : blocs de code avec bouton **📋 Copier** ; adresses `C:\…` / `D:\…` cliquables (**📂** → route `POST /ouvrir` du
+  pont, qui montre le dossier dans l'Explorateur sans rien exécuter ; sinon l'adresse est copiée). Consignes du Chef : adresses
+  complètes, commandes prêtes à coller, pas de noms d'outils. Nouveaux outils `marketing_fiches`, `marketing_fiche`,
+  `marketing_decider_fiche` (autorisation avec les notions = décision de l'utilisatrice), `marketing_notes_cartes` ;
+  `marketing_generate_day` accepte `garder`.
+- **Storyboard** : champ **Notes** de la carte (Plus d'options) ; résumé « 📝 Notes » / « 📁 Classée ».
+- **Calculateur de répliques** (`plugins/plugin-repliques.js`, onglet Répliques, actif par défaut) : caractères, durée, réglages
+  modifiables + calibrage ; outil du Chef `mesurer_replique` (sans autorisation). **Compteur sur les cartes** (répliques entre
+  guillemets du prompt) via le nouvel événement du cœur `shots:render` ; « Corriger ici » ou « Demander au Chef » (`ask`,
+  outil `set_replique` sous autorisation).
+- **Extension Classement** (`plugins/plugin-classement.js`, active par défaut) : bouton **📁 Classer** → image, vidéo et `fiche.md`
+  dans `<dossier choisi>/Projet/Saison NN/Episode NN/Carte NN - titre/` (File System Access API ; sinon téléchargements).
+- **Télécharger l'image** de départ (cartes Texte → Image → Vidéo) ; garde-fou du Chef avant autorisation (`repliqueHorsReglage`) ;
+  correctif du premier démarrage de l'Atelier avec des clés .env.
+- Tests : `tests/agnes-atelier-clarte.test.cjs`. Après mise à jour : relancer le pont (`lancer_pont.bat`), ↻ sur Lumina, F5 dans Agnes.
+
 ## Agnes : Chef de l'Atelier et ressources locales (1.13.4, 01/10/2026)
 
 Copie `agnes/` mise à jour depuis Agnes_production (`npm run sync:agnes`) :

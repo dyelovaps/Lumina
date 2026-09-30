@@ -72,6 +72,7 @@ En mode **Texte → Vidéo**, la carte a deux zones de texte : **Prompt image** 
 - **Seed** : même seed + même prompt = résultat proche. Vide = seed du projet, ou hasard.
 - **Prompt négatif** : ce qu'on ne veut pas voir (remplace celui du projet pour ce plan).
 - **Force de transformation (0–1)** : en Image → Image, 0 = très proche de la source, 1 = très libre.
+- **Notes** : texte libre de la carte (script, réplique, carton de fin, description, hashtags…). Le Chef de l'Atelier y recopie la fiche des vidéos marketing ([21](21-atelier.md)) ; le bouton 📁 Classer les emporte dans `fiche.md` ([26](26-classement.md)). « 📝 Notes » et « 📁 Classée » s'affichent à côté de « Plus d'options ».
 
 **Boutons**
 | Bouton | Action |
@@ -79,6 +80,7 @@ En mode **Texte → Vidéo**, la carte a deux zones de texte : **Prompt image** 
 | **Générer / Regénérer** | Met le plan dans la liste d'attente. Une regénération **ajoute** une prise, elle n'efface rien |
 | Annuler | Arrête une génération en cours |
 | Télécharger | Enregistre la prise sélectionnée |
+| Télécharger l'image | *(Texte → Image → Vidéo, bloc Image de départ)* Enregistre l'image de départ choisie (`NN_prompt-image_image1.png`), avant même l'animation |
 | **⬇ 1080p** | *(vidéo)* Agrandit la prise en 1080p (petit côté = 1080 px, bicubique + netteté adaptative) puis la télécharge. Réencodage dans le navigateur : compte la durée de la vidéo, onglet visible. Même réglage que l'« Agrandissement » de l'Assemblage |
 | **🎬 Convertir (vidéo)** | *(image)* Garde les images de la carte comme **images de départ** et transforme la carte en plan vidéo (« Texte → Image → Vidéo ») : la prise choisie est présélectionnée, il ne reste qu'à écrire le **prompt vidéo** puis **Animer l'image** |
 | → Bibliothèque | *(image)* Ajoute la prise comme ingrédient |
@@ -88,6 +90,7 @@ En mode **Texte → Vidéo**, la carte a deux zones de texte : **Prompt image** 
 | ⟳ Récupérer le fichier | Apparaît si le rendu n'a pas pu être enregistré dans l'app (voir [ci-dessous](#aucun-rendu-ou-rendu-en-ligne-sur-un-plan-terminé)) |
 | 🎙 Voix | *(extension Voix)* Ouvre le dialogue du plan |
 | 📖 Prompt final | *(extension Bible)* Affiche le texte exact envoyé à Agnes |
+| 📁 Classer | *(extension Classement)* Copie image, vidéo et fiche dans Projet / Saison / Épisode sur votre ordinateur ([26](26-classement.md)) |
 | Réponse brute | En cas d'erreur : message complet de l'API |
 
 ## Références : personnages, lieux, objets

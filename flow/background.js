@@ -1198,7 +1198,13 @@ async function describeFlowPage() {
         .map((b) => ({ text: (b.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 40), aria: b.getAttribute('aria-label') || '',
           disabled: Boolean(b.disabled || b.getAttribute('aria-disabled') === 'true'), box: box(b) }));
       const fichiers = [...document.querySelectorAll('input[type="file"]')].map((f) => ({ accept: f.accept || '', multiple: f.multiple, id: f.id || '' }));
-      return { url: location.pathname, titre: document.title, champs, boutons, fichiers, vue: [innerWidth, innerHeight] };
+      // Messages des générations en échec (bloc avec le bouton « Réessayer ») : texte visible du bloc
+      const echecs = [...document.querySelectorAll('button[aria-label="Réessayer"]')].filter(vis).slice(0, 5).map((b) => {
+        let bloc = b;
+        for (let i = 0; i < 6 && bloc.parentElement; i++) { bloc = bloc.parentElement; if ((bloc.innerText || '').length > 60) break; }
+        return (bloc.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 400);
+      });
+      return { url: location.pathname, titre: document.title, champs, boutons, fichiers, echecs, vue: [innerWidth, innerHeight] };
     },
   });
   const rapport = { ok: true, date: new Date().toISOString(), ...(res?.result || {}) };
@@ -1219,11 +1225,30 @@ async function describeFlowPage() {
 // affichés (« Vidéo · 720p · 8 s … ») pour les comparer à la carte. Elle NE CLIQUE JAMAIS sur « Lancer la
 // génération » : l'utilisatrice génère elle-même (seul ce clic déclenche le contrôle anti-robot de Google).
 // Espace isolé de l'extension : reCAPTCHA n'est pas touché.
+function reloadAndWait(tabId) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, 30000);
+    function done() {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpd);
+      setTimeout(resolve, 2500); // l'application Flow démarre après le chargement de la page
+    }
+    function onUpd(id, info) { if (id === tabId && info.status === 'complete') done(); }
+    chrome.tabs.onUpdated.addListener(onUpd);
+    chrome.tabs.reload(tabId).catch(done);
+  });
+}
+
 async function prepareFlowComposer({ images = [], ingredients = [], prompt = '', reglages = null } = {}) {
   const tabs = await chrome.tabs.query({ url: flowUrls });
   if (tabs.length !== 1) return { ok: false, error: `Google Flow doit être ouvert une seule fois (${tabs.length} page(s) trouvée(s)).` };
   await chrome.tabs.update(tabs[0].id, { active: true });
   if (tabs[0].windowId != null) await chrome.windows.update(tabs[0].windowId, { focused: true }).catch(() => {});
+  // Les images qu'Agnes vient d'envoyer dans le projet (par FlowKit) n'apparaissent dans la page Flow ouverte
+  // qu'après un rechargement (constaté le 30/09/2026) : on recharge d'abord, puis on attend que la page soit prête.
+  if (images.length || ingredients.length) {
+    await reloadAndWait(tabs[0].id);
+  }
   const [res] = await chrome.scripting.executeScript({
     target: { tabId: tabs[0].id },
     args: [images, ingredients, prompt, reglages],
@@ -1245,8 +1270,11 @@ async function prepareFlowComposer({ images = [], ingredients = [], prompt = '',
         el.click();
       };
       const etapes = [];
-      const editeur = document.querySelector('.ProseMirror[contenteditable="true"]');
+      // Page juste rechargée : l'application Flow met quelques secondes à afficher la zone de saisie
+      const editeur = await attendre(() => document.querySelector('.ProseMirror[contenteditable="true"]'), 20000);
       if (!editeur) return { ok: false, error: 'Zone de saisie de Flow introuvable : ouvrez le projet sur l’écran de création.', etapes };
+      await attendre(() => boutons().find((b) => (b.getAttribute('aria-label') || '') === 'Déclencheur des paramètres'), 10000);
+      await pause(800);
 
       // 0) Réglages (menu « Vidéo · 720p · 8 s … ») AVANT les images : changer de mode pourrait les effacer.
       //    Modèle d'abord (il décide des durées proposées), puis mode Images, format, résolution, durée, x1.

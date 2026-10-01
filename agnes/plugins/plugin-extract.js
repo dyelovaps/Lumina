@@ -402,8 +402,8 @@ AgnesPlugins.register("extracteur", {
 
   // ======================= 3. SCRIPT =======================
   // Audio de la source → Float32Array mono 16 kHz
-  audio16k: function () {
-    var blob = this.video;
+  audio16k: function () { return this.audio16kBlob(this.video); },
+  audio16kBlob: function (blob) {
     return blob.arrayBuffer().then(function (ab) {
       var AC = window.AudioContext || window.webkitAudioContext, ctx = new AC();
       return ctx.decodeAudioData(ab).then(function (buf) { ctx.close(); return buf; }, function () { ctx.close(); throw new Error("impossible de lire le son de ce fichier (pas de piste audio, ou format non pris en charge)"); });
@@ -447,6 +447,36 @@ AgnesPlugins.register("extracteur", {
     if (this.cfg.engine === "subs") return Promise.reject(new Error("moteur « sous-titres » choisi dans Extraire : choisissez Whisper ou OpenAI"));
     this.resetView(); this.setSource(blob, name || "vidéo");
     return this.runTranscription();
+  },
+  // 01/10 — mots minutés pour le karaoké de l'extension Montage : [{ text, start, end }] (secondes de la vidéo donnée).
+  // N'utilise ni ne modifie l'onglet Extraire. Whisper local seulement (l'API OpenAI ne rend pas les mots ici).
+  // Si le modèle réglé ne sait pas minuter les mots, on essaie un modèle « _timestamped » (téléchargé une seule fois).
+  WORD_MODELS: ["onnx-community/whisper-base_timestamped", "onnx-community/whisper-small_timestamped"],
+  motsBlob: function (blob, onEtat) {
+    var self = this, cfg = this.cfg, st = { set textContent(t) { if (onEtat) onEtat(t); } };
+    if (!blob || !blob.size) return Promise.reject(new Error("vidéo vide"));
+    var modeles = [cfg.whisper].concat(this.WORD_MODELS.filter(function (m) { return m !== cfg.whisper; }));
+    return this.audio16kBlob(blob).then(function (pcm) {
+      if (pcm.length < 16000 * 0.3) throw new Error("piste audio vide");
+      var essai = function (i, derniere) {
+        if (i >= modeles.length) throw new Error("aucun modèle Whisper ne sait minuter les mots ici (" + (derniere && derniere.message || derniere) + ")");
+        return self.loadWhisper(modeles[i], st).then(function (asr) {
+          st.textContent = "Whisper écoute la réplique…";
+          var opts = { chunk_length_s: 30, stride_length_s: 5, return_timestamps: "word", task: "transcribe" };
+          if (cfg.lang) opts.language = cfg.lang;
+          return asr(pcm, opts);
+        }).then(function (out) {
+          var dur = pcm.length / 16000;
+          return (out.chunks || []).map(function (c) {
+            return { text: String(c.text || "").trim(), start: c.timestamp[0] || 0, end: c.timestamp[1] == null ? dur : c.timestamp[1] };
+          }).filter(function (m) { return m.text; });
+        }).catch(function (e) {
+          if (/alignment_heads|cross_attentions|token-level/i.test(String(e && e.message))) return essai(i + 1, e);
+          throw e;
+        });
+      };
+      return essai(0, null);
+    });
   },
   // Moteur Whisper : copie locale (vendor/transformers, identique à jsDelivr) dès qu'Agnes est servie (extension Lumina,
   // localhost, Live Server) ; en fichier (file://) Chrome refuse d'importer un module local : on garde le CDN.

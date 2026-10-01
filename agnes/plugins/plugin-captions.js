@@ -8,7 +8,7 @@ AgnesPlugins.register("captions", {
   name: "AutoCaption",
   version: "1.0",
 
-  FONTS: ["Arial Black", "Impact", "Arial", "Verdana", "Trebuchet MS", "Tahoma", "Georgia"],
+  FONTS: ["Montserrat", "Arial Black", "Impact", "Arial", "Verdana", "Trebuchet MS", "Tahoma", "Georgia"],
   PRESETS: {
     tiktok: { label: "TikTok — mot actif jaune", font: "Arial Black", size: 7, color: "#FFFFFF", active: "#FFE600", activeMode: "color", stroke: "#000000", strokeW: 6, shadow: true, bg: "none", bgColor: "#000000", bgOpacity: 0.55, position: "bottom", margin: 24, upper: true, maxWords: 3, anim: "pop" },
     karaoke: { label: "Karaoké — les mots se colorent", font: "Arial Black", size: 6.5, color: "#FFFFFF", active: "#00E5FF", activeMode: "karaoke", stroke: "#000000", strokeW: 5, shadow: true, bg: "none", bgColor: "#000000", bgOpacity: 0.55, position: "bottom", margin: 24, upper: false, maxWords: 6, anim: "fade" },
@@ -175,6 +175,31 @@ AgnesPlugins.register("captions", {
     });
     return out;
   },
+  // 01/10 — pour l'extension Montage (karaoké par carte) : mots déjà minutés [{ text, start, end }] → groupes affichés,
+  // même découpage que chunks() (N mots, fin de phrase). Le style reste celui de cet onglet.
+  chunksFromWords: function (words) {
+    var max = Math.max(1, Math.min(12, this.state().style.maxWords || 3)), out = [], group = [];
+    (words || []).forEach(function (w, i) {
+      group.push({ text: w.text, start: w.start, end: w.end });
+      var endSentence = /[.!?…]$/.test(w.text) && group.length >= 2;
+      if (group.length >= max || endSentence || /,$/.test(w.text) || i === words.length - 1) {
+        var next = words[i + 1];
+        out.push({ start: group[0].start, end: next ? Math.min(w.end + 0.4, next.start) : w.end + 0.4, words: group }); group = [];
+      }
+    });
+    return out;
+  },
+  // Largeur d'un mot témoin à 100 px, telle que le navigateur la dessine : le pont (Montage) ajuste la taille du .ass
+  // pour que la vidéo finale ait exactement la taille de l'aperçu, quelle que soit la police.
+  temoin: function () {
+    var s = this.state().style, t = s.upper ? "QUARANTE HUIT" : "Quarante huit";
+    try { var ctx = document.createElement("canvas").getContext("2d"); ctx.font = this.fontCss(s, 100); return { texte: t, largeur: ctx.measureText(t).width }; }
+    catch (e) { return null; }
+  },
+  srtFromChunks: function (chunks) {
+    var self = this;
+    return chunks.map(function (c, i) { return (i + 1) + "\n" + self.srtTime(c.start) + " --> " + self.srtTime(c.end) + "\n" + c.words.map(function (w) { return w.text; }).join(" ") + "\n"; }).join("\n");
+  },
   cuesFor: function (marks) {
     var st = this.state();
     return st.source === "manual" ? st.cues.slice().sort(function (a, b) { return a.start - b.start; }) : this.cuesFromDialogues(marks);
@@ -262,8 +287,10 @@ AgnesPlugins.register("captions", {
   },
   assEsc: function (t) { return String(t).replace(/\\/g, "＼").replace(/[{}]/g, ""); },
   // Fichier .ass complet pour une taille d'image W×H et des plans [{ t, len, shot }]
-  buildAss: function (W, H, marks) {
-    var self = this, s = this.state().style, chunks = this.chunks(this.cuesFor(marks));
+  buildAss: function (W, H, marks) { return this.assFromChunks(W, H, this.chunks(this.cuesFor(marks))); },
+  // Fichier .ass d'après des groupes déjà calculés (Assemblage, ou Montage par carte avec les mots de Whisper)
+  assFromChunks: function (W, H, chunks) {
+    var self = this, s = this.state().style;
     var base = Math.min(W, H), fs = Math.round(base * (s.size || 7) / 100 * (W > H ? 0.75 : 1)), heavy = /black|impact/i.test(s.font);
     var align = s.position === "top" ? 8 : s.position === "middle" ? 5 : 2, marginV = s.position === "middle" ? 0 : Math.round(H * (s.margin || 0) / 100);
     var boxed = s.bg === "box", outline = boxed ? Math.round(fs * 0.3) : Math.round((s.strokeW || 0) * base / 1080 * 2 / 2);

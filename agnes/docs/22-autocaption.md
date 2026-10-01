@@ -85,3 +85,6 @@ Décochez **Incruster les sous-titres** pour un film sans texte : les exports .s
 - Une réplique longue s'affiche en plusieurs groupes : c'est plus lisible sur mobile. Montez **Mots à l'écran** pour des phrases entières.
 - Dans le kit FFmpeg, si la police choisie n'est pas installée sur le PC, une police voisine est utilisée ; Arial Black et Impact sont présentes sur Windows.
 - Les cartons d'ouverture et de fin (extension Épisodes) et les textes de couverture (Publication) sont gérés à part : AutoCaption ne concerne que les dialogues.
+
+## Utilisé par l'extension Montage (01/10/2026)
+Les sous-titres karaoké du **montage par carte** (onglet Montage) prennent **le style de cet onglet** : police (Montserrat ajoutée), taille, marge, couleurs, mot prononcé, animation, majuscules. Les mots y sont minutés par Whisper (Extraire) et le texte exact de la réplique. Fonctions ajoutées pour cela : `chunksFromWords(mots)`, `assFromChunks(W, H, groupes)` (utilisée aussi par `buildAss`), `srtFromChunks(groupes)`, `temoin()`. Rien ne change pour l'Assemblage ni pour le kit FFmpeg.

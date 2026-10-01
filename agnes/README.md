@@ -95,6 +95,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | [25 — Mentions @ et #](docs/25-mentions.md) | `@[Personnage]` coche sa référence, `#[Skill]` place un skill dans le texte ; suggestions en tapant @ ou # |
 | [24 — Moteurs de génération](docs/24-moteurs.md) | Images par ChatGPT (via le pont local) ou Agnes, vidéos par Grok ou Google Flow (via Lumina) ou Agnes |
 | [23 — Lumina et sauvegarde](docs/23-lumina.md) | Ouvrir Agnes dans l'extension Lumina, plans → Grok Imagine, rendus → prises, pilote auto ; sauvegarde complète et restauration |
+| [28 — Montage](docs/28-montage.md) | Pôle Montage (sous-onglets Assemblage, Voix, Son, AutoCaption, Étalonnage, Épisodes, Publication) et montage par carte : 1080×1920, voix au maximum sans casse (-14 LUFS), vitesse, carton de fin, sortie dans `Final` avec compte rendu |
 | [27 — Calculateur de répliques](docs/27-repliques.md) | Onglet Répliques : caractères, durée, ce qu'il faut ajouter ou retirer ; réglages modifiables (TikTok 10 s, série, court métrage, voix-off), calibrage de la vitesse ; utilisé par le Chef de l'Atelier |
 | [26 — Classement des cartes](docs/26-classement.md) | Bouton 📁 Classer : image, vidéo et fiche (prompts, notes, carton, description, hashtags) copiées dans Projet / Saison / Épisode sur votre ordinateur |
 | [21 — Atelier IA](docs/21-atelier.md) | Équipe de 16 agents IA multi-fournisseurs avec relais automatique, Chef de production, documents, import depuis RMAOPN AI |
@@ -202,6 +203,7 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
 ## Nouveautés
 
 ### 3.11 — octobre 2026
+- **Montage** ([28](docs/28-montage.md)) : nouvel onglet pôle avec sous-onglets vers les modules de montage (option pour y ranger leurs onglets) et **montage par carte** via le pont : 1080×1920 (Lanczos pour les 720p), voix à -14 LUFS / crête -1 dBTP sans écrêtage, vitesse x1,00–x1,25 avec hauteur de voix gardée, carton de fin repris des notes ; `…\<journée>\Final\Carte NN - <perso> - final.mp4` + compte rendu des mesures. Même moteur pour un agent ou Claude (`montage_carte.py`).
 - **Flow manuel** ([24](docs/24-moteurs.md)) : Google refuse les générations lancées par une extension depuis le 22/09/2026. Agnes prépare (image envoyée dans le projet Flow, prompt copié), vous cliquez Générer puis Télécharger dans Flow, et la vidéo revient toute seule dans la carte. Mode par défaut ; le mode automatique est gardé.
 - **Classement local par thématique** ([26](docs/26-classement.md)) : « Classer » range la carte dans `Production\<Thématique>\…` (Serie, Film, Marketing, Court_metrage, nouvelle thématique…), dates AAAAMMJJ, via le pont, sans dossier à choisir. Le mode « dossier choisi » est gardé. Plus d'emoji sur le bouton.
 - **Rôle du navigateur** (Lumina) : Tout, Principal (Grok, Agnes) ou Flow seulement, pour utiliser Flow sur un autre compte Google sans aucun doublon ; liste des projets Flow partagée par le pont.

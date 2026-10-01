@@ -13,6 +13,12 @@
 // les coupes, à la vitesse choisie : chaque réglage se voit tout de suite, sans rendu. « Monter » fabrique le fichier final.
 // Format de sortie (01/10) : « comme la vidéo » par défaut (9:16, 16:9, 1:1, 4:5… sans recadrage) ou imposé ; le lecteur
 // prend la forme de la vidéo finale, carton et sous-titres se placent en proportion de l'image.
+// Appel de fin (01/10, étape 4), au choix par carte : « Carton » (texte à l'écran), « Carton + voix-off » (la voix-off lit
+// le carton : ElevenLabs avec le casting de l'onglet Voix, ou « ma voix » au micro — jamais par défaut —, ou un fichier
+// importé ; elle commence après la voix du personnage, la dernière image est prolongée s'il le faut) ou « Pas de carton ».
+// Modèles et favoris (01/10, étape 3) : modèles de CARTON et modèles de MONTAGE complets (réglages + carton + style des
+// sous-titres d'AutoCaption), communs à tous les projets (core.store « montage:modeles », dans la Sauvegarde complète) ;
+// chaque PROJET retient ses réglages et son modèle (projet.montageCarte). Les modèles de sous-titres seuls sont dans AutoCaption.
 // Même moteur pour un agent ou Claude : python montage_carte.py "<vidéo>" (voir docs/28-montage.md).
 // API : AgnesPlugins.get("montage").monterCarte(numéro, réglages?) → Promise(résultat du pont).
 AgnesPlugins.register("montage", {
@@ -24,13 +30,16 @@ AgnesPlugins.register("montage", {
     ["view_captions", "AutoCaption"], ["view_etalonnage", "Étalonnage"], ["view_episodes", "Épisodes"], ["view_publication", "Publication"]],
   DEFAUTS: { vitesse: 1, voix: true, carton: true, carton_duree: 1.8, police: "Montserrat-ExtraBold.ttf", taille: 76,
     couleur: "#FFFFFF", fond: "#000000", fond_opacite: 0.45, assombrir: 0, position: "centre", remplacer: false, ranger: false,
-    animation: "fondu", pause_courte: 0.15, pause_longue: 0.4, pauses_longues: 1, st_avant_carton: true, format: "auto" },
+    animation: "fondu", pause_courte: 0.15, pause_longue: 0.4, pauses_longues: 1, st_avant_carton: true, format: "auto",
+    appel_role: "", appel_attenuation: 0.35, appel_volume: 1 },
+  APPELS: [["carton", "Carton (texte à l'écran)"], ["voixoff", "Carton + voix-off qui le lit"], ["aucun", "Pas de carton"]],
   FORMATS: { "9:16": [1080, 1920], "16:9": [1920, 1080], "1:1": [1080, 1080], "4:5": [1080, 1350] },
   // Police du carton (fichier du pont) → police du navigateur pour le lecteur
   POLICES_CSS: { "Montserrat-ExtraBold.ttf": ["800", "Montserrat"], "Montserrat-Bold.ttf": ["700", "Montserrat"], "Montserrat-Black.ttf": ["900", "Montserrat"],
     "Montserrat-SemiBold.ttf": ["600", "Montserrat"], "arialbd.ttf": ["bold", "Arial"], "arial.ttf": ["normal", "Arial"], "bahnschrift.ttf": ["normal", "Bahnschrift"],
     "segoeuib.ttf": ["bold", "Segoe UI"], "segoeui.ttf": ["normal", "Segoe UI"], "calibrib.ttf": ["bold", "Calibri"], "verdanab.ttf": ["bold", "Verdana"],
     "trebucbd.ttf": ["bold", "Trebuchet MS"], "impact.ttf": ["normal", "Impact"] },
+  CARTON_CLES: ["police", "taille", "couleur", "fond", "fond_opacite", "assombrir", "position", "animation", "carton_duree"],
   // Réglages qui changent le minutage (coupes, durée, carton, mots) : l'aperçu est recalculé par le pont
   PLAN: /^(vitesse|carton|carton_duree|pause_courte|pause_longue|pauses_longues|st_avant_carton|format)$/,
 
@@ -38,7 +47,15 @@ AgnesPlugins.register("montage", {
     var self = this;
     this.core = core; this.A = window.AgnesApp;
     this.cfg = core.pluginSettings("montage", Object.assign({ pont: this.PONT }, this.DEFAUTS));
-    this.etats = {}; this.polices = null;
+    this.etats = {}; this.polices = null; this.choix = {};
+    this.mods = { cartons: [], montages: [], favoris: [] };
+    this.chargerProjet();
+    core.store.getKV("montage:modeles").then(function (d) {
+      if (d && Array.isArray(d.montages)) self.mods = { cartons: d.cartons || [], montages: d.montages, favoris: d.favoris || [] };
+      // premier lancement : un modèle « Marketing » avec les réglages actuels, pour ne rien perdre
+      if (!self.mods.montages.length) self.nouveauModele("montage", "Marketing", true);
+      if (self.visible()) self.render();
+    }, function () { });
     this.style();
     this.view = core.ui.addTab("montage", "Montage", '<div id="mtBody"></div>');
     this.tabBtn = document.querySelector('#tabBar .tab[data-view="view_montage"]');
@@ -46,14 +63,14 @@ AgnesPlugins.register("montage", {
     document.getElementById("tabBar").insertAdjacentElement("afterend", nav);
     this.nav = nav;
     nav.addEventListener("click", function (e) { var b = e.target.closest("[data-mt-view]"); if (b) self.A.showView(b.getAttribute("data-mt-view")); });
-    this.view.addEventListener("click", function (e) { var b = e.target.closest("[data-mt]"); if (b) self.action(b); });
+    this.view.addEventListener("click", function (e) { var b = e.target.closest("[data-mt], [data-mtm]"); if (b) self.action(b); });
     this.view.addEventListener("change", function (e) { self.champ(e.target); });
     this.view.addEventListener("input", function (e) {
       if (e.target.getAttribute("data-mtcap") || e.target.getAttribute("data-mtseek")) self.champ(e.target);
       else if (e.target.getAttribute("data-mtk")) self.texteDirect(e.target);   // carton : visible à chaque lettre
     });
     core.on("view:change", function (id) { self.pole(id); if (id === "view_montage") self.render(); else self.arreter(); });
-    core.on("project:change", function () { if (self.visible()) self.render(); });
+    core.on("project:change", function () { self.choix = {}; self.chargerProjet(); if (self.ap) { self.arreter(); self.ap = null; } if (self.visible()) self.render(); });
     core.on("render", function () { self.pole(self.vueActive()); });
     this.pole(this.vueActive());
   },
@@ -75,6 +92,125 @@ AgnesPlugins.register("montage", {
       var b = document.querySelector('#tabBar .tab[data-view="' + m[0] + '"]');
       if (b) b.style.display = self.cfg.ranger ? "none" : "";
     });
+  },
+
+  // ---------- réglages du projet et modèles ----------
+  CLES: function () { return Object.keys(this.DEFAUTS).filter(function (k) { return k !== "ranger"; }); },
+  photo: function (cles) { var c = this.cfg, o = {}; cles.forEach(function (k) { o[k] = c[k]; }); return o; },
+  // Le projet ouvert reprend ses réglages (sinon ceux utilisés en dernier, tous projets confondus)
+  chargerProjet: function () {
+    var p = this.core.getProject && this.core.getProject(), mc = p && p.montageCarte;
+    if (mc && mc.reglages) { var self = this; this.CLES().forEach(function (k) { if (mc.reglages[k] !== undefined) self.cfg[k] = mc.reglages[k]; }); }
+  },
+  memoriser: function () {
+    var p = this.core.getProject(); if (!p) return;
+    p.montageCarte = Object.assign({}, p.montageCarte || {}, { reglages: this.photo(this.CLES()) });
+    this.core.saveProject();
+  },
+  liste: function (type) {
+    var fav = this.mods.favoris, l = (type === "carton" ? this.mods.cartons : this.mods.montages).map(function (m) { return Object.assign({ favori: fav.indexOf(m.id) !== -1 }, m); });
+    return l.filter(function (m) { return m.favori; }).concat(l.filter(function (m) { return !m.favori; }));
+  },
+  trouver: function (type, id) { return (type === "carton" ? this.mods.cartons : this.mods.montages).find(function (m) { return m.id === id; }) || null; },
+  enregistrerModeles: function () { this.core.store.setKV("montage:modeles", this.mods); },
+  styleSousTitres: function () {
+    var cap = this.captions(); if (!cap) return null;
+    var st = Object.assign({}, cap.state().style); delete st.base; return st;
+  },
+  nouveauModele: function (type, nom, silencieux) {
+    nom = String(nom || "").trim().slice(0, 40); if (!nom) return null;
+    var id = (type === "carton" ? "mc" : "mm") + Date.now().toString(36) + Math.floor(Math.random() * 1e3);
+    var m = type === "carton" ? { id: id, nom: nom, r: this.photo(this.CARTON_CLES) }
+      : { id: id, nom: nom, r: this.photo(this.CLES()), st: this.styleSousTitres() };
+    (type === "carton" ? this.mods.cartons : this.mods.montages).push(m);
+    this.enregistrerModeles();
+    var p = this.core.getProject();
+    if (p) { p.montageCarte = Object.assign({}, p.montageCarte || {}); p.montageCarte[type === "carton" ? "carton" : "modele"] = id; this.memoriser(); }
+    if (!silencieux) this.core.toast("Modèle « " + nom + " » enregistré, pour tous les projets.", "ok");
+    return id;
+  },
+  appliquerModele: function (type, id) {
+    var m = this.trouver(type, id); if (!m) return false;
+    var c = this.cfg, cles = type === "carton" ? this.CARTON_CLES : this.CLES();
+    cles.forEach(function (k) { if (m.r[k] !== undefined) c[k] = m.r[k]; });
+    c.save();
+    var cap = this.captions();
+    if (type === "montage" && m.st && cap) {
+      var st = cap.state(); st.style = Object.assign({}, m.st);
+      if (!(st.style.preset && cap.modele(st.style.preset))) st.style.preset = "";
+      cap.save();
+    }
+    var p = this.core.getProject();
+    p.montageCarte = Object.assign({}, p.montageCarte || {});
+    if (type === "carton") p.montageCarte.carton = id; else { p.montageCarte.modele = id; p.montageCarte.carton = null; }
+    this.memoriser();
+    this.render();
+    if (this.ap) this.chargerPlan();
+    return true;
+  },
+  // Modèle d'origine du projet et réglages modifiés depuis ?
+  etatModele: function (type) {
+    var p = this.core.getProject() || {}, mc = p.montageCarte || {}, id = type === "carton" ? mc.carton : mc.modele, m = id ? this.trouver(type, id) : null;
+    if (!m) return null;
+    var c = this.cfg, cles = type === "carton" ? this.CARTON_CLES : this.CLES();
+    var modifie = cles.some(function (k) { return m.r[k] !== undefined && String(m.r[k]) !== String(c[k]); });
+    if (type === "montage" && m.st && !modifie) {
+      var st = this.styleSousTitres() || {};
+      modifie = Object.keys(m.st).some(function (k) { return k !== "preset" && String(m.st[k]) !== String(st[k]); });
+    }
+    return { m: m, modifie: modifie };
+  },
+  actionModele: function (type, act) {
+    var nomType = type === "carton" ? "carton" : "montage", sel = this.choix[type], cur = this.etatModele(type), core = this.core, self = this;
+    var choisi = sel ? this.trouver(type, sel) : cur && cur.m;
+    if (act === "appliquer") {
+      if (!choisi) return core.toast("Choisissez un modèle dans la liste.", "err");
+      this.appliquerModele(type, choisi.id); return core.toast("Modèle de " + nomType + " « " + choisi.nom + " » appliqué à ce projet.", "ok");
+    }
+    if (act === "enregistrer") {
+      var nom = window.prompt("Nom du modèle de " + nomType + (type === "carton" ? " (ex. Appel abonne-toi, Fin d'épisode) :" : " (ex. Marketing TikTok, Série 16:9, Pub) :"), "");
+      if (this.nouveauModele(type, nom)) this.render();
+      return;
+    }
+    if (act === "mettre-a-jour" && cur) {
+      if (!window.confirm("Mettre à jour le modèle « " + cur.m.nom + " » avec les réglages actuels ?")) return;
+      cur.m.r = this.photo(type === "carton" ? this.CARTON_CLES : this.CLES());
+      if (type === "montage") cur.m.st = this.styleSousTitres();
+      this.enregistrerModeles(); return this.render();
+    }
+    if (!choisi) return core.toast("Choisissez un modèle dans la liste.", "err");
+    if (act === "favori") {
+      var f = this.mods.favoris, i = f.indexOf(choisi.id);
+      if (i === -1) f.push(choisi.id); else f.splice(i, 1);
+      this.enregistrerModeles(); return this.render();
+    }
+    if (act === "renommer") {
+      var n = window.prompt("Nouveau nom du modèle :", choisi.nom);
+      if (n && n.trim()) { choisi.nom = n.trim().slice(0, 40); this.enregistrerModeles(); this.render(); }
+      return;
+    }
+    if (act === "supprimer" && window.confirm("Supprimer le modèle « " + choisi.nom + " » ? (les réglages des projets ne changent pas)")) {
+      var garder = function (m) { return m.id !== choisi.id; };
+      if (type === "carton") this.mods.cartons = this.mods.cartons.filter(garder); else this.mods.montages = this.mods.montages.filter(garder);
+      this.mods.favoris = this.mods.favoris.filter(function (x) { return x !== choisi.id; });
+      delete this.choix[type];
+      this.enregistrerModeles(); this.render();
+    }
+  },
+  htmlModeles: function (type) {
+    var esc = this.A.esc, liste = this.liste(type), cur = this.etatModele(type), sel = this.choix[type] || (cur && cur.m.id) || "";
+    var nom = type === "carton" ? "Modèle de carton" : "Modèle de montage";
+    return '<div class="mt-modeles"><div class="field"><label>' + nom + '</label><select data-mtmod="' + type + '"><option value="">' +
+      (liste.length ? "Choisir…" : "Aucun modèle pour l'instant") + "</option>" +
+      liste.map(function (m) { return '<option value="' + esc(m.id) + '"' + (m.id === sel ? " selected" : "") + ">" + esc(m.nom) + (m.favori ? " (favori)" : "") + "</option>"; }).join("") +
+      "</select></div>" +
+      '<div class="row-inline"><span class="hint">' + (cur ? "Ce projet : " + esc(cur.m.nom) + (cur.modifie ? " (modifié)" : "") : "Ce projet : réglages sans modèle") + "</span>" +
+      '<button class="small-btn" data-mtm="' + type + ':appliquer">Appliquer</button>' +
+      (cur && cur.modifie ? '<button class="small-btn" data-mtm="' + type + ':mettre-a-jour">Mettre à jour « ' + esc(cur.m.nom) + " »</button>" : "") +
+      '<button class="small-btn" data-mtm="' + type + ':enregistrer">Enregistrer comme modèle…</button>' +
+      '<button class="small-btn" data-mtm="' + type + ':favori">Favori oui / non</button>' +
+      '<button class="small-btn" data-mtm="' + type + ':renommer">Renommer…</button>' +
+      '<button class="small-btn" data-mtm="' + type + ':supprimer">Supprimer…</button></div></div>';
   },
 
   // ---------- pont ----------
@@ -126,6 +262,9 @@ AgnesPlugins.register("montage", {
     r.carton_texte = k.texte; r.carton_sous_texte = k.sous;
     r.resserrer = !!(shot.montage && shot.montage.resserrer);   // par carte : coupes dans les pauses
     r.karaoke = !!(shot.montage && shot.montage.karaoke);       // par carte : sous-titres karaoké
+    var appel = this.appelDe(shot), info = shot.montage && shot.montage.appelInfo;
+    if (appel === "aucun") r.carton = false;
+    r.appel_duree = appel === "voixoff" && info ? Number(info.duree) || 0 : 0;   // le pont place le carton d'après elle
     return r;
   },
 
@@ -157,6 +296,105 @@ AgnesPlugins.register("montage", {
     return P.isLoaded("captions") && P.get("captions").assFromChunks ? P.get("captions") : null;
   },
   motsSortie: function (plan) { return (plan.mots || []).map(function (m) { return { text: m.mot, start: m.debut, end: m.fin }; }); },
+
+  // ---------- appel de fin ----------
+  appelDe: function (shot) { return (shot.montage && shot.montage.appel) || "carton"; },
+  voix: function () { var P = window.AgnesPlugins; return P.isLoaded("tts") && P.get("tts").speak ? P.get("tts") : null; },
+  // Ce que la voix-off lit : le texte du carton puis le sous-texte
+  texteAppel: function (shot) {
+    var k = this.carton(shot), t = String(k.texte || "").trim(), st = String(k.sous || "").trim();
+    return st ? t + (/[.!?…]$/.test(t) ? " " : ". ") + st : t;
+  },
+  cleAppel: function (id) { return "montage:appel:" + id; },
+  roleAppel: function () {
+    var tts = this.voix(), cast = tts ? tts.cast() : [], nom = this.cfg.appel_role;
+    return cast.find(function (r) { return r.name === nom; }) || cast[0] || null;
+  },
+  dureeSon: function (blob) {
+    return new Promise(function (ok) {
+      var a = new Audio(), u = URL.createObjectURL(blob); a.preload = "metadata";
+      a.onloadedmetadata = function () { var d = a.duration; URL.revokeObjectURL(u); ok(isFinite(d) ? d : 0); };
+      a.onerror = function () { URL.revokeObjectURL(u); ok(0); }; a.src = u;
+    });
+  },
+  // Range la voix-off de la carte (Agnes) et ses infos ; le lecteur la reprend aussitôt
+  garderAppel: function (shot, blob, source) {
+    var self = this;
+    return this.dureeSon(blob).then(function (d) {
+      return self.core.store.put(self.cleAppel(shot.id), blob).then(function () {
+        shot.montage = Object.assign({}, shot.montage || {}, { appelInfo: { source: source, texte: self.texteAppel(shot), duree: Math.round(d * 1000) / 1000,
+          type: blob.type || "audio/mpeg", date: new Date().toLocaleString("fr-FR") } });
+        self.core.saveProject();
+        self.render();
+        if (self.ap && self.ap.id === shot.id) { self.chargerSonAppel(); self.chargerPlan(); }
+      });
+    });
+  },
+  faireAppel: function (shot, source, fichier) {
+    var self = this, core = this.core, texte = this.texteAppel(shot);
+    if (source === "fichier") return this.garderAppel(shot, fichier, "fichier").then(function () { core.toast("Son de l'appel importé.", "ok"); });
+    var tts = this.voix();
+    if (!tts) return core.toast("Voix-off : activez l'extension « Voix-off & dialogues » (onglet Voix).", "err");
+    if (source === "micro") {
+      if (this.micro) {   // deuxième clic : on arrête et on garde
+        var m = this.micro; this.micro = null; this.render();
+        return m.arreter().then(function (b) { return self.garderAppel(shot, b, "ma voix"); }).then(function () { core.toast("Votre voix est enregistrée pour l'appel.", "ok"); });
+      }
+      return tts.micro().then(function (m) { self.micro = Object.assign({ id: shot.id }, m); self.render(); core.toast("Enregistrement… lisez : « " + texte + " », puis « Arrêter ».");
+      }, function (e) { core.toast("Micro : " + e.message, "err"); });
+    }
+    if (!texte) return core.toast("Écrivez d'abord le texte du carton.", "err");
+    var role = this.roleAppel();
+    if (!role) return core.toast("Voix-off : ajoutez une voix dans le casting de l'onglet Voix.", "err");
+    this.etats[shot.id] = { statut: "en_cours", etape: "voix-off (" + (tts.cfg.provider === "elevenlabs" ? "ElevenLabs" : tts.cfg.provider) + ", voix " + role.name + ")" }; this.majLigne(shot);
+    return tts.speak(texte, role).then(function (b) {
+      delete self.etats[shot.id];
+      return self.garderAppel(shot, b, (tts.cfg.provider === "elevenlabs" ? "ElevenLabs" : tts.cfg.provider) + " · " + role.name);
+    }).then(function () { core.toast("Voix-off de l'appel prête.", "ok"); }, function (e) {
+      self.etats[shot.id] = { statut: "erreur", erreur: "voix-off : " + (e.message || e) }; self.majLigne(shot);
+    });
+  },
+  chargerSonAppel: function () {
+    var self = this, ap = this.ap; if (!ap) return;
+    if (ap.sonUrl) { URL.revokeObjectURL(ap.sonUrl); ap.sonUrl = null; }
+    this.core.store.get(this.cleAppel(ap.id)).then(function (b) {
+      if (!b || self.ap !== ap) return;
+      ap.sonUrl = URL.createObjectURL(b);
+      var au = self.view.querySelector("#mtApSon"); if (au) au.src = ap.sonUrl;
+    });
+  },
+  // Avant le montage : la voix-off est rangée dans Production, <journée>/Audio/<carte> - appel.<ext>
+  envoyerAppel: function (shot, chemin) {
+    var self = this, info = shot.montage && shot.montage.appelInfo;
+    if (!info) return Promise.reject(new Error("appel de fin : faites d'abord la voix-off de cette carte (ElevenLabs, ma voix ou un fichier)"));
+    if (info.texte !== this.texteAppel(shot)) return Promise.reject(new Error("le texte du carton a changé depuis la voix-off : refaites-la"));
+    return this.core.store.get(this.cleAppel(shot.id)).then(function (b) {
+      if (!b) throw new Error("voix-off introuvable dans Agnes : refaites-la");
+      var ext = /wav/.test(b.type) ? "wav" : /webm/.test(b.type) ? "webm" : /ogg/.test(b.type) ? "ogg" : /mp4|m4a|aac/.test(b.type) ? "m4a" : "mp3";
+      var dossier = chemin.replace(/\/[^\/]*$/, ""), nom = chemin.replace(/^.*\//, "").replace(/\.[^.]*$/, "");
+      if (/\/video$/i.test(dossier)) dossier = dossier.replace(/\/[^\/]*$/, "");
+      var cible = dossier + "/Audio/" + nom + " - appel." + ext;
+      return fetch(self.pont() + "/classement/fichier", { method: "POST", headers: { "X-Chemin": encodeURIComponent(cible) }, body: b })
+        .then(function (x) { return x.json(); }).then(function (w) { if (!w.ok) throw new Error(w.error || "voix-off refusée par le pont"); return cible; });
+    });
+  },
+  htmlAppel: function (s) {
+    var esc = this.A.esc, appel = this.appelDe(s), info = s.montage && s.montage.appelInfo, self = this;
+    var choix = '<div class="field"><label>Appel de fin</label><select data-mtappel="' + s.id + '">' +
+      this.APPELS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === appel ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select></div>";
+    if (appel !== "voixoff") return choix;
+    var fr = function (x) { return String(Math.round(x * 10) / 10).replace(".", ","); };
+    var perime = info && info.texte !== this.texteAppel(s);
+    var enreg = this.micro && this.micro.id === s.id;
+    return choix + '<div class="row-inline mt-appel">' +
+      (info ? '<span class="' + (perime ? "mt-alerte" : "mt-ok") + '">Voix-off ' + (perime ? "à refaire (le texte du carton a changé)" : "prête") + "</span>" +
+        '<span class="hint">' + esc(info.source) + ", " + fr(info.duree) + " s</span>" +
+        '<button class="small-btn" data-mt="appel-ecouter" data-id="' + s.id + '">Écouter</button>'
+        : '<span class="hint">Pas encore de voix-off pour cette carte.</span>') +
+      '<button class="small-btn" data-mt="appel-voix" data-id="' + s.id + '">' + (info ? "Refaire" : "Faire") + " la voix-off (onglet Voix)</button>" +
+      '<button class="small-btn" data-mt="appel-micro" data-id="' + s.id + '">' + (enreg ? "Arrêter l'enregistrement" : "Ma voix (micro)") + "</button>" +
+      '<label class="small-btn">Importer un son…<input type="file" accept="audio/*" data-mtappelfichier="' + s.id + '" hidden></label></div>';
+  },
 
   // ---------- lecteur (aperçu sans rendu) ----------
   // Le lecteur lit la vidéo d'origine ; la couche dessine à « o », le temps de la vidéo finale (coupes et vitesse).
@@ -197,6 +435,7 @@ AgnesPlugins.register("montage", {
       if (!b) { self.ap = null; return self.core.toast("Vidéo de la carte illisible (pont local lancé ?)", "err"); }
       ap.url = URL.createObjectURL(b); ap.objet = true;
       self.render();
+      self.chargerSonAppel();
       self.chargerPlan();
     });
   },
@@ -230,6 +469,7 @@ AgnesPlugins.register("montage", {
   arreter: function () {
     if (this._raf) cancelAnimationFrame(this._raf); this._raf = null;
     var vid = this.view && this.view.querySelector("#mtApVideo"); if (vid) vid.pause();
+    var au = this.view && this.view.querySelector("#mtApSon"); if (au) au.pause();
   },
   boucle: function () {
     var self = this;
@@ -244,7 +484,7 @@ AgnesPlugins.register("montage", {
       // coupes : on saute au morceau suivant
       if (p && !vid.paused) {
         var dedans = g.some(function (x) { return s >= x[0] - 0.02 && s < x[1]; });
-        if (!dedans) { var n = g.find(function (x) { return x[0] > s; }); if (n) vid.currentTime = n[0]; else vid.pause(); }
+        if (!dedans) { var n = g.find(function (x) { return x[0] > s; }); if (n) vid.currentTime = n[0]; else if (!(p.prolonge > 0)) vid.pause(); }
       }
       var d = p && p.largeur ? [p.largeur, p.hauteur] : self.dims(vid.videoWidth, vid.videoHeight);
       if (cv.width !== Math.round(d[0] / 2) || cv.height !== Math.round(d[1] / 2)) {
@@ -252,6 +492,20 @@ AgnesPlugins.register("montage", {
         var ecran = cv.parentNode; ecran.style.aspectRatio = d[0] + " / " + d[1]; ecran.style.width = d[0] > d[1] ? "520px" : "300px";
       }
       var o = self.versSortie(s, g) / v;
+      // image prolongée (voix-off plus longue que la fin du clip) : le temps continue sur la dernière image
+      var finClip = p ? p.duree_sortie - (p.prolonge || 0) : Infinity;
+      if (ap.tenue) { o = ap.tenue.o + (performance.now() - ap.tenue.t) / 1000; if (o >= p.duree_sortie) { o = p.duree_sortie; ap.tenue = null; ap.oFixe = o; } }
+      else if (ap.oFixe != null && vid.paused) o = ap.oFixe;
+      else if (p && p.prolonge > 0 && !vid.paused && o >= finClip - 0.03) { ap.tenue = { t: performance.now(), o: o }; vid.pause(); }
+      var joue = !vid.paused || !!ap.tenue, shotAp = self.cartes().find(function (x) { return x.id === ap.id; });
+      var au = self.view.querySelector("#mtApSon"), avecAppel = p && shotAp && self.appelDe(shotAp) === "voixoff" && au && au.src;
+      vid.volume = avecAppel && p && o >= p.t0 ? Math.max(0, Math.min(1, self.cfg.appel_attenuation)) : 1;
+      if (avecAppel) {
+        au.volume = Math.max(0, Math.min(1, self.cfg.appel_volume));
+        var dans = joue && o >= p.t0 && o < p.t0 + (au.duration || 0);
+        if (dans && au.paused) { au.currentTime = Math.max(0, o - p.t0); au.play().catch(function () { }); }
+        if (!dans && !au.paused) au.pause();
+      }
       var tl = self.view.querySelector("[data-mtseek]"); if (tl && document.activeElement !== tl) tl.value = o;
       var tm = self.view.querySelector("#mtApTemps"); if (tm) tm.textContent = o.toFixed(1).replace(".", ",") + " s";
       self.dessiner(cv, o, p, d[0], d[1]);
@@ -323,6 +577,7 @@ AgnesPlugins.register("montage", {
       '<div class="mt-ap-grille"><div class="mt-ecran">' +
       '<video id="mtApVideo" controls playsinline preload="auto" src="' + esc(ap.url || "") + '"></video>' +
       '<canvas id="mtApCanvas" width="540" height="960"></canvas></div>' +
+      '<audio id="mtApSon" preload="auto"' + (ap.sonUrl ? ' src="' + esc(ap.sonUrl) + '"' : "") + "></audio>" +
       '<div class="mt-ap-cote">' +
       '<div class="row-inline"><button class="small-btn" data-mt="lecture">Lire / Pause</button><span id="mtApTemps" class="hint">0 s</span></div>' +
       '<div class="field"><label>Position dans la vidéo finale</label><input type="range" data-mtseek="1" min="0" max="10" step="0.01" value="0"></div>' +
@@ -348,12 +603,16 @@ AgnesPlugins.register("montage", {
     if (!v.chemin) return Promise.reject(new Error("carte non classée : cliquez « Classer » sur la carte (thématique locale) avant le montage"));
     var envoyer = function () { return self.appel("POST", "/montage/carte", { video: v.chemin, reglages: r }); };
     var prep = Promise.resolve();
+    if (this.appelDe(shot) === "voixoff") {
+      etat({ statut: "en_cours", etape: "voix-off rangée dans Production" });
+      prep = this.envoyerAppel(shot, v.chemin).then(function (c) { r.appel_audio = c; });
+    }
     if (r.karaoke) {
       var cap = this.captions();
       if (!cap) return Promise.reject(new Error("sous-titres karaoké : activez l'extension AutoCaption (c'est elle qui donne le style)"));
       etat({ statut: "en_cours", etape: "Whisper : préparation" });
       // mots calés par le pont (aperçu), puis fichier .ass et .srt faits par AutoCaption avec son style
-      prep = this.mots(shot, v, etat).then(function (liste) {
+      prep = prep.then(function () { return self.mots(shot, v, etat); }).then(function (liste) {
         r.mots = liste; r.replique = self.replique(shot);
         return self.appel("POST", "/montage/apercu", { video: v.chemin, reglages: r });
       }).then(function (plan) {
@@ -411,38 +670,66 @@ AgnesPlugins.register("montage", {
 
   // ---------- interface ----------
   action: function (b) {
+    var mm = b.getAttribute("data-mtm");
+    if (mm) return this.actionModele(mm.split(":")[0], mm.split(":")[1]);
     var self = this, act = b.getAttribute("data-mt"), shot = this.cartes().find(function (s) { return s.id === b.getAttribute("data-id"); });
     if (act === "monter" && shot) this.monter(shot).then(function (res) {
       self.core.toast("Carte montée : " + res.nom, "ok");
     }, function (e) { self.core.toast("Montage impossible : " + (e.message || e), "err"); });
     if (act === "cochees") this.monterCochees();
+    if (act === "appel-voix" && shot) this.faireAppel(shot, "voix");
+    if (act === "appel-micro" && shot) this.faireAppel(shot, "micro");
+    if (act === "appel-ecouter" && shot) this.core.store.get(this.cleAppel(shot.id)).then(function (b) {
+      if (!b) return; var u = URL.createObjectURL(b), a = new Audio(u); a.onended = function () { URL.revokeObjectURL(u); }; a.play();
+    });
+    if (act === "voix") this.A.showView("view_voix");
     if (act === "apercu" && shot) { this.ouvrirApercu(shot); this.view.scrollIntoView({ behavior: "smooth", block: "start" }); }
-    if (act === "fermer-apercu") { this.arreter(); this.ap = null; this.render(); }
+    if (act === "fermer-apercu") { this.arreter(); if (this.ap && this.ap.sonUrl) URL.revokeObjectURL(this.ap.sonUrl); this.ap = null; this.render(); }
     if (act === "autocaption") this.A.showView("view_captions");
     if (act === "lecture") {
       var vid = this.view.querySelector("#mtApVideo");
-      if (vid) { if (vid.paused) { if (this.ap && this.ap.plan && vid.currentTime >= this.ap.plan.duree_source - 0.05) vid.currentTime = 0; vid.play(); } else vid.pause(); }
+      var apl = this.ap;
+      if (apl && apl.tenue) { apl.oFixe = apl.tenue.o + (performance.now() - apl.tenue.t) / 1000; apl.tenue = null; return; }
+      if (vid) {
+        if (vid.paused) {
+          var fin = apl && apl.plan && (apl.oFixe != null || vid.currentTime >= apl.plan.duree_source - 0.05);
+          if (apl) apl.oFixe = null;
+          if (fin) vid.currentTime = 0;
+          vid.play();
+        } else vid.pause();
+      }
     }
     if (act === "ouvrir") this.appel("POST", "/ouvrir", { chemin: b.getAttribute("data-chemin") }).then(function (j) {
       if (!j.ok) self.core.toast("Dossier non ouvert : " + (j.error || ""), "err");
     }, function (e) { self.core.toast(e.message, "err"); });
     if (act === "reecouter" && shot) { shot.montage = Object.assign({}, shot.montage || {}); delete shot.montage.mots; this.core.saveProject(); this.render(); this.core.toast("Whisper réécoutera cette carte au prochain montage.", "ok"); }
     if (act === "notes" && shot) { shot.montage = Object.assign({}, shot.montage || {}); delete shot.montage.carton; delete shot.montage.sous; this.core.saveProject(); this.render(); }
-    if (act === "defauts") { var ranger = this.cfg.ranger; Object.assign(this.cfg, this.DEFAUTS, { ranger: ranger }); this.cfg.save(); this.render(); }
+    if (act === "defauts") { var ranger = this.cfg.ranger; Object.assign(this.cfg, this.DEFAUTS, { ranger: ranger }); this.cfg.save(); this.memoriser(); this.render(); if (this.ap) this.chargerPlan(); }
   },
   champ: function (el) {
     var k = el.getAttribute("data-mtc"), id = el.getAttribute("data-mtk"), rid = el.getAttribute("data-mtr"), kid = el.getAttribute("data-mtkar");
     var capf = el.getAttribute("data-mtcap"), ap = this.ap;
+    if (el.getAttribute("data-mtmod")) { this.choix[el.getAttribute("data-mtmod")] = el.value; return; }
+    var aid = el.getAttribute("data-mtappel"), fid = el.getAttribute("data-mtappelfichier");
+    if (aid || fid) {
+      var sa = this.cartes().find(function (s) { return s.id === (aid || fid); }); if (!sa) return;
+      if (fid) { if (el.files && el.files[0]) this.faireAppel(sa, "fichier", el.files[0]); return; }
+      sa.montage = Object.assign({}, sa.montage || {}, { appel: el.value });
+      this.core.saveProject(); this.render();
+      if (ap && ap.id === sa.id) { this.chargerSonAppel(); this.chargerPlan(); }
+      return;
+    }
     if (capf) {
       // curseurs rapides du lecteur = le style d'AutoCaption lui-même (pas de copie)
       var cap = this.captions(); if (!cap) return;
-      var stl = cap.state().style; stl[capf] = Number(el.value); stl.preset = ""; cap.save();
+      var stl = cap.state().style; if (stl.preset) stl.base = stl.preset; stl[capf] = Number(el.value); stl.preset = ""; cap.save();
       var out = el.parentNode.querySelector("output"); if (out) out.textContent = el.value;
       return;
     }
     if (el.getAttribute("data-mtseek")) {
       var vid = this.view.querySelector("#mtApVideo"), p = ap && ap.plan;
-      if (vid) vid.currentTime = p ? this.versSource(Number(el.value) * p.vitesse, p.garder) : Number(el.value);
+      if (ap) { ap.tenue = null; ap.oFixe = p && Number(el.value) > p.duree_sortie - (p.prolonge || 0) ? Number(el.value) : null; }
+      if (vid) vid.currentTime = p ? this.versSource(Math.min(Number(el.value), p.duree_sortie - (p.prolonge || 0)) * p.vitesse, p.garder) : Number(el.value);
       return;
     }
     if (rid || kid) {
@@ -454,9 +741,9 @@ AgnesPlugins.register("montage", {
       return;
     }
     if (k) {
-      this.cfg[k] = el.type === "checkbox" ? el.checked : el.type === "number" || /^(vitesse|carton_duree|fond_opacite|assombrir|pause_courte|pause_longue|pauses_longues)$/.test(k) ? Number(el.value) : el.value;
+      this.cfg[k] = el.type === "checkbox" ? el.checked : el.type === "number" || /^(vitesse|carton_duree|fond_opacite|assombrir|pause_courte|pause_longue|pauses_longues|appel_attenuation|appel_volume)$/.test(k) ? Number(el.value) : el.value;
       this.cfg.save();
-      if (k === "ranger") this.pole(this.vueActive());
+      if (k === "ranger") this.pole(this.vueActive()); else { this.memoriser(); this.majModeles(); }
       if (ap && this.PLAN.test(k)) this.chargerPlan();
       return;
     }
@@ -481,6 +768,7 @@ AgnesPlugins.register("montage", {
     var pols = (this.polices && this.polices.length ? this.polices : [{ fichier: c.police, nom: c.police.replace(/\.ttf$/i, "") }]).map(function (p) { return [p.fichier, p.nom]; });
     var reglages =
       '<div class="card"><h3>Réglages du montage par carte</h3>' +
+      '<div id="mtModMontage">' + this.htmlModeles("montage") + "</div>" +
       '<p class="hint">Chaque vidéo de carte devient une vidéo prête à publier : format au choix (comme la vidéo par défaut), voix au maximum sans la casser, carton de fin. ' +
       "L'original n'est jamais modifié ; le résultat va dans le dossier Final de la journée, avec un compte rendu des mesures.</p>" +
       '<div class="grid3">' +
@@ -489,7 +777,7 @@ AgnesPlugins.register("montage", {
         ["16:9", "16:9 paysage (YouTube, film, série)"], ["1:1", "1:1 carré"], ["4:5", "4:5 (Instagram)"]], c.format) + "</select></div>" +
       '<div class="field"><label>Voix</label><label class="inline"><input type="checkbox" data-mtc="voix"' + (c.voix ? " checked" : "") + "> Au maximum (-14 LUFS, crête -1 dBTP)</label></div>" +
       '<div class="field"><label>Final existant</label><label class="inline"><input type="checkbox" data-mtc="remplacer"' + (c.remplacer ? " checked" : "") + "> Le remplacer (sinon « final (2) »)</label></div>" +
-      "</div><h4>Carton de fin</h4><div class=\"grid3\">" +
+      "</div><h4>Carton de fin</h4>" + '<div id="mtModCarton">' + this.htmlModeles("carton") + "</div>" + "<div class=\"grid3\">" +
       '<div class="field"><label>Carton</label><label class="inline"><input type="checkbox" data-mtc="carton"' + (c.carton ? " checked" : "") + "> Ajouter le carton</label></div>" +
       '<div class="field"><label>Durée (fin de la vidéo)</label><select data-mtc="carton_duree">' + opt(durees, c.carton_duree) + "</select></div>" +
       '<div class="field"><label>Position</label><select data-mtc="position">' + opt([["centre", "Au centre"], ["bas", "Tiers inférieur"]], c.position) + "</select></div>" +
@@ -507,6 +795,17 @@ AgnesPlugins.register("montage", {
       '<div class="field"><label>Durée de la pause gardée</label><select data-mtc="pause_longue">' + opt([0.3, 0.4, 0.5, 0.6].map(function (v) { return [v, v.toFixed(1).replace(".", ",") + " s"]; }), c.pause_longue) + "</select></div>" +
       '<div class="field"><label>Durée des autres pauses</label><select data-mtc="pause_courte">' + opt([0.1, 0.15, 0.2, 0.25].map(function (v) { return [v, String(v).replace(".", ",") + " s"]; }), c.pause_courte) + "</select></div>" +
       '</div>' +
+      "<h4>Appel de fin en voix-off</h4>" +
+      '<p class="hint">Pour les cartes où l\'appel de fin est « Carton + voix-off » : une voix lit le texte du carton. Elle se fait avec l\'onglet Voix ' +
+      "(ElevenLabs, voix de votre casting) ou avec votre micro (« Ma voix », jamais par défaut), ou depuis un fichier. Elle commence après la voix du personnage ; " +
+      "s'il manque de la place, la dernière image est prolongée (4 s au plus). Rien n'est généré sans votre clic.</p>" +
+      '<div class="grid3">' +
+      '<div class="field"><label>Voix (casting de l\'onglet Voix)</label><select data-mtc="appel_role">' +
+      (this.voix() ? this.voix().cast().map(function (rl) { return '<option value="' + esc(rl.name) + '"' + (rl.name === (self.roleAppel() || {}).name ? " selected" : "") + ">" + esc(rl.name) + "</option>"; }).join("") : '<option value="">Onglet Voix désactivé</option>') +
+      "</select></div>" +
+      '<div class="field"><label>Son du clip pendant la voix-off</label><select data-mtc="appel_attenuation">' + opt([[1, "Normal"], [0.5, "Baissé"], [0.35, "Bien baissé"], [0.2, "Très bas"], [0, "Coupé"]], c.appel_attenuation) + "</select></div>" +
+      '<div class="field"><label>Volume de la voix-off</label><select data-mtc="appel_volume">' + opt([[0.8, "Doux"], [1, "Normal"], [1.2, "Fort"], [1.5, "Très fort"]], c.appel_volume) + "</select></div>" +
+      '</div><div class="row-inline"><button class="small-btn" data-mt="voix">Ouvrir l\'onglet Voix (clé, voix, casting)</button></div>' +
       "<h4>Sous-titres karaoké</h4>" +
       '<p class="hint">Pour les cartes où « Sous-titres karaoké » est coché : Whisper (onglet Extraire) écoute la vidéo une fois, le texte exact de la réplique (entre « » dans le prompt) est calé mot à mot. ' +
       "Le style (police, taille, hauteur, couleurs, mot prononcé, animation) est celui de l'onglet AutoCaption : un seul endroit pour le régler. Un fichier .srt est écrit à côté de la vidéo finale.</p>" +
@@ -541,6 +840,7 @@ AgnesPlugins.register("montage", {
       '<div class="hint">Vidéo : ' + esc(src) + "</div>" +
       '<div class="grid2"><div class="field"><label>Carton</label><input type="text" maxlength="160" data-mtk="' + s.id + '" data-mtf="carton" value="' + esc(k.texte) + '" placeholder="ex. Abonne-toi pour la suite."></div>' +
       '<div class="field"><label>Sous-texte (facultatif)</label><input type="text" maxlength="160" data-mtk="' + s.id + '" data-mtf="sous" value="' + esc(k.sous) + '" placeholder="ex. Suite demain à 8 h"></div></div>' +
+      this.htmlAppel(s) +
       '<div class="row-inline"><label class="inline"><input type="checkbox" data-mtr="' + s.id + '"' + (s.montage && s.montage.resserrer ? " checked" : "") + "> Resserrer les pauses</label>" +
       '<label class="inline"><input type="checkbox" data-mtkar="' + s.id + '"' + (s.montage && s.montage.karaoke ? " checked" : "") + "> Sous-titres karaoké</label>" +
       (s.montage && s.montage.mots ? '<button class="small-btn" data-mt="reecouter" data-id="' + s.id + '" title="Mots minutés le ' + esc(s.montage.mots.date || "") + '">Réécouter avec Whisper</button>' : "") +
@@ -561,6 +861,12 @@ AgnesPlugins.register("montage", {
       (son ? '<span class="hint"> · ' + fr(son.apres_lufs) + " LUFS, crête " + fr(son.apres_crete) + " dBTP</span>" : "") +
       ' <button class="small-btn" data-mt="ouvrir" data-chemin="' + esc(chemin) + '">Voir le fichier</button>' + alertes;
   },
+  // Après un réglage : « (modifié) » mis à jour sans redessiner toute la page (le lecteur continue)
+  majModeles: function () {
+    var a = this.view.querySelector("#mtModMontage"), b = this.view.querySelector("#mtModCarton");
+    if (a) a.innerHTML = this.htmlModeles("montage");
+    if (b) b.innerHTML = this.htmlModeles("carton");
+  },
   majLigne: function (s) { var el = this.view.querySelector('[data-mt-etat="' + s.id + '"]'); if (el) el.innerHTML = this.texteEtat(s); },
   style: function () {
     if (document.getElementById("mtStyle")) return;
@@ -575,6 +881,8 @@ AgnesPlugins.register("montage", {
       ".mt-ecran video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}" +
       ".mt-ecran canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}" +
       ".mt-range{display:flex;gap:8px;align-items:center}.mt-range input{flex:1}" +
+      ".mt-modeles{border:1px solid var(--edge);border-radius:10px;padding:10px 12px;margin:6px 0 14px}.mt-modeles .field{margin-bottom:6px}" +
+      ".mt-appel{margin:-4px 0 8px}" +
       ".mt-ok{color:var(--ok,#5fbf7f)}.mt-err{color:var(--danger,#e06060)}.mt-alerte{color:var(--warn,#d9a441)}";
     document.head.appendChild(st);
   }

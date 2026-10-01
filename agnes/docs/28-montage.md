@@ -49,6 +49,49 @@ carton, avertissements). Un final existant n'est jamais écrasé sauf si « Le r
 4. **Monter cette carte**, ou cocher plusieurs cartes puis **Monter les cartes cochées** (l'une après l'autre).
 5. **Voir le fichier** ouvre l'Explorateur sur la vidéo finale.
 
+## Appel de fin (étape 4) — au choix
+**Par carte**, liste « Appel de fin » (rien n'est imposé) :
+- **Carton** (réglage d'origine) : le texte du carton s'affiche, sans voix ;
+- **Carton + voix-off qui le lit** : une voix lit le texte du carton (puis le sous-texte) ;
+- **Pas de carton**.
+
+La voix-off se fait d'un clic sur la carte, **jamais automatiquement** (aucun crédit dépensé sans vous) :
+- **« Faire la voix-off (onglet Voix) »** : ElevenLabs (ou le fournisseur réglé dans l'onglet Voix), avec la voix du casting
+  choisie dans « Appel de fin en voix-off » ;
+- **« Ma voix (micro) »** : vous la lisez vous-même (présente, jamais par défaut) ;
+- **« Importer un son… »** : un fichier déjà prêt.
+
+Elle est gardée sur la carte (bouton **Écouter**). Si le texte du carton change ensuite, la ligne indique « à refaire » et le
+montage le demande. Au montage, elle est rangée dans `<journée>\Audio\Carte NN - <perso> - appel.mp3`, puis :
+- elle commence au début du carton, **jamais avant la fin de la voix du personnage** ;
+- s'il manque de la place, **la dernière image est prolongée** (figée, 4 s au plus) le temps qu'elle finisse ;
+- le son du clip baisse pendant qu'elle parle (« Son du clip pendant la voix-off »), volume de la voix-off réglable ;
+- le tout est ramené à -14 LUFS ; le compte rendu indique son début, sa durée et la prolongation.
+Le lecteur la fait entendre en direct, avec l'image prolongée.
+
+**Marketing — l'appel dit par Anthony** : c'est un choix de la journée, chez l'agent Marketing. Le Chef de l'Atelier le
+demande avec la méthode du jour : « sur le carton » (Anthony ne le dit pas, réglage habituel) ou « Anthony le dit » (en
+dernier, dans la vidéo Flow, tiré des listes d'appels sans répétition dans la journée). Dans ce cas, choisissez « Pas de
+carton » (ou un carton qui reprend l'appel) dans Montage.
+
+## Modèles et favoris (étape 3)
+Trois sortes de modèles, **communs à tous les projets** (gardés dans Agnes et emportés par la Sauvegarde complète) :
+
+| Modèle | Où | Contient |
+|---|---|---|
+| **Sous-titres** | onglet **AutoCaption** (à côté des 7 préréglages d'origine) | tout le style : police, taille, hauteur, couleurs, mot prononcé, contour, fond, animation, majuscules |
+| **Carton** | Montage → Par carte, section « Carton de fin » | police, taille, couleurs, fond, opacité, position, assombrissement, fondu ou machine à écrire, durée |
+| **Montage** | Montage → Par carte, en haut des réglages | tous les réglages du montage (vitesse, format, voix, pauses, carton…) **et** le style des sous-titres |
+
+Boutons : **Appliquer** (au projet ouvert), **Enregistrer comme modèle…**, **Mettre à jour « … »** (quand les réglages ont été
+retouchés depuis le modèle : la ligne indique « (modifié) »), **Favori oui / non** (les favoris passent en tête de liste),
+**Renommer…**, **Supprimer…** (les réglages des projets ne changent pas). Les préréglages d'origine d'AutoCaption ne se
+renomment ni ne se suppriment.
+
+**Chaque projet retient ses réglages et son modèle** : le projet Marketing reste en vertical TikTok, une série peut rester en
+16:9, sans tout re-régler. Un nouveau projet part des derniers réglages utilisés. Au premier lancement, un modèle « Marketing »
+est créé avec les réglages du moment (aucun autre modèle n'est fourni : chacun prépare les siens).
+
 ## Lecteur (aperçu sans rendu)
 Bouton **Aperçu** sur une carte : en haut de « Par carte », le même lecteur vidéo qu'Extraire, avec une couche transparente qui dessine
 le carton et les sous-titres, saute les coupes et lit à la vitesse choisie. **Tout réglage se voit tout de suite**, sans fabriquer de vidéo (le texte du carton à chaque lettre ; vitesse, pauses, durée du carton
@@ -66,7 +109,7 @@ python montage_carte.py "Marketing/Accroche/20260930 - Accroche_01/Video/Carte 0
 ```
 Options : `--carton "…"` `--sous-texte "…"` (sinon lus dans la fiche de la carte, `Fiches\Carte 01 - Anthony.md`),
 `--sans-carton`, `--duree-carton 1.8`, `--police Montserrat-ExtraBold.ttf`, `--taille 76`, `--couleur "#FFFFFF"`,
-`--fond "#000000"`, `--fond-opacite 0.45`, `--assombrir 0.2`, `--position centre|bas`, `--animation fondu|machine`, `--format auto|9:16|16:9|1:1|4:5`,
+`--fond "#000000"`, `--fond-opacite 0.45`, `--assombrir 0.2`, `--position centre|bas`, `--animation fondu|machine`, `--format auto|9:16|16:9|1:1|4:5`, `--appel-audio "<son sous Production>"`,
 `--resserrer` (+ `--pauses-longues 1`, `--pause-longue 0.4`, `--pause-courte 0.15`),
 `--mots mots.json` (mots minutés de Whisper `[{text, start, end}]` : active le karaoké) `--replique "…"` (sinon lue dans la fiche),
 `--sans-voix`, `--remplacer`, `--json`.

@@ -302,20 +302,29 @@ AgnesPlugins.register("tts", {
     chain.then(function () { core.toast(ok + " / " + todo.length + " voix générée(s).", ok === todo.length ? "ok" : "err"); });
   },
 
+  // 01/10 — enregistrement au micro réutilisable (ex. voix-off de l'appel de fin dans Montage) :
+  // micro() démarre et rend { arreter() → Promise(Blob) }.
+  micro: function () {
+    if (!navigator.mediaDevices || !window.MediaRecorder) return Promise.reject(new Error("Enregistrement micro indisponible dans ce navigateur."));
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      var chunks = [], rec = new MediaRecorder(stream);
+      rec.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
+      var fin = new Promise(function (res) {
+        rec.onstop = function () { stream.getTracks().forEach(function (t) { t.stop(); }); res(new Blob(chunks, { type: rec.mimeType || "audio/webm" })); };
+      });
+      rec.start();
+      return { rec: rec, arreter: function () { rec.stop(); return fin; } };
+    });
+  },
   toggleRecord: function (shotId, text) {
     var self = this, core = this.core;
     if (this.recording) {
-      var r = this.recording; this.recording = null; r.rec.stop(); return;
+      var r = this.recording; this.recording = null;
+      r.arreter().then(function (blob) { return self.attach(shotId, blob, text, "micro"); }).then(function () { core.toast("Voix enregistrée.", "ok"); });
+      return;
     }
-    if (!navigator.mediaDevices || !window.MediaRecorder) return core.toast("Enregistrement micro indisponible dans ce navigateur.", "err");
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-      var chunks = [], rec = new MediaRecorder(stream);
-      rec.ondataavailable = function (e) { if (e.data.size) chunks.push(e.data); };
-      rec.onstop = function () {
-        stream.getTracks().forEach(function (t) { t.stop(); });
-        self.attach(shotId, new Blob(chunks, { type: rec.mimeType || "audio/webm" }), text, "micro").then(function () { core.toast("Voix enregistrée.", "ok"); });
-      };
-      self.recording = { shotId: shotId, rec: rec }; rec.start(); self.renderShots();
+    this.micro().then(function (m) {
+      self.recording = { shotId: shotId, rec: m.rec, arreter: m.arreter }; self.renderShots();
       core.toast("Enregistrement… cliquez « ■ Arrêter » pour finir.");
     }).catch(function (e) { core.toast("Micro refusé : " + e.message, "err"); });
   },

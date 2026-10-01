@@ -153,6 +153,75 @@ test('texte du carton : visible à chaque lettre (sans enregistrer à chaque fra
   assert.equal(saved.length, 0);
 });
 
+test('modèles de montage : enregistrés pour tous les projets, chaque projet retient ses réglages et son modèle', () => {
+  const { def } = charger();
+  const kv = {}, projets = { a: { id: 'a' }, b: { id: 'b' } };
+  let courant = projets.a;
+  def.core.store = { setKV: (k, v) => { kv[k] = JSON.parse(JSON.stringify(v)); return Promise.resolve(); } };
+  def.core.getProject = () => courant;
+  def.mods = { cartons: [], montages: [], favoris: [] };
+  def.render = () => {};
+  def.nouveauModele('montage', 'Marketing', true);
+  def.cfg.format = '16:9'; def.cfg.vitesse = 1.1;
+  courant = projets.b;
+  const serie = def.nouveauModele('montage', 'Série 16:9', true);
+  assert.deepEqual(kv['montage:modeles'].montages.map((m) => m.nom), ['Marketing', 'Série 16:9']);
+  // projet A : Marketing (format auto, x1)
+  courant = projets.a; def.appliquerModele('montage', def.mods.montages[0].id);
+  assert.equal(def.cfg.format, 'auto'); assert.equal(def.cfg.vitesse, 1);
+  // projet B garde « Série 16:9 » : on le recharge
+  courant = projets.b; def.chargerProjet();
+  assert.equal(def.cfg.format, '16:9'); assert.equal(def.cfg.vitesse, 1.1);
+  assert.equal(def.etatModele('montage').m.id, serie);
+  assert.equal(def.etatModele('montage').modifie, false);
+  def.cfg.vitesse = 1.2;
+  assert.equal(def.etatModele('montage').modifie, true, 'réglage changé : « (modifié) »');
+});
+
+test('modèles de carton : seuls les réglages du carton sont appliqués ; favoris en tête de liste', () => {
+  const { def } = charger();
+  const projet = { id: 'a' };
+  def.core.store = { setKV: () => Promise.resolve() };
+  def.core.getProject = () => projet;
+  def.mods = { cartons: [], montages: [], favoris: [] };
+  def.render = () => {};
+  def.cfg.couleur = '#FFE600'; def.cfg.animation = 'machine';
+  const jaune = def.nouveauModele('carton', 'Jaune machine', true);
+  def.cfg.couleur = '#FFFFFF'; def.cfg.animation = 'fondu';
+  const blanc = def.nouveauModele('carton', 'Blanc', true);
+  def.cfg.vitesse = 1.25; def.cfg.couleur = '#000000';
+  def.appliquerModele('carton', jaune);
+  assert.equal(def.cfg.couleur, '#FFE600'); assert.equal(def.cfg.animation, 'machine');
+  assert.equal(def.cfg.vitesse, 1.25, 'la vitesse ne fait pas partie du carton');
+  def.mods.favoris.push(blanc);
+  assert.deepEqual(def.liste('carton').map((m) => m.nom), ['Blanc', 'Jaune machine']);
+  assert.equal(projet.montageCarte.carton, jaune);
+});
+
+test('appel de fin au choix par carte : carton (défaut), pas de carton, voix-off rangée dans Production', async () => {
+  const { def, appels } = charger();
+  const blobs = { 'montage:appel:s20': { type: 'audio/mpeg' } };
+  def.core.store = { get: (k) => Promise.resolve(blobs[k] || null), put: () => Promise.resolve() };
+  const carte = (montage) => ({ id: 's20', notes: 'CARTON DE FIN : « Abonne-toi » + « Suite demain »', montage, takes: [{ kind: 'video', localPath: 'Marketing/A/20260930/Video/Carte 03 - Anthony.mp4' }] });
+  assert.equal(def.appelDe(carte()), 'carton');
+  assert.equal(def.reglages(carte()).carton, true);
+  assert.equal(def.reglages(carte({ appel: 'aucun' })).carton, false);
+  assert.equal(def.texteAppel(carte()), 'Abonne-toi. Suite demain');
+  // voix-off pas encore faite : refus clair, rien d'envoyé (aucune génération automatique)
+  await assert.rejects(def.monter(carte({ appel: 'voixoff' })), /faites d'abord la voix-off/);
+  assert.equal(appels.length, 0);
+  // texte du carton changé depuis la voix-off : à refaire
+  await assert.rejects(def.monter(carte({ appel: 'voixoff', appelInfo: { texte: 'ancien', duree: 2 } })), /refaites-la/);
+  // voix-off prête : rangée dans <journée>/Audio, chemin et durée envoyés au pont
+  const ok = carte({ appel: 'voixoff', appelInfo: { texte: 'Abonne-toi. Suite demain', duree: 2.4 } });
+  await def.monter(ok);
+  const depot = appels.find((x) => x.route === '/classement/fichier');
+  assert.equal(decodeURIComponent(depot.init.headers['X-Chemin']), 'Marketing/A/20260930/Audio/Carte 03 - Anthony - appel.mp3');
+  const r = appels.find((x) => x.route === '/montage/carte').body.reglages;
+  assert.equal(r.appel_audio, 'Marketing/A/20260930/Audio/Carte 03 - Anthony - appel.mp3');
+  assert.equal(r.appel_duree, 2.4);
+});
+
 test('vidéo absente de Production : la prise de la carte y est copiée, puis un seul nouvel envoi', async () => {
   const { def, appels } = charger({ pont: { carte: [{ st: 404, body: { error: 'vidéo introuvable', introuvable: true } }, { ok: true, id: 'm2' }] },
     classement: () => ({ video: 'Marketing/A/20260930/Video', nom: 'Carte 03 - Anthony' }) });
@@ -174,4 +243,26 @@ test('carte non classée : refus clair, rien envoyé ; erreur du moteur rendue t
 
 test('interface sans emojis ni pictogrammes', () => {
   assert.doesNotMatch(SRC, /[\u{1F300}-\u{1FAFF}\u2600-\u27BF\u2B06\u2B07\u2705\u2714\u26A0]/u);
+});
+
+test('AutoCaption : modèles de sous-titres personnels + préréglages d\'origine, favoris en tête', () => {
+  const CAP = fs.readFileSync(path.join(__dirname, '..', 'agnes', 'plugins', 'plugin-captions.js'), 'utf8');
+  let cap = null;
+  vm.runInNewContext(CAP, { AgnesPlugins: { register: (id, d) => { cap = d; } } });
+  const projet = { captions: { style: Object.assign({ preset: 'tiktok' }, cap.PRESETS.tiktok) } };
+  const kv = {};
+  cap.core = { getProject: () => projet, saveProject() {}, store: { setKV: (k, v) => { kv[k] = JSON.parse(JSON.stringify(v)); } }, toast() {} };
+  cap.save = () => {}; cap.render = () => {}; cap.renderPresets = () => {};
+  cap.mod = { modeles: [], favoris: [] };
+  projet.captions.style.size = 9; projet.captions.style.margin = 30;
+  const id = cap.nouveauModele('Anthony TikTok');
+  assert.equal(kv['captions:modeles'].modeles[0].style.size, 9);
+  assert.equal(projet.captions.style.preset, id);
+  cap.appliquerModele('karaoke');
+  assert.equal(projet.captions.style.size, cap.PRESETS.karaoke.size);
+  cap.mod.favoris.push(id);
+  assert.equal(cap.modeles()[0].nom, 'Anthony TikTok');
+  assert.equal(cap.modeles().length, Object.keys(cap.PRESETS).length + 1);
+  cap.appliquerModele(id);
+  assert.equal(projet.captions.style.margin, 30);
 });

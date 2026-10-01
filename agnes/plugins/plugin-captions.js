@@ -86,14 +86,21 @@ AgnesPlugins.register("captions", {
       self.save(); self.render();
     });
     $("capPresets").addEventListener("click", function (e) {
+      var m = e.target.closest("[data-capm]"); if (m) return self.actionModele(m.getAttribute("data-capm"));
       var b = e.target.closest("[data-preset]"); if (!b) return;
-      var st = self.state(); st.style = Object.assign({}, self.PRESETS[b.getAttribute("data-preset")]); st.style.preset = b.getAttribute("data-preset");
-      self.save(); self.render();
+      self.appliquerModele(b.getAttribute("data-preset"));
     });
+    // 01/10 — modèles personnels (communs à tous les projets) et favoris : core.store « captions:modeles »
+    this.mod = { modeles: [], favoris: [] };
+    core.store.getKV("captions:modeles").then(function (d) {
+      if (d && Array.isArray(d.modeles)) self.mod = { modeles: d.modeles, favoris: Array.isArray(d.favoris) ? d.favoris : [] };
+      self.renderPresets();
+    }, function () { });
     $("capStyle").addEventListener("input", function (e) {
       var f = e.target.getAttribute("data-sf"); if (!f) return;
       var s = self.state().style, v = e.target.type === "checkbox" ? e.target.checked : e.target.value;
       if (["size", "strokeW", "bgOpacity", "margin", "maxWords"].indexOf(f) !== -1) v = Number(v);
+      if (s.preset) s.base = s.preset;   // modèle d'où vient ce style (pour « Mettre à jour le modèle »)
       s[f] = v; s.preset = ""; self.save();
       if (e.target.type === "range") { var o = e.target.parentNode.querySelector("output"); if (o) o.textContent = v; }
       if (e.target.tagName === "SELECT" || e.target.type === "checkbox") self.renderStyle();
@@ -393,9 +400,84 @@ AgnesPlugins.register("captions", {
     }).join("") + '</div><button class="small-btn" data-cact="add" style="margin-top:6px">+ Ajouter un sous-titre</button>' +
       '<p class="hint">Temps en minutes:secondes dans le film monté. Une liste ne suit plus les changements du montage : régénérez-la après avoir modifié l\'ordre ou les durées des plans.</p>';
   },
+  // ---------- modèles (préréglages d'origine + les vôtres) et favoris ----------
+  // Liste unique : { id, nom, style, perso, favori }. Les favoris viennent en tête.
+  modeles: function () {
+    var self = this, P = this.PRESETS, fav = (this.mod && this.mod.favoris) || [];
+    var liste = Object.keys(P).map(function (k) { return { id: k, nom: P[k].label, style: P[k], perso: false }; })
+      .concat(((this.mod && this.mod.modeles) || []).map(function (m) { return { id: m.id, nom: m.nom, style: m.style, perso: true }; }));
+    liste.forEach(function (m) { m.favori = fav.indexOf(m.id) !== -1; });
+    return liste.filter(function (m) { return m.favori; }).concat(liste.filter(function (m) { return !m.favori; }));
+  },
+  modele: function (id) { return this.modeles().find(function (m) { return m.id === id; }) || null; },
+  appliquerModele: function (id) {
+    var m = this.modele(id); if (!m) return false;
+    var st = this.state(); st.style = Object.assign({}, m.style); delete st.style.label; delete st.style.base; st.style.preset = id;
+    this.save(); this.render();
+    return true;
+  },
+  enregistrerModeles: function () { this.core.store.setKV("captions:modeles", this.mod); this.renderPresets(); },
+  // Style actuel enregistré comme modèle personnel (nom demandé) ; rend son id
+  nouveauModele: function (nom) {
+    nom = String(nom || "").trim().slice(0, 40); if (!nom) return null;
+    var style = Object.assign({}, this.state().style), id = "m" + Date.now().toString(36);
+    delete style.preset; delete style.base; delete this.state().style.base;
+    this.mod.modeles.push({ id: id, nom: nom, style: style });
+    this.state().style.preset = id; this.save();
+    this.enregistrerModeles();
+    return id;
+  },
+  actionModele: function (act) {
+    var st = this.state(), id = st.style.preset, m = id ? this.modele(id) : null, core = this.core;
+    if (act === "remplacer") {
+      var b = this.mod.modeles.find(function (x) { return x.id === st.style.base; }); if (!b) return;
+      if (!window.confirm("Mettre à jour le modèle « " + b.nom + " » avec le style actuel ?")) return;
+      b.style = Object.assign({}, st.style); delete b.style.preset; delete b.style.base;
+      st.style.preset = b.id; this.save(); return this.enregistrerModeles();
+    }
+    if (act === "enregistrer") {
+      var nom = window.prompt("Nom du modèle de sous-titres (ex. Marketing TikTok, Série, Pub) :", m && m.perso ? m.nom + " (copie)" : "");
+      if (this.nouveauModele(nom)) core.toast("Modèle « " + nom.trim() + " » enregistré, pour tous les projets.", "ok");
+      return;
+    }
+    if (!m) return core.toast("Choisissez d'abord un modèle (le style actuel a été modifié : enregistrez-le comme modèle).", "err");
+    if (act === "favori") {
+      var f = this.mod.favoris, i = f.indexOf(id);
+      if (i === -1) f.push(id); else f.splice(i, 1);
+      return this.enregistrerModeles();
+    }
+    if (!m.perso) return core.toast("Les préréglages d'origine ne se renomment ni ne se suppriment.", "err");
+    var perso = this.mod.modeles.find(function (x) { return x.id === id; });
+    if (act === "renommer") {
+      var n = window.prompt("Nouveau nom du modèle :", perso.nom);
+      if (n && n.trim()) { perso.nom = n.trim().slice(0, 40); this.enregistrerModeles(); }
+    }
+    if (act === "supprimer" && window.confirm("Supprimer le modèle « " + perso.nom + " » ? (le style des projets n'est pas changé)")) {
+      this.mod.modeles = this.mod.modeles.filter(function (x) { return x.id !== id; });
+      this.mod.favoris = this.mod.favoris.filter(function (x) { return x !== id; });
+      st.style.preset = ""; this.save(); this.enregistrerModeles();
+    }
+  },
   renderPresets: function () {
-    var st = this.state(), P = this.PRESETS, esc = window.AgnesApp.esc;
-    this.$("capPresets").innerHTML = Object.keys(P).map(function (k) { return '<button type="button" class="chip' + (st.style.preset === k ? " on" : "") + '" data-preset="' + k + '">' + esc(P[k].label) + '</button>'; }).join("");
+    var st = this.state(), esc = window.AgnesApp.esc, el = this.$("capPresets"); if (!el) return;
+    var cur = st.style.preset ? this.modele(st.style.preset) : null;
+    var base = !cur && st.style.base ? (this.mod.modeles || []).find(function (x) { return x.id === st.style.base; }) : null;
+    el.innerHTML = this.modeles().map(function (m) {
+      return '<button type="button" class="chip' + (st.style.preset === m.id ? " on" : "") + (m.favori ? " cap-fav" : "") + '" data-preset="' + esc(m.id) + '"' +
+        ' title="' + (m.perso ? "Votre modèle" : "Préréglage d'origine") + (m.favori ? " · favori" : "") + '">' + esc(m.nom) + "</button>";
+    }).join("") +
+      '<div class="row-inline cap-modeles" style="width:100%;margin-top:8px">' +
+      '<span class="hint">' + (cur ? "Modèle : " + esc(cur.nom) + (cur.favori ? " (favori)" : "") : base ? "Modèle « " + esc(base.nom) + " » modifié" : "Style modifié (pas encore un modèle)") + "</span>" +
+      (base ? '<button type="button" class="small-btn" data-capm="remplacer">Mettre à jour « ' + esc(base.nom) + " »</button>" : "") +
+      '<button type="button" class="small-btn" data-capm="enregistrer">Enregistrer comme modèle…</button>' +
+      (cur ? '<button type="button" class="small-btn" data-capm="favori">' + (cur.favori ? "Retirer des favoris" : "Mettre en favori") + "</button>" : "") +
+      (cur && cur.perso ? '<button type="button" class="small-btn" data-capm="renommer">Renommer…</button><button type="button" class="small-btn" data-capm="supprimer">Supprimer…</button>' : "") +
+      "</div>";
+    if (!document.getElementById("capModStyle")) {
+      var css = document.createElement("style"); css.id = "capModStyle";
+      css.textContent = ".chip.cap-fav{font-weight:600;border-color:var(--silver,#aeb4ba)}";
+      document.head.appendChild(css);
+    }
   },
   renderStyle: function () {
     var s = this.state().style, esc = window.AgnesApp.esc;

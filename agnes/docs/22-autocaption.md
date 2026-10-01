@@ -88,3 +88,6 @@ Décochez **Incruster les sous-titres** pour un film sans texte : les exports .s
 
 ## Utilisé par l'extension Montage (01/10/2026)
 Les sous-titres karaoké du **montage par carte** (onglet Montage) prennent **le style de cet onglet** : police (Montserrat ajoutée), taille, marge, couleurs, mot prononcé, animation, majuscules. Les mots y sont minutés par Whisper (Extraire) et le texte exact de la réplique. Fonctions ajoutées pour cela : `chunksFromWords(mots)`, `assFromChunks(W, H, groupes)` (utilisée aussi par `buildAss`), `srtFromChunks(groupes)`, `temoin()`. Rien ne change pour l'Assemblage ni pour le kit FFmpeg.
+
+## Vos modèles et favoris (01/10/2026)
+Sous les préréglages : **Enregistrer comme modèle…** garde le style actuel sous un nom, pour tous les projets. Vos modèles s'affichent à côté des préréglages d'origine ; **Mettre en favori** les place en tête (en gras). **Renommer…** et **Supprimer…** pour les vôtres ; après une retouche, **Mettre à jour « … »** enregistre le style dans le modèle d'où il vient. Ils sont gardés dans Agnes (Sauvegarde complète comprise). Fonctions : `modeles()`, `appliquerModele(id)`, `nouveauModele(nom)`.

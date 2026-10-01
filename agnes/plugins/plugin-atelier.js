@@ -718,7 +718,8 @@ AgnesPlugins.register("atelier", {
         trend: { type: "number", description: "Numéro d'une piste de veille (facultatif)" }, pillar: { type: "string" }, cluster: { type: "string" }, environment: { type: "string" },
         garder: { type: "string", description: "Journée RÉÉCRITE en partie : vidéos déjà publiées à garder telles quelles (educatif, probleme_solution, demonstration ou matin, midi, soir, séparées par des virgules). Les autres sont réécrites avec le procédé actuel, même sujet et même méthode." },
         notions: { type: "string", description: "Notion imposée par créneau, ex. « midi=mot_peut_etre, soir=mot_imaginez » (série AIDA : une lettre par vidéo). Notions : marketing_fiche." },
-        suite_demain: { type: "boolean", description: "La série continue le lendemain : carton du soir « La suite demain à 8 h »." } } } } },
+        suite_demain: { type: "boolean", description: "La série continue le lendemain : carton du soir « La suite demain à 8 h »." },
+        appel: { type: "string", enum: ["carton", "parle"], description: "Appel à l'action du jour, choisi par l'utilisatrice : « carton » (affiché sur le carton de fin, Anthony ne le dit pas) ou « parle » (Anthony le dit en dernier dans la vidéo). Ne rien mettre = réglage habituel de l'agent." } } } } },
     { type: "function", function: { name: "marketing_get_day", description: "Agent Marketing : (re)met le livrable d'une journée déjà préparée dans les documents de l'Atelier. Sans autorisation.",
       parameters: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } } },
     { type: "function", function: { name: "marketing_validate", description: "Agent Marketing : revalide les 3 vidéos d'une journée (durée, CTA, doublons…). Lecture et contrôle, sans autorisation.",
@@ -769,7 +770,7 @@ AgnesPlugins.register("atelier", {
       "- Prompts des cartes du Storyboard (« prompt parfait », placement des personnages, angle, voiture…) : confie-les à a16 (Directeur de plans) en précisant les numéros de cartes et la demande de l'utilisateur, puis applique son travail avec update_shots en donnant agent_id \"a16\" (sans recopier les prompts).\n" +
       "- Si aucun agent ne convient à la demande, propose d'en créer un avec create_agent (consignes complètes, format de sortie, entrées et contexte utiles), puis lance-le. N'en crée pas un qui double un agent existant.\n" +
       "- Générations (generate_shots) : annonce le nombre de cartes, l'étape et les moteurs (quotas) ; une carte d'abord pour un nouveau style ou personnage, fais valider, puis les autres ; vidéos seulement quand les images sont validées. Grok et Flow servent uniquement à la vidéo (Flow consomme les crédits Google) ; si Grok ou Flow est bloqué, arrête et préviens l'utilisateur.\n" +
-      "- Vidéos d'avatar pour les réseaux (marketing) : utilise les outils marketing_* (agent Marketing branché par le pont local). Avant marketing_generate_day, si l'utilisateur n'a pas choisi la méthode du jour, lis marketing_state et demande-lui : « Qu'est-ce qu'on fait aujourd'hui : AIDA, PAS… ? » en citant les fiches actives. marketing_generate_day dépose un document « Marketing — date » : lis-le avec get_document et suis ses CONSIGNES POUR LE CHEF dans l'ordre, une étape à la fois. Ne reformule jamais les répliques d'un livrable marketing. " +
+      "- Vidéos d'avatar pour les réseaux (marketing) : utilise les outils marketing_* (agent Marketing branché par le pont local). Avant marketing_generate_day, si l'utilisateur n'a pas choisi la méthode du jour, lis marketing_state et demande-lui : « Qu'est-ce qu'on fait aujourd'hui : AIDA, PAS… ? » en citant les fiches actives. Dans la même question, demande l'appel à l'action du jour (au choix, jamais imposé) : « sur le carton » (Anthony ne le dit pas) ou « Anthony le dit » ; passe sa réponse dans « appel » (carton ou parle). marketing_generate_day dépose un document « Marketing — date » : lis-le avec get_document et suis ses CONSIGNES POUR LE CHEF dans l'ordre, une étape à la fois. Ne reformule jamais les répliques d'un livrable marketing. " +
       "Une journée peut être RENVOYÉE après réécriture (même nom de document) : la dernière version remplace entièrement la précédente. " +
       "Si les cartes de cette journée existent déjà dans le Storyboard (la consigne donne leurs numéros ; sinon get_storyboard), N'UTILISE PAS send_to_lot, qui créerait des cartes en double : " +
       "l'étape Le lot devient update_shots avec document (nom du document) et cartes (leurs numéros, dans l'ordre 01, 02, 03). Ne crée de nouvelles cartes qu'avec l'accord explicite de l'utilisateur. " +
@@ -943,7 +944,7 @@ AgnesPlugins.register("atelier", {
       case "generate_shots": return this.describeGeneration(a);
       case "marketing_state": return "Lire l'état de l'agent Marketing";
       case "marketing_veille": return "Agent Marketing : lancer la veille internet";
-      case "marketing_generate_day": return "Agent Marketing : " + (a.garder ? "réécrire la journée du " + (a.date || "jour") + " en gardant « " + a.garder + " »" : "préparer les 3 vidéos du " + (a.date || "jour")) + " — méthode " + (a.methode || (a.garder ? "celle de la journée" : "par défaut")) + (a.topic ? " — sujet « " + a.topic + " »" : "") + " (écrites avec " + this.marketingModelLabel() + ")";
+      case "marketing_generate_day": return "Agent Marketing : " + (a.garder ? "réécrire la journée du " + (a.date || "jour") + " en gardant « " + a.garder + " »" : "préparer les 3 vidéos du " + (a.date || "jour")) + " — méthode " + (a.methode || (a.garder ? "celle de la journée" : "par défaut")) + (a.appel ? " — appel " + (a.appel === "parle" ? "dit par Anthony" : "sur le carton") : "") + (a.topic ? " — sujet « " + a.topic + " »" : "") + " (écrites avec " + this.marketingModelLabel() + ")";
       case "marketing_get_day": return "Agent Marketing : reprendre le livrable du " + (a.date || "?");
       case "marketing_validate": return "Agent Marketing : revalider la journée du " + (a.date || "?");
       case "marketing_ressources": return "Lire les ressources locales (formations et vidéos)";
@@ -1116,7 +1117,7 @@ AgnesPlugins.register("atelier", {
   },
   marketingDay: function (a) {
     var self = this, body = { methode: a.methode, date: a.date, topic: a.topic, audience: a.audience, offer: a.offer, objective: a.objective,
-      trend: a.trend, pillar: a.pillar, cluster: a.cluster, environment: a.environment, garder: a.garder, notions: a.notions, suite_demain: !!a.suite_demain, llm: this.marketingModel() };
+      trend: a.trend, pillar: a.pillar, cluster: a.cluster, environment: a.environment, garder: a.garder, notions: a.notions, suite_demain: !!a.suite_demain, appel: a.appel || undefined, llm: this.marketingModel() };
     return this.marketingCall("POST", "/marketing/journee", body).then(function (d) {
       self.addDoc(d.livrable_nom, d.livrable, "agent Marketing", true);
       return "Journée du " + d.date + " (méthode " + (d.methodes || []).join(", ") + ", pilier " + d.pilier + ") : " + (d.pret ? "3/3 vidéos prêtes" : "au moins une vidéo à corriger") + ".\n" +

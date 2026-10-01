@@ -62,3 +62,9 @@ Des étiquettes signalent l'état : « voix attachée · 3,2 s », et en rouge *
 Sur chaque carte du Storyboard, **🎙 Voix** ouvre directement le dialogue du plan.
 
 > Les voix consomment vos crédits ElevenLabs ou OpenAI. Testez d'abord une réplique avec **Tester** dans le casting.
+
+## Utilisé par l'extension Montage (01/10/2026)
+L'**appel de fin en voix-off** du montage par carte ([28](28-montage.md)) utilise cet onglet : la clé et le fournisseur réglés
+ici (ElevenLabs par défaut) et une voix du **casting** (choisie dans Montage → « Appel de fin en voix-off »). « Ma voix »
+passe par le même enregistrement au micro qu'ici (fonction `micro()`, le bouton Enregistrer des plans est inchangé).
+Une voix-off d'appel n'est jamais générée sans votre clic.

@@ -90,3 +90,8 @@ Bouton de choix de fichier : `<label class="small-btn">Importer…<input type="f
 ## Conseils
 - Rafraîchissez votre onglet sur `view:change` (quand il devient visible) et sur `project:change`.
 - Ne bloquez jamais le chargement : toute erreur dans `init` désactive l'extension et l'affiche dans un message.
+- **CSS** : les styles de votre extension vont dans `css/studio.css`, dans une section commentée à son nom (ex. « /* Montage … */ ») ;
+  jamais de `<style>` injecté par le JavaScript ni de `style="…"` dans le HTML généré (sauf une valeur calculée, ex. la forme
+  d'un lecteur). Réutilisez les classes existantes avant d'en créer (ex. `card`, `field`, `small-btn`, `chip`).
+- **Indépendance** : si votre extension se sert d'une autre, vérifiez `AgnesPlugins.isLoaded("id")` et affichez un message clair
+  si elle est désactivée ; ne modifiez jamais une autre extension de l'extérieur, appelez seulement ses fonctions publiques.

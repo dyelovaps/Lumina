@@ -966,7 +966,7 @@ label.inline.cap-main { font-size: 13.5px; color: var(--text); }
 .cap-range input[type="range"] { flex: 1; min-width: 0; }
 .cap-range output { min-width: 34px; text-align: right; font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .cap-inline .cap-range { flex: 1; }
-input[type="color"].cap-color { flex: none; width: 38px; height: 34px; padding: 3px; border-radius: 9px; border: 1px solid var(--edge); background: var(--glass-field); cursor: pointer; }
+input[type="color"].cap-color, input[type="color"].mt-couleur { flex: none; width: 38px; height: 34px; padding: 3px; border-radius: 9px; border: 1px solid var(--edge); background: var(--glass-field); cursor: pointer; }
 .cap-cues { max-height: 360px; overflow-y: auto; }
 .cap-cue { display: flex; gap: 6px; margin-bottom: 5px; }
 .cap-cue input[data-cf="start"], .cap-cue input[data-cf="end"] { width: 76px; flex: none; font-size: 12px; padding: 7px 8px; }
@@ -998,3 +998,33 @@ input[type="color"].cap-color { flex: none; width: 38px; height: 34px; padding: 
 .sk-prev-row > input { margin-top: 3px; flex: none; }
 .sk-prev-row b { font-size: 13px; font-weight: 600; }
 .sk-prev-action { font-size: 11.5px; color: var(--text-dim); margin-top: 3px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* Montage (extension Montage, 01/10/2026) — pôle, montage par carte, lecteur d'aperçu, modèles, appel de fin */
+.mt-subnav { display: flex; gap: 6px; flex-wrap: wrap; margin: -8px 0 16px; }
+.mt-sub { font: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--edge); background: transparent; color: var(--text-dim); cursor: pointer; transition: all .15s ease; }
+.mt-sub:hover { color: var(--text); }
+.mt-sub[aria-selected="true"] { color: var(--text); border-color: var(--steel); background: rgba(143,160,171,.16); }
+.mt-ligne { border-top: 1px solid var(--edge-soft); padding: 12px 0; }
+.mt-ligne:first-child { border-top: 0; }
+.mt-tete { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.mt-etat { margin-left: 8px; }
+.mt-appel { margin: -4px 0 8px; }
+.mt-ok { color: var(--ok); }
+.mt-err { color: var(--danger); }
+.mt-alerte { color: var(--warn); }
+.mt-modeles { border: 1px solid var(--edge-soft); border-radius: 10px; padding: 10px 12px; margin: 6px 0 14px; background: var(--glass-field); }
+.mt-modeles .field { margin-bottom: 6px; }
+.mt-range { display: flex; gap: 8px; align-items: center; }
+.mt-range input { flex: 1; }
+.mt-case { display: flex; align-items: center; min-height: 40px; }
+/* Lecteur : la vidéo et, par-dessus, la couche carton + sous-titres ; la forme (9:16, 16:9…) est donnée par le lecteur */
+.mt-ap-grille { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.mt-ap-cote { flex: 1; min-width: 240px; }
+.mt-ecran { position: relative; width: 300px; max-width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 10px; overflow: hidden; }
+.mt-ecran.paysage { width: 520px; }
+.mt-ecran video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.mt-ecran canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* AutoCaption — vos modèles et favoris (01/10/2026) */
+.chip.cap-fav { font-weight: 600; border-color: var(--silver); }
+.cap-modeles { width: 100%; margin-top: 8px; }

@@ -56,7 +56,6 @@ AgnesPlugins.register("montage", {
       if (!self.mods.montages.length) self.nouveauModele("montage", "Marketing", true);
       if (self.visible()) self.render();
     }, function () { });
-    this.style();
     this.view = core.ui.addTab("montage", "Montage", '<div id="mtBody"></div>');
     this.tabBtn = document.querySelector('#tabBar .tab[data-view="view_montage"]');
     var nav = document.createElement("div"); nav.id = "mtSubnav"; nav.className = "mt-subnav";
@@ -489,7 +488,7 @@ AgnesPlugins.register("montage", {
       var d = p && p.largeur ? [p.largeur, p.hauteur] : self.dims(vid.videoWidth, vid.videoHeight);
       if (cv.width !== Math.round(d[0] / 2) || cv.height !== Math.round(d[1] / 2)) {
         cv.width = Math.round(d[0] / 2); cv.height = Math.round(d[1] / 2);
-        var ecran = cv.parentNode; ecran.style.aspectRatio = d[0] + " / " + d[1]; ecran.style.width = d[0] > d[1] ? "520px" : "300px";
+        var ecran = cv.parentNode; ecran.style.aspectRatio = d[0] + " / " + d[1]; ecran.classList.toggle("paysage", d[0] > d[1]);   // CSS : css/studio.css
       }
       var o = self.versSortie(s, g) / v;
       // image prolongée (voix-off plus longue que la fin du clip) : le temps continue sur la dernière image
@@ -768,23 +767,23 @@ AgnesPlugins.register("montage", {
     var pols = (this.polices && this.polices.length ? this.polices : [{ fichier: c.police, nom: c.police.replace(/\.ttf$/i, "") }]).map(function (p) { return [p.fichier, p.nom]; });
     var reglages =
       '<div class="card"><h3>Réglages du montage par carte</h3>' +
-      '<div id="mtModMontage">' + this.htmlModeles("montage") + "</div>" +
       '<p class="hint">Chaque vidéo de carte devient une vidéo prête à publier : format au choix (comme la vidéo par défaut), voix au maximum sans la casser, carton de fin. ' +
       "L'original n'est jamais modifié ; le résultat va dans le dossier Final de la journée, avec un compte rendu des mesures.</p>" +
+      '<div id="mtModMontage">' + this.htmlModeles("montage") + "</div>" +
       '<div class="grid3">' +
       '<div class="field"><label>Vitesse (image et son)</label><select data-mtc="vitesse">' + opt(vitesses, c.vitesse) + "</select></div>" +
       '<div class="field"><label>Format de sortie</label><select data-mtc="format">' + opt([["auto", "Comme la vidéo (sans recadrage)"], ["9:16", "9:16 vertical (TikTok, Reels, Shorts)"],
         ["16:9", "16:9 paysage (YouTube, film, série)"], ["1:1", "1:1 carré"], ["4:5", "4:5 (Instagram)"]], c.format) + "</select></div>" +
-      '<div class="field"><label>Voix</label><label class="inline"><input type="checkbox" data-mtc="voix"' + (c.voix ? " checked" : "") + "> Au maximum (-14 LUFS, crête -1 dBTP)</label></div>" +
-      '<div class="field"><label>Final existant</label><label class="inline"><input type="checkbox" data-mtc="remplacer"' + (c.remplacer ? " checked" : "") + "> Le remplacer (sinon « final (2) »)</label></div>" +
+      '<div class="field"><label>Voix</label><div class="mt-case"><label class="inline"><input type="checkbox" data-mtc="voix"' + (c.voix ? " checked" : "") + "> Au maximum (-14 LUFS, crête -1 dBTP)</label></div></div>" +
+      '<div class="field"><label>Final existant</label><div class="mt-case"><label class="inline"><input type="checkbox" data-mtc="remplacer"' + (c.remplacer ? " checked" : "") + "> Le remplacer (sinon « final (2) »)</label></div></div>" +
       "</div><h4>Carton de fin</h4>" + '<div id="mtModCarton">' + this.htmlModeles("carton") + "</div>" + "<div class=\"grid3\">" +
-      '<div class="field"><label>Carton</label><label class="inline"><input type="checkbox" data-mtc="carton"' + (c.carton ? " checked" : "") + "> Ajouter le carton</label></div>" +
+      '<div class="field"><label>Carton</label><div class="mt-case"><label class="inline"><input type="checkbox" data-mtc="carton"' + (c.carton ? " checked" : "") + "> Ajouter le carton</label></div></div>" +
       '<div class="field"><label>Durée (fin de la vidéo)</label><select data-mtc="carton_duree">' + opt(durees, c.carton_duree) + "</select></div>" +
       '<div class="field"><label>Position</label><select data-mtc="position">' + opt([["centre", "Au centre"], ["bas", "Tiers inférieur"]], c.position) + "</select></div>" +
       '<div class="field"><label>Police</label><select data-mtc="police">' + opt(pols, c.police) + "</select></div>" +
       '<div class="field"><label>Taille du texte</label><input type="number" min="36" max="140" step="2" data-mtc="taille" value="' + esc(c.taille) + '"></div>' +
-      '<div class="field"><label>Couleur du texte</label><input type="color" data-mtc="couleur" value="' + esc(c.couleur) + '"></div>' +
-      '<div class="field"><label>Couleur du fond</label><input type="color" data-mtc="fond" value="' + esc(c.fond) + '"></div>' +
+      '<div class="field"><label>Couleur du texte</label><input type="color" class="mt-couleur" data-mtc="couleur" value="' + esc(c.couleur) + '"></div>' +
+      '<div class="field"><label>Couleur du fond</label><input type="color" class="mt-couleur" data-mtc="fond" value="' + esc(c.fond) + '"></div>' +
       '<div class="field"><label>Opacité du fond</label><select data-mtc="fond_opacite">' + opt([[0, "Aucun fond"], [0.3, "Léger"], [0.45, "Moyen"], [0.6, "Marqué"], [0.8, "Plein"]], c.fond_opacite) + "</select></div>" +
       '<div class="field"><label>Assombrir l\'image sous le carton</label><select data-mtc="assombrir">' + opt([[0, "Non"], [0.2, "Un peu"], [0.35, "Plus"]], c.assombrir) + "</select></div>" +
       '<div class="field"><label>Apparition du texte</label><select data-mtc="animation">' + opt([["fondu", "Fondu"], ["machine", "Machine à écrire"]], c.animation) + "</select></div>" +
@@ -867,23 +866,5 @@ AgnesPlugins.register("montage", {
     if (a) a.innerHTML = this.htmlModeles("montage");
     if (b) b.innerHTML = this.htmlModeles("carton");
   },
-  majLigne: function (s) { var el = this.view.querySelector('[data-mt-etat="' + s.id + '"]'); if (el) el.innerHTML = this.texteEtat(s); },
-  style: function () {
-    if (document.getElementById("mtStyle")) return;
-    var st = document.createElement("style"); st.id = "mtStyle";
-    st.textContent = ".mt-subnav{display:flex;gap:6px;flex-wrap:wrap;margin:-8px 0 16px}" +
-      ".mt-sub{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:999px;border:1px solid var(--edge);background:transparent;color:var(--text-dim);cursor:pointer}" +
-      ".mt-sub[aria-selected=true]{color:var(--text);border-color:var(--text-dim)}" +
-      ".mt-ligne{border-top:1px solid var(--edge);padding:12px 0}.mt-ligne:first-child{border-top:0}" +
-      ".mt-tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}.mt-etat{margin-left:8px}" +
-      ".mt-ap-grille{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}.mt-ap-cote{flex:1;min-width:240px}" +
-      ".mt-ecran{position:relative;width:300px;max-width:100%;aspect-ratio:9/16;background:#000;border-radius:10px;overflow:hidden}" +
-      ".mt-ecran video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}" +
-      ".mt-ecran canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}" +
-      ".mt-range{display:flex;gap:8px;align-items:center}.mt-range input{flex:1}" +
-      ".mt-modeles{border:1px solid var(--edge);border-radius:10px;padding:10px 12px;margin:6px 0 14px}.mt-modeles .field{margin-bottom:6px}" +
-      ".mt-appel{margin:-4px 0 8px}" +
-      ".mt-ok{color:var(--ok,#5fbf7f)}.mt-err{color:var(--danger,#e06060)}.mt-alerte{color:var(--warn,#d9a441)}";
-    document.head.appendChild(st);
-  }
+  majLigne: function (s) { var el = this.view.querySelector('[data-mt-etat="' + s.id + '"]'); if (el) el.innerHTML = this.texteEtat(s); }
 });

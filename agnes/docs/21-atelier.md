@@ -408,3 +408,9 @@ Correctif du 30/09 : dans une installation neuve dont les clés viennent du fich
 
 ### Les documents sous la discussion
 Les documents (📎) sont enregistrés **dans le projet ouvert**. Si des documents semblent avoir disparu, vérifiez le projet actif (onglet Projet) : ceux ajoutés dans un autre projet (ou avant une duplication) y sont restés.
+
+## Appel à l'action du jour (01/10/2026)
+Avant de préparer une journée marketing, le Chef demande la méthode du jour **et l'appel à l'action**, au choix : « sur le
+carton » (Anthony ne le dit pas, réglage habituel) ou « Anthony le dit » (en dernier, dans la vidéo). Il le transmet à l'agent
+Marketing (paramètre `appel` de marketing_generate_day). Côté montage, l'appel de fin se choisit carte par carte
+([28](28-montage.md) § 5).

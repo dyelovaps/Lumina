@@ -129,3 +129,8 @@ Extraire propose une fonction `transcribeBlob(vidéo, nom)` que d'autres extensi
 l'onglet Extraire (session normale, script modifiable) et le texte est renvoyé à l'appelant. Le moteur est celui réglé ici
 (Whisper dans le navigateur ou API OpenAI ; pas « sous-titres »). Extraire ne dépend d'aucune autre extension.
 Exemple : le Chef de l'Atelier IA transcrit les vidéos des formations enregistrées sur l'ordinateur (voir l'Atelier IA).
+
+## Mots minutés pour le karaoké (01/10/2026)
+Extraire propose aussi `motsBlob(vidéo, suivi)` : Whisper (dans le navigateur) donne l'heure de chaque mot, sans ouvrir ni
+modifier l'onglet Extraire. L'extension Montage s'en sert pour les sous-titres karaoké du montage par carte ([28](28-montage.md)).
+Si le modèle réglé ici ne sait pas minuter les mots, un modèle « _timestamped » est essayé (téléchargé une seule fois).

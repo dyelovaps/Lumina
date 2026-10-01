@@ -466,18 +466,13 @@ AgnesPlugins.register("captions", {
       return '<button type="button" class="chip' + (st.style.preset === m.id ? " on" : "") + (m.favori ? " cap-fav" : "") + '" data-preset="' + esc(m.id) + '"' +
         ' title="' + (m.perso ? "Votre modèle" : "Préréglage d'origine") + (m.favori ? " · favori" : "") + '">' + esc(m.nom) + "</button>";
     }).join("") +
-      '<div class="row-inline cap-modeles" style="width:100%;margin-top:8px">' +
+      '<div class="row-inline cap-modeles">' +
       '<span class="hint">' + (cur ? "Modèle : " + esc(cur.nom) + (cur.favori ? " (favori)" : "") : base ? "Modèle « " + esc(base.nom) + " » modifié" : "Style modifié (pas encore un modèle)") + "</span>" +
       (base ? '<button type="button" class="small-btn" data-capm="remplacer">Mettre à jour « ' + esc(base.nom) + " »</button>" : "") +
       '<button type="button" class="small-btn" data-capm="enregistrer">Enregistrer comme modèle…</button>' +
       (cur ? '<button type="button" class="small-btn" data-capm="favori">' + (cur.favori ? "Retirer des favoris" : "Mettre en favori") + "</button>" : "") +
       (cur && cur.perso ? '<button type="button" class="small-btn" data-capm="renommer">Renommer…</button><button type="button" class="small-btn" data-capm="supprimer">Supprimer…</button>' : "") +
       "</div>";
-    if (!document.getElementById("capModStyle")) {
-      var css = document.createElement("style"); css.id = "capModStyle";
-      css.textContent = ".chip.cap-fav{font-weight:600;border-color:var(--silver,#aeb4ba)}";
-      document.head.appendChild(css);
-    }
   },
   renderStyle: function () {
     var s = this.state().style, esc = window.AgnesApp.esc;

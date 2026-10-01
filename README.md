@@ -2,6 +2,34 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Agnes : Styles de prompt, séries débloquées (1.13.7, 01/10/2026)
+
+Copie `agnes/` mise à jour (`npm run sync:agnes`). Agnes 3.12, détail dans `agnes/docs/29-styles.md`.
+
+**Le problème.** Les règles marketing s'appliquaient à **tous** les projets et bloquaient les séries :
+- compteur de répliques Anthony (150 à 180 caractères) ;
+- jeu subtil ;
+- « No text » et « No music ».
+
+Les textes écrits entre guillemets (la tasse “TOUT VA BIEN”) étaient aussi pris pour des répliques.
+
+**Ce qui change :**
+- **Extension Styles de prompt** (`plugins/plugin-styles.js`). Onglet Projet → **Style des prompts** :
+  - les 3 styles d'origine sont Réaliste — Marketing (inchangé), Série réaliste et Cartoon / satire ;
+  - on peut ajouter, modifier, dupliquer et supprimer des styles ;
+  - chaque style règle les règles images et vidéos, les textes écrits gardés, la musique permise et le compteur de répliques.
+- **`plugin-moteurs.js` :** `quality` passe par `styleRule` et `textRule` du style du projet. Sans l'extension, les règles d'origine s'appliquent.
+- **`js/dialogue-propre.js` → `estReplique` :** distingue une réplique (verbe de parole, deux-points) d'un texte écrit ou d'un bruitage (reads, labeled, marked…). Elle sert au compteur des cartes, au nettoyage avant Grok et à `set_replique` du Chef.
+- **`plugin-repliques.js` :** le réglage du projet vient du style. Sinon c'est Anthony si le nom du projet contient « Marketing », et Série pour les autres.
+- **Atelier IA :**
+  - les consignes communes (`common()`) et celles du Chef suivent le style ;
+  - `mesurer_replique` prend le réglage du projet.
+- **Pack de skills « Cartoon & satire (master prompt) »** dans `js/skill-packs.js`.
+- **Commandes pour Claude :** `agnes.py styles`, `agnes.py style nom=…` ; `importer_image` est maintenant dans l'aide.
+
+Tests : `tests/agnes-styles.test.cjs` (3 tests), et `agnes-atelier-clarte` adapté (Série par défaut hors Marketing), soit 197 tests au total.
+Pas encore essayé dans le vrai Agnes de Lumina : il faut recharger Lumina (↻) puis choisir le style dans l'onglet Projet.
+
 ## Agnes : Google Flow, troisième moteur vidéo (1.13.6, 30/09/2026)
 
 Copie `agnes/` mise à jour (`npm run sync:agnes`) :

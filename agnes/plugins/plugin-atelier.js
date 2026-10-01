@@ -593,7 +593,7 @@ AgnesPlugins.register("atelier", {
   runAgent: function (id, request) {
     var self = this, a = this.agent(id), st = this.project();
     if (!a) return Promise.reject({ display: "Agent inconnu : " + id });
-    var messages = [{ role: "system", content: a.instructions + "\n\n" + this.COMMON }, { role: "user", content: this.buildUserMessage(a, request) }];
+    var messages = [{ role: "system", content: a.instructions + "\n\n" + this.common() }, { role: "user", content: this.buildUserMessage(a, request) }];
     var extra = {};
     if (a.model) extra.model = a.model;
     if (a.temperature != null && a.temperature !== "") extra.temperature = Number(a.temperature);
@@ -731,7 +731,7 @@ AgnesPlugins.register("atelier", {
     { type: "function", function: { name: "marketing_recherche_sujet", description: "Agent Marketing : cherche sur internet un sujet absent des ressources locales et de la veille (recherche web de Codex, Hacker News, Reddit ; pages hors sujet écartées), crée la fiche « web-… » et en extrait les notions. La fiche reste « à valider » par l'utilisatrice. Prend 1 à 3 minutes. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { sujet: { type: "string" }, forums: { type: "boolean", description: "inclure Hacker News et Reddit (témoignages) ; défaut oui" } }, required: ["sujet"] } } },
     { type: "function", function: { name: "mesurer_replique", description: "Mesure une ou plusieurs répliques (une par ligne, « NOM : texte » accepté) avec le Calculateur de répliques : caractères espaces compris, mots, durée estimée, et combien de caractères ajouter ou retirer pour tenir le réglage (anthony = TikTok 10 s, serie, court, voixoff, ou un réglage de l'utilisateur). À utiliser AVANT de proposer ou valider une réplique. Lecture seule, sans autorisation.",
-      parameters: { type: "object", properties: { texte: { type: "string" }, reglage: { type: "string", description: "anthony (défaut), serie, court, voixoff, ou l'identifiant d'un réglage de l'utilisateur" } }, required: ["texte"] } } },
+      parameters: { type: "object", properties: { texte: { type: "string" }, reglage: { type: "string", description: "vide = réglage du projet (selon son style) ; sinon anthony, serie, court, voixoff, ou l'identifiant d'un réglage de l'utilisateur" } }, required: ["texte"] } } },
     { type: "function", function: { name: "set_replique", description: "Remplace la réplique entre guillemets (« … ») du prompt d'une carte du Storyboard par une nouvelle version, sans toucher au reste du prompt. Mesure-la d'abord avec mesurer_replique. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { carte: { type: "number", description: "Numéro de la carte (#N)" }, replique: { type: "string", description: "Nouvelle réplique, sans guillemets" }, index: { type: "number", description: "N-ième réplique du prompt (1 par défaut)" } }, required: ["carte", "replique"] } } },
     { type: "function", function: { name: "marketing_fiches", description: "Agent Marketing : liste des fiches connaissances (statut, notions, blocages) avec l'ADRESSE de chaque fichier sur l'ordinateur et celle du dossier. Lecture seule, sans autorisation.",
@@ -761,6 +761,27 @@ AgnesPlugins.register("atelier", {
       parameters: { type: "object", properties: { lufs: { type: "number", enum: [-14, -16, -23], description: "-14 réseaux, -16 plateformes, -23 télévision" },
         karaoke: { type: "boolean" }, carton: { type: "string", description: "texte du carton de fin (vide = pas de carton)" }, sous_texte: { type: "string" }, nom: { type: "string" } } } } }
   ],
+  // 01/10 — Style du projet (extension Styles de prompt) : null sans l'extension
+  styleProjet: function () {
+    var P = window.AgnesPlugins, S = P && P.isLoaded && P.isLoaded("styles") ? P.get("styles") : null;
+    return S && S.courant ? S.courant(this.core.getProject()) : null;
+  },
+  // Consignes communes des agents, adaptées au style du projet : textes écrits, musique et jeu ne sont plus imposés à tous
+  // les projets (règles d'Anthony) ; sans l'extension Styles, COMMON d'origine mot pour mot
+  common: function () {
+    var ST = this.styleProjet(), c = this.COMMON;
+    if (!ST) return c;
+    var txt = "Pas de sous-titres dans les prompts. " +
+      (ST.texteEcran ? "Textes écrits dans l'image (tasse, écran, panneau, bouton) permis : en MAJUSCULES entre apostrophes droites après reads ou labeled, par exemple a mug that reads 'TOUT VA BIEN' ; jamais entre « » (réservés aux répliques). "
+        : "Aucun texte écrit dans l'image. ") +
+      (ST.musique ? "Musique, jingles et bruitages permis : décrits en anglais, sans guillemets (a loud bell DING sound). "
+        : "Pas de musique (dialogues, musique et titres sont gérés à part). ");
+    c = c.replace("Pas de texte, sous-titres ni musique dans les prompts d'image ou de vidéo (dialogues, musique et titres sont gérés à part). ", txt);
+    c = c.replace("Jeu humain et subtil ; celui qui parle regarde son interlocuteur. ",
+      /subtle/i.test(ST.video || "") ? "Jeu humain et subtil ; celui qui parle regarde son interlocuteur. "
+        : "Jeu d'acteur selon le style du projet" + (ST.video ? " (" + ST.video + ")" : "") + " ; celui qui parle regarde son interlocuteur. ");
+    return c + "\nSTYLE DU PROJET : « " + ST.nom + " »" + (ST.note ? " — " + ST.note : "") + ". L'app ajoute elle-même ses règles à chaque prompt : ne les recopie pas.";
+  },
   managerSystem: function () {
     var self = this, st = this.project();
     var team = this.ordered().map(function (a) {
@@ -775,7 +796,12 @@ AgnesPlugins.register("atelier", {
       "- Donne toujours l'ADRESSE COMPLÈTE d'un fichier ou d'un dossier de l'ordinateur, entre accents graves : `D:\\dossier\\fiche.yaml` (elle devient cliquable et s'ouvre dans l'Explorateur).\n" +
       "- Quand une action se fait aussi dans un terminal, donne la commande prête à coller dans un bloc ```bash, avec le cd vers le bon dossier : un bouton Copier apparaît.\n" +
       "- Dans l'app, indique où cliquer (onglet → bouton).\n" +
-      "- Répliques : avant de proposer, corriger ou valider une réplique (marketing, série, court métrage), mesure-la avec mesurer_replique et donne le nombre de caractères et la durée ; propose une version qui tient le réglage. Pour remplacer une réplique dans une carte, appelle directement set_replique : sa demande d'autorisation montre le texte exact, ne demande pas de confirmation par écrit avant.\n\n" +
+      "- Répliques : avant de proposer, corriger ou valider une réplique (marketing, série, court métrage), mesure-la avec mesurer_replique et donne le nombre de caractères et la durée ; propose une version qui tient le réglage. Pour remplacer une réplique dans une carte, appelle directement set_replique : sa demande d'autorisation montre le texte exact, ne demande pas de confirmation par écrit avant.\n" +
+      (function (ST) {   // 01/10 — style du projet (extension Styles de prompt)
+        return ST ? "- STYLE DU PROJET : « " + ST.nom + " » (onglet Projet → Style des prompts) : textes écrits dans l'image " + (ST.texteEcran ? "permis" : "interdits") +
+          ", musique " + (ST.musique ? "permise" : "interdite") + ", compteur de répliques « " + ST.repliques + " ». Mesure les répliques avec le réglage du projet (mesurer_replique sans reglage). " +
+          "Dans les prompts : répliques entre « … » après un verbe de parole ; textes écrits entre apostrophes 'TOUT VA BIEN' après reads ou labeled ; bruitages sans guillemets.\n\n" : "\n";
+      })(this.styleProjet()) +
       "RÈGLES\n- Tu n'écris pas toi-même le contenu créatif : tu le confies à l'agent compétent (run_agent), avec une consigne précise.\n" +
       "- Respecte l'ordre de la chaîne : un agent ne travaille que si ses entrées existent. Propose l'étape suivante logique.\n" +
       "- Pour ranger dans l'app, lis d'abord le travail (get_output), puis utilise l'outil de destination avec le contenu exact, sans le réécrire (sauf pour extraire les fiches de la Bible).\n" +
@@ -835,7 +861,9 @@ AgnesPlugins.register("atelier", {
     if (!s) throw { display: "Carte #" + carte + " introuvable." };
     var n = Math.max(0, (+index || 1) - 1), i = -1, done = false, clean = String(texte || "").replace(/[«»"“”]/g, "").trim();
     if (!clean) throw { display: "Réplique vide." };
-    s.prompt = String(s.prompt || "").replace(/«\s*([^»]*?)\s*»|“([^”]*)”|"([^"]*)"/g, function (all, a, b, c) {
+    s.prompt = String(s.prompt || "").replace(/«\s*([^»]*?)\s*»|“([^”]*)”|"([^"]*)"/g, function (all, a, b, c, at, tout) {
+      // 01/10 — les textes écrits et bruitages entre guillemets ne comptent pas comme répliques
+      if (window.AgnesDialogue && AgnesDialogue.estReplique && !AgnesDialogue.estReplique(tout, at, all.charAt(0))) return all;
       i++; if (i !== n) return all; done = true;
       return all.charAt(0) === "«" ? "« " + clean + " »" : all.charAt(0) === "“" ? "“" + clean + "”" : '"' + clean + '"';
     });
@@ -1053,7 +1081,7 @@ AgnesPlugins.register("atelier", {
       case "mesurer_replique": {
         var rp = window.AgnesPlugins && AgnesPlugins.get("repliques");
         if (!rp || !rp.resume) return "Mesure impossible : activez l'extension « Calculateur de répliques » (⚙ → Extensions). Compte en attendant les caractères espaces compris.";
-        return rp.resume(a.texte || "", a.reglage);
+        return rp.resume(a.texte || "", a.reglage || (rp.reglageProjet ? rp.reglageProjet() : undefined));   // 01/10 : réglage du projet par défaut
       }
       case "marketing_decider_fiche": return this.marketingCall("POST", "/marketing/fiche/decision", { fiche: a.fiche, decision: a.decision }).then(function (d) {
         return "Fiche « " + d.fiche + " » : " + (d.statut === "valide" ? "VALIDÉE par l'utilisatrice — Anthony peut s'en servir" : "rejetée") + ". Fichier : `" + d.fichier + "`";

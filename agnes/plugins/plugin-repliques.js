@@ -113,6 +113,7 @@ AgnesPlugins.register("repliques", {
     var verbe = new RegExp("([A-ZÀ-Þ][\\wÀ-ÖØ-öø-ÿ'’-]+)\\s+(?:" + this.VERBES + ")\\b[^«“\"]*$");
     while ((m = re.exec(txt))) {
       var t = (m[1] || m[2] || m[3] || "").trim(), avant = txt.slice(last, m.index), low = avant.toLowerCase(), nom = "", best = -1;
+      if (window.AgnesDialogue && AgnesDialogue.estReplique && !AgnesDialogue.estReplique(txt, m.index, m[0].charAt(0))) continue;   // 01/10 — texte écrit ou bruitage
       last = m.index + m[0].length;
       if (!t) continue;
       noms.forEach(function (n) { var k = low.lastIndexOf(n.toLowerCase()); if (k > best) { best = k; nom = n; } });
@@ -169,7 +170,14 @@ AgnesPlugins.register("repliques", {
     ((shot && shot.repliquesValidees) || []).forEach(function (t) { out[t] = "vous"; });
     return out;
   },
-  reglageProjet: function () { var p = this.core.getProject(); return (p && this.get(p.repliques)) ? p.repliques : "anthony"; },
+  // Réglage du projet : celui choisi, sinon celui du style du projet (extension Styles de prompt), sinon Anthony pour un
+  // projet nommé Marketing et Série pour tous les autres (01/10 : avant, Anthony partout bloquait les répliques de série)
+  reglageProjet: function () {
+    var p = this.core.getProject(); if (p && this.get(p.repliques)) return p.repliques;
+    var P = window.AgnesPlugins, S = P && P.isLoaded && P.isLoaded("styles") ? P.get("styles").courant(p) : null;
+    if (S && this.get(S.repliques)) return S.repliques;
+    return p && /marketing/i.test(p.name || "") ? "anthony" : "serie";
+  },
   decorateCards: function () {
     var self = this, A = this.A;
     document.querySelectorAll("#shotList .shot-card[data-shot]").forEach(function (card) {

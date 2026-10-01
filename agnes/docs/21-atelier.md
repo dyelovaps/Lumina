@@ -416,3 +416,11 @@ Avant de préparer une journée marketing, le Chef demande la méthode du jour *
 carton » (Anthony ne le dit pas, réglage habituel) ou « Anthony le dit » (en dernier, dans la vidéo). Il le transmet à l'agent
 Marketing (paramètre `appel` de marketing_generate_day). Côté montage, l'appel de fin se choisit carte par carte
 ([28](28-montage.md) § 5).
+
+## Style du projet (01/10/2026)
+Les consignes communes des agents et celles du Chef suivent le **style du projet** (onglet Projet → Style des prompts,
+[29](29-styles.md)). Avant, elles imposaient à tous les projets les règles d'Anthony : aucun texte, pas de musique, jeu
+subtil. Avec « Cartoon / satire », les agents peuvent écrire les textes à l'écran entre apostrophes ('TOUT VA BIEN',
+après reads ou labeled), la musique et les bruitages (en anglais, sans guillemets), et un jeu cartoon expressif. Le Chef
+connaît le style. **mesurer_replique** sans réglage mesure avec le réglage du projet (Série pour une série, Anthony pour le
+projet Marketing), et non plus toujours avec Anthony. Sans l'extension Styles, les consignes d'origine restent mot pour mot.

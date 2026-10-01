@@ -178,6 +178,15 @@ AgnesPlugins.register("claude", {
         }
         m.cfg.save(); m.refresh(); return { image: m.cfg.image, video: m.cfg.video };
       }
+      case "styles": case "style": {
+        // 01/10 — Styles de prompt : liste, style du projet ; style nom="Cartoon / satire" (ou id) le choisit pour le projet
+        var P5 = window.AgnesPlugins, St = P5 && P5.isLoaded && P5.isLoaded("styles") ? P5.get("styles") : null;
+        if (!St) throw new Error("extension Styles de prompt inactive (⚙ → Extensions)");
+        if (a.nom) St.choisir(a.nom);
+        var cur = St.courant(), rp5 = P5.get("repliques");
+        return { projet: A.getProject().name, style: cur.nom, repliques: rp5 && rp5.reglageProjet ? rp5.reglageProjet() : cur.repliques,
+          styles: St.list.map(function (x) { return { id: x.id, nom: x.nom, textes_ecrits: !!x.texteEcran, musique: !!x.musique, repliques: x.repliques, actuel: x === cur }; }) };
+      }
       case "generer": {
         var list = this.pick(a.plans), n = 0;
         list.forEach(function (s) { var j = a.etape ? A.enqueueStage(s, a.etape) : A.enqueueShot(s); if (j) n++; });

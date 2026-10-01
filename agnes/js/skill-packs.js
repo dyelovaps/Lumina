@@ -75,6 +75,18 @@
       ["lowpoly", "3D low-poly", "3D à facettes, couleurs unies, rendu stylisé.", "low-poly 3D style, faceted geometry, flat shaded colors, minimal stylized render"],
       ["minimal", "Épuré minimaliste", "Composition simple, beaucoup d'espace, couleurs neutres.", "minimalist clean aesthetic, simple composition, generous negative space, neutral muted palette"],
       ["dreamy", "Onirique", "Lumière diffuse, halo, atmosphère de rêve.", "dreamy ethereal atmosphere, soft diffused glow, light haze, pastel highlights"]
+    ]),
+    // 01/10 — Fiche « master prompt » (Production\Serie\_MASTER_PROMPT_images_videos.md) : formules qui font accepter
+    // les prompts par ChatGPT et Grok pour une fiction cartoon ou satirique. À combiner avec le style « Cartoon / satire ».
+    pack("satire", "Cartoon & satire (master prompt)", "Satire",
+      "Formules du master prompt : fiction cartoon annoncée, satire inoffensive, textes écrits exacts, fumée au lieu d'explosion, une seule action. Évite les refus de ChatGPT et Grok.", [
+      ["fiction", "Fiction cartoon (ouverture)", "À mettre en tête de chaque prompt : personnages cartoon originaux, parodie d'émission télé. Jamais de vrai nom.", "Original fictional 3D cartoon characters, TV comedy show parody, glossy colorful 3D animation, oversized expressive heads"],
+      ["harmless", "Satire inoffensive (fin)", "À mettre en fin de prompt : ton bon enfant, sans violence.", "playful, harmless, family-friendly satire"],
+      ["written", "Textes écrits exacts", "La tasse, l'écran, le bouton : écrire le texte entre apostrophes 'TOUT VA BIEN' ; le modèle l'écrit tel quel.", "spell every written word exactly as given in single quotes, readable and unchanged, no other text, no subtitles"],
+      ["smoke", "Fumée cartoon (au lieu d'explosion)", "Remplace explosion, souffle, feu : nuage de fumée cartoon, personne n'est blessé.", "bursts into a harmless puff of cartoon smoke and confetti, everyone unharmed, faces dusted with cartoon soot"],
+      ["surprise", "Surprise comique (au lieu de panique)", "Remplace terrifié, horreur, panique.", "startled wide-eyed comic surprise, exaggerated cartoon reaction, no real fear"],
+      ["one-action", "Une seule action (vidéo)", "Une carte = un temps fort : la vidéo se concentre sur une action.", "one single clear action in this clip, simple readable staging, no extra events", "video"],
+      ["lipsync", "Répliques françaises bien jouées (vidéo)", "Bouche synchronisée sur chaque réplique, débit vif.", "clear lip sync on every French line, lively natural pace, no long pauses between lines", "video"]
     ])
   ];
 })();

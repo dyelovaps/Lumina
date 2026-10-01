@@ -333,7 +333,7 @@ AgnesPlugins.register("moteurs", {
   // - règles fixes de l'utilisatrice (jeu subtil, regard vers l'interlocuteur, net sans grain, sans texte, sans musique),
   //   ajoutées seulement si le prompt ne les contient pas déjà (ChatGPT, Grok et Lumina les reconnaissent : pas de doublon).
   quality: function (prompt, shot, proj, kind) {
-    var A = this.A, out = String(prompt || "");
+    var A = this.A, out = String(prompt || ""), ST = this.style(proj);
     if (kind === "image") {
       if (!shot._export && this.cfg.image !== "chatgpt") {
         var KIND = { personnage: "character", decor: "place", objet: "object", costume: "outfit", style: "style reference" }, list = [], styleOnly = true;
@@ -349,18 +349,39 @@ AgnesPlugins.register("moteurs", {
           (shot.lock !== false || styleOnly ? "" : ". Keep the exact face, hairstyle, skin, outfit and proportions of each character and the exact look of each place as shown in its reference") +
           "; show them in this new scene, never reproduce the reference sheets themselves";
       }
-      if (!/subtle/i.test(out)) out += ". Human, natural body language, subtle restrained expression";
+      out = this.styleRule(out, ST, "image");
       if (!/no film grain/i.test(out)) out += ". Tack-sharp, crisp image, no film grain, no noise";
-      if (!this.isSheet(shot, out) && !/no (on-screen )?text/i.test(out)) out += ". No text, no letters, no subtitles, no watermark";
+      out = this.textRule(out, shot, ST);
     } else if (kind === "video") {
       // Répliques françaises : ponctuation et caractères spéciaux qui coupent la parole (tous moteurs).
       // Le français reste intact (accents compris) : la phonétique de prod-fruits était prévue pour Google Flow.
       if (window.AgnesDialogue) out = window.AgnesDialogue.nettoie(out, { phonetique: this.cfg.phonetique === true });
-      if (!/subtle/i.test(out)) out += ". Natural human behaviour, subtle restrained acting, calm natural conversational voices, no exaggerated expressions; whoever speaks looks at the person they are talking to";
+      out = this.styleRule(out, ST, "video");
       if (!/no film grain/i.test(out)) out += ". Tack-sharp, crisp image, no film grain, no noise";
-      if (!/no music/i.test(out)) out += ". No music. No song. Ambient sound only";
+      if (!(ST && ST.musique) && !/no music/i.test(out)) out += ". No music. No song. Ambient sound only";
     }
     return out;
+  },
+
+  // 01/10 — Style du projet (extension Styles de prompt) ; sans elle : null = règles d'avant
+  style: function (proj) {
+    var P = window.AgnesPlugins, S = P && P.isLoaded && P.isLoaded("styles") ? P.get("styles") : null;
+    return S && S.courant ? S.courant(proj) : null;
+  },
+  // Règle de jeu du style (images ou vidéos), ajoutée une seule fois ; sans style : règle réaliste d'avant
+  styleRule: function (out, ST, kind) {
+    var rule = ST ? String(ST[kind] || "").trim().replace(/[.\s]+$/, "") : kind === "image" ? "Human, natural body language, subtle restrained expression"
+      : "Natural human behaviour, subtle restrained acting, calm natural conversational voices, no exaggerated expressions; whoever speaks looks at the person they are talking to";
+    if (!rule) return out;
+    if (out.toLowerCase().indexOf(rule.slice(0, 40).toLowerCase()) !== -1) return out;
+    if (/subtle/i.test(rule) && /subtle/i.test(out)) return out;   // comme avant : l'auteur a déjà écrit sa consigne de jeu
+    return out + ". " + rule;
+  },
+  // Textes dans l'image : « aucun texte » (d'origine) ou, si le style garde les textes écrits, seulement pas de sous-titres
+  textRule: function (out, shot, ST) {
+    if (this.isSheet(shot, out)) return out;
+    if (ST && ST.texteEcran) return /no subtitles/i.test(out) ? out : out + ". Spell every written word exactly as given, no other text, no subtitles, no watermark";
+    return /no (on-screen )?text/i.test(out) ? out : out + ". No text, no letters, no subtitles, no watermark";
   },
 
   // Blob d'un élément de bibliothèque, réduit, en data URL
@@ -393,7 +414,7 @@ AgnesPlugins.register("moteurs", {
       // Règles de tous les projets : image nette sans grain, aucun texte incrusté (sauf le bandeau nom d'une planche).
       var prompt = A.buildPrompt(shot, proj), planche = self.isSheet(shot, prompt);
       if (!/no film grain/i.test(prompt)) prompt += ". Tack-sharp, crisp image, no film grain, no noise";
-      if (!planche && !/no (on-screen )?text/i.test(prompt)) prompt += ". No text, no letters, no subtitles, no watermark";
+      prompt = self.textRule(prompt, shot, self.style(proj));
       function one(n) {
         var tag = wanted > 1 ? " (" + n + "/" + wanted + ")" : "";
         return fetch(pont + "/codex/image", { method: "POST", headers: { "Content-Type": "application/json" },

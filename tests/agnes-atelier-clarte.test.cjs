@@ -283,12 +283,19 @@ test('garde-fou du Chef : une réplique hors réglage ou avec deux-points lui re
   const { P, context } = atelier();
   const R = load('plugin-repliques.js').plugins.repliques;
   R.reglages = R.DEFAULTS.map((r) => Object.assign({}, r));
-  R.core = { getProject: () => ({}) };
+  let proj = { name: 'Marketing' };
+  R.core = { getProject: () => proj };
   context.AgnesPlugins.get = (id) => (id === 'repliques' ? R : null);
   const ok = 'Ton logo apparaît encore en premier ? Montre le problème directement, par exemple un client qui ne rappelle jamais après ton devis, et ton audience comprend aussitôt le sujet.';
   assert.equal(P.repliqueHorsReglage({ replique: ok }), '');
   assert.match(P.repliqueHorsReglage({ replique: 'Trop court.' }), /^REFUSÉ avant de la montrer.*trop court/);
   assert.match(P.repliqueHorsReglage({ replique: ok.replace('par exemple', 'ex:') }), /deux-points/);
+  // 01/10 — projet de série (pas nommé Marketing) : réglage Série, une réplique courte passe
+  proj = { name: 'République Circus — Ep1' };
+  assert.equal(R.reglageProjet(), 'serie');
+  assert.equal(P.repliqueHorsReglage({ replique: 'Nous aussi.' }), '');
+  proj = { name: 'République Circus — Ep1', repliques: 'anthony' };   // réglage choisi : respecté
+  assert.match(P.repliqueHorsReglage({ replique: 'Nous aussi.' }), /trop court/);
   context.AgnesPlugins.get = () => null;                     // sans le calculateur : aucun blocage
   assert.equal(P.repliqueHorsReglage({ replique: 'x' }), '');
 });

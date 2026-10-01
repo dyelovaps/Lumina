@@ -95,6 +95,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | [25 — Mentions @ et #](docs/25-mentions.md) | `@[Personnage]` coche sa référence, `#[Skill]` place un skill dans le texte ; suggestions en tapant @ ou # |
 | [24 — Moteurs de génération](docs/24-moteurs.md) | Images par ChatGPT (via le pont local) ou Agnes, vidéos par Grok ou Google Flow (via Lumina) ou Agnes |
 | [23 — Lumina et sauvegarde](docs/23-lumina.md) | Ouvrir Agnes dans l'extension Lumina, plans → Grok Imagine, rendus → prises, pilote auto ; sauvegarde complète et restauration |
+| [29 — Styles de prompt](docs/29-styles.md) | Onglet Projet → Style des prompts : Réaliste — Marketing, Série réaliste, Cartoon / satire et les vôtres (ajouter, modifier, supprimer) ; règles ajoutées aux prompts (jeu, textes écrits, musique), compteur de répliques et consignes de l'Atelier IA ; textes écrits et bruitages entre guillemets distingués des répliques |
 | [28 — Montage](docs/28-montage.md) | Pôle Montage (sous-onglets Assemblage, Voix, Son, AutoCaption, Étalonnage, Épisodes, Publication) et montage par carte : 1080×1920, voix au maximum sans casse (-14 LUFS), vitesse, carton de fin, sortie dans `Final` avec compte rendu |
 | [27 — Calculateur de répliques](docs/27-repliques.md) | Onglet Répliques : caractères, durée, ce qu'il faut ajouter ou retirer ; réglages modifiables (TikTok 10 s, série, court métrage, voix-off), calibrage de la vitesse ; utilisé par le Chef de l'Atelier |
 | [26 — Classement des cartes](docs/26-classement.md) | Bouton 📁 Classer : image, vidéo et fiche (prompts, notes, carton, description, hashtags) copiées dans Projet / Saison / Épisode sur votre ordinateur |
@@ -201,6 +202,13 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
 ---
 
 ## Nouveautés
+
+### 3.12 — octobre 2026
+- **Styles de prompt** ([29](docs/29-styles.md)) : les règles ajoutées automatiquement aux prompts ne sont plus celles d'Anthony pour tous les projets. Onglet **Projet → Style des prompts** : choisir le style du projet (Réaliste — Marketing, Série réaliste, Cartoon / satire) et ajouter, modifier, dupliquer ou supprimer des styles (règles images et vidéos, textes écrits gardés, musique permise, compteur de répliques). Projet sans style : Marketing si son nom contient « Marketing », sinon Série réaliste.
+- **Répliques et textes écrits** : « la tasse marked “TOUT VA BIEN” », « un écran reading “BUDGET 2027” », « a loud “DING !” » ne sont plus pris pour des répliques (compteur des cartes, nettoyage avant Grok, set_replique du Chef).
+- **Compteur de répliques** : un projet de série ne prend plus le réglage Anthony (150 à 180 caractères) par défaut, ce qui bloquait les répliques courtes.
+- **Atelier IA** : consignes des agents et du Chef selon le style du projet ; mesurer_replique prend le réglage du projet.
+- **Pack de skills « Cartoon & satire (master prompt) »** (Skills → Import en masse → Packs) et fiche `Production\Serie\_MASTER_PROMPT_images_videos.md`.
 
 ### 3.11 — octobre 2026
 - **Appel de fin au choix** ([28](docs/28-montage.md)) : par carte, carton seul, carton + voix-off (ElevenLabs de l'onglet Voix, « ma voix » au micro jamais par défaut, ou fichier ; après la voix du personnage, dernière image prolongée s'il le faut) ou pas de carton ; côté marketing, le Chef demande chaque jour si Anthony dit l'appel ou s'il est sur le carton.

@@ -1,8 +1,8 @@
 # 28 — Montage (pôle de montage, montage par carte)
 
-Extension **Montage** (`plugins/plugin-montage.js`, active d'office, 01/10/2026). Étapes 1 à 4 du cahier « montage par
-carte » : montage par carte, sous-titres karaoké, modèles et favoris, appel de fin. Étape 5 à venir : commandes pour l'agent
-et pour Claude, puis compilation de plusieurs cartes.
+Extension **Montage** (`plugins/plugin-montage.js`, active d'office, 01/10/2026). Étapes 1 à 5 du cahier « montage par
+carte » : montage par carte, sous-titres karaoké, modèles et favoris, appel de fin, puis (étape 5) compilation au choix
+(clips d'origine, vidéos finales, ou épisode de série) et commandes pour Claude et le Chef de l'Atelier (§ 6 et § 7).
 
 [← Retour au README](../README.md)
 
@@ -112,41 +112,132 @@ montage le demande. Au montage, elle est rangée dans `<journée>\Audio\Carte NN
 paramètre `appel` de `/marketing/journee`). Le Chef de l'Atelier le demande avec la méthode du jour : « sur le carton »
 (Anthony ne le dit pas, réglage habituel `settings.yaml → cta.mode`) ou « Anthony le dit » (en dernier, dans la vidéo Flow,
 tiré des listes d'appels sans répétition dans la journée). Dans ce cas, choisissez « Pas de carton » (ou un carton qui
-reprend l'appel) dans Montage. À décider : ajouter « Like et partage » et « La vidéo complète sur mon profil » aux listes
-(le second est à la première personne, contraire à la règle actuelle des appels).
+reprend l'appel) dans Montage. Listes d'appels de l'agent (décidé le 01/10) : en plus des appels « Abonne-toi… », « Suis la
+page… », il y a **« Like et partage. »** et **« Retrouve la vidéo complète sur mon profil. »** (tutoiement gardé ; « mon profil »
+est la seule première personne permise, et seulement dans l'appel).
 
-## 6. Pour un agent ou pour Claude (même moteur, même résultat)
-Depuis le dossier `prod-fruits` :
+## 6. Compilation (étape 5) — au choix
+Onglet **Montage → Assemblage**, en haut : **« Compiler à partir de »** :
+- **Clips d'origine** (réglage d'origine) : l'Assemblage habituel, exactement comme avant (rendu dans le navigateur, kit
+  FFmpeg, voix, son, étalonnage, sous-titres d'AutoCaption) — voir [07](07-assemblage.md) ;
+- **Vidéos finales du Montage** : l'Assemblage habituel est masqué (rien n'est perdu ; revenir à « Clips d'origine » le
+  ré-affiche) et un encart liste les cartes. Seules les cartes **déjà montées** (Par carte) se cochent. Le pont met leurs
+  vidéos finales bout à bout, dans l'ordre du storyboard, **avec** leur voix, leur carton et leurs sous-titres.
+
+| Réglage | Détail |
+|---|---|
+| Transition | Coupe franche (défaut), fondu enchaîné ou fondu au noir ; durée 0,3 à 1 s (la vidéo raccourcit d'autant à chaque raccord) |
+| Image | Taille et cadence de la première vidéo ; une vidéo d'une autre forme est ajustée sans recadrage (bandes noires, signalé) |
+| Son | Le niveau des finals est gardé (-14 LUFS) ; la mesure de la compilation est écrite dans le compte rendu |
+| Sous-titres | Les `.srt` des finals sont recalés et réunis en un seul `.srt` (une carte sans `.srt` est signalée) |
+| Nom | « Compilation - Cartes 01 à 03 » par défaut, ou le vôtre ; jamais écrasée sauf « Remplacer » (sinon « (2) ») |
+
+Sortie : dans le dossier `Final` de la première carte, avec `… - compte rendu.txt` (ordre, début de chaque vidéo, son,
+alertes). **Voir le fichier** ouvre l'Explorateur. Le bouton **« Compiler les cartes montées (Assemblage) »** de Par carte
+ouvre directement ce choix. Chaque projet garde son choix et ses réglages de compilation. Jusqu'à 300 vidéos.
+
+> « Vidéos finales » est fait pour les **posts courts** (marketing) : chaque carte y a déjà son volume réglé à -14 LUFS et
+> son carton. Pour une **série**, prenez « Épisode de série » ci-dessous.
+
+### Épisode de série (troisième choix)
+**« Épisode de série (plans de l'Assemblage, son réglé sur tout l'épisode) »** : l'Assemblage reste affiché, c'est lui qui
+règle les plans ; le pont local en fait le rendu avec ffmpeg, en qualité maximale.
+
+| Repris de l'Assemblage | Détail |
+|---|---|
+| Plans | Les plans **cochés**, dans l'ordre du storyboard, avec leur prise choisie (vidéo ou image fixe) |
+| Début / Fin | La découpe de chaque vidéo |
+| Images fixes | Leur durée (cartons d'ouverture et de fin, récap « Précédemment dans… » de l'extension **Épisodes** compris : ce sont des plans de l'Assemblage) |
+| Transitions | Celle de **chaque plan** (cut, fondu enchaîné, fondu au noir) et sa durée ; comme l'Assemblage, une transition dure au plus la moitié des deux plans |
+| Format | Format, résolution, images/s et cadrage (remplir ou adapter) des réglages de l'Assemblage |
+| Étalonnage | Celui de l'onglet Étalonnage (sauf la LUT), plans exclus compris |
+
+| Réglage propre à l'épisode | Détail |
+|---|---|
+| **Volume de l'épisode** | Réglé **une seule fois sur tout l'épisode** (les nuances restent : un chuchotement reste plus bas qu'un cri) : -14 LUFS (réseaux, défaut), -16 LUFS (plateformes), -23 LUFS (télévision, EBU R128) ; crête -1,5 dBTP |
+| Sous-titres karaoké | Au choix : Whisper écoute chaque plan une fois (gardé sur la carte), le texte exact des répliques (« … » du prompt) est calé, ramené au temps de l'épisode ; style AutoCaption ; `.srt` à côté |
+| Carton de fin | Au choix : texte + sous-texte, style du carton de Par carte ; les sous-titres s'arrêtent à son arrivée (réglage de Par carte) |
+| Nom | Le vôtre, sinon le nom du projet ; jamais écrasé sauf « Remplacer » |
+
+Ce qui **n'est pas repris** (un avertissement s'affiche) : les voix attachées aux plans (onglet Voix), la musique de l'onglet
+Son et les sous-titres incrustés d'AutoCaption → pour eux, utilisez « Clips d'origine » (Assemblage ou kit FFmpeg).
+Les plans doivent être **classés** (bouton Classer) ; une vidéo absente de Production y est copiée, les images fixes y sont
+déposées dans `<épisode>\Images\`. Sortie : `<épisode>\Final\<nom>.mp4` + compte rendu (plans, débuts, son avant / après).
+
+## 7. Pour un agent ou pour Claude (même moteur, même résultat)
+**Par Agnes (Piloté par Claude)** — Agnes ouverte, « Claude : actif » ; mêmes fonctions que les boutons, mêmes réglages :
+```bash
+cd "D:\Rmaopn\a classser\Dernier_projet\TitTok_Histoires_vraie\_BlackLow\Production\App\prod-fruits"
+python agnes.py etat_montage
+python agnes.py modeles_montage
+python agnes.py monter cartes=1,2,3 resserrer=oui karaoke=oui
+python agnes.py compiler cartes=tous transition=fondu
+```
+`monter` : `cartes=1,2` ou `cartes=tous` (cartes classées), `modele="Marketing"` (appliqué au projet d'abord), `resserrer`,
+`karaoke`, `appel=carton|voixoff|aucun` (gardés sur les cartes comme un clic), `--json '{"reglages":{"vitesse":1.1}}'`.
+**Aucune voix-off n'est générée** par une commande : une carte « Carton + voix-off » sans voix-off est refusée (faites-la d'un
+clic dans Par carte). Le karaoké passe par Whisper dans Agnes, comme au clic.
+`compiler` : `cartes=…|tous` (toutes les cartes montées), `transition=cut|fondu|noir`, `duree_transition=0.5`, `nom="…"`,
+`remplacer=oui`.
+`episode` (série, plans cochés de l'Assemblage) : `lufs=-14|-16|-23`, `karaoke=oui`, `carton="À suivre…"`,
+`sous_texte="Épisode 2"`, `nom="Ep01"`, `remplacer=oui` :
+```bash
+python agnes.py episode lufs=-16 karaoke=oui carton="À suivre…"
+```
+
+**Chef de l'Atelier** (sans abonnement Claude) : outils `montage_etat` et `montage_modeles` (lecture), `monter_cartes`,
+`compiler_finales` et `rendre_episode` (**avec votre autorisation**, à votre demande seulement). Montage désactivé : il vous le dit, rien ne casse.
+
+**Sans Agnes** (ligne de commande du pont) :
 ```bash
 cd "D:\Rmaopn\a classser\Dernier_projet\TitTok_Histoires_vraie\_BlackLow\Production\App\prod-fruits"
 python montage_carte.py "Marketing/Accroche/20260930 - Accroche_01/Video/Carte 01 - Anthony.mp4" --vitesse 1.1
+python montage_carte.py compiler "Marketing/Accroche/20260930 - Accroche_01/Final/Carte 01 - Anthony - final.mp4" "Marketing/Accroche/20260930 - Accroche_01/Final/Carte 02 - Anthony - final.mp4" --transition fondu
+python montage_carte.py episode "Serie/MaSerie/Ep01/Video/Plan 01.mp4" "Serie/MaSerie/Ep01/Video/Plan 02.mp4" --format 16:9 --lufs -16 --transition fondu
 ```
-Options : `--carton "…"` `--sous-texte "…"` (sinon lus dans la fiche de la carte, `Fiches\Carte 01 - Anthony.md`),
+Options de `episode` : `--transition cut|fondu|noir` (entre tous les plans), `--duree-transition 0.6`, `--format`,
+`--cadrage remplir|adapter`, `--fps 30`, `--lufs -14`, `--duree-image 3` (plans image), `--carton "…"`, `--sous-texte "…"`,
+`--nom`, `--remplacer`, `--json`.
+
+### Détail du moteur
+Options du montage d'une carte : `--carton "…"` `--sous-texte "…"` (sinon lus dans la fiche de la carte, `Fiches\Carte 01 - Anthony.md`),
 `--sans-carton`, `--duree-carton 1.8`, `--police Montserrat-ExtraBold.ttf`, `--taille 76`, `--couleur "#FFFFFF"`,
 `--fond "#000000"`, `--fond-opacite 0.45`, `--assombrir 0.2`, `--position centre|bas`, `--animation fondu|machine`,
 `--format auto|9:16|16:9|1:1|4:5`, `--resserrer` (+ `--pauses-longues 1`, `--pause-longue 0.4`, `--pause-courte 0.15`),
 `--mots mots.json` (mots minutés de Whisper `[{text, start, end}]` : active le karaoké) `--replique "…"` (sinon lue dans la fiche),
 `--appel-audio "<son sous Production>"` (voix-off de l'appel), `--sans-voix`, `--remplacer`, `--json`.
 En ligne de commande sans Agnes, les sous-titres ont un style par défaut (Montserrat, mot prononcé jaune).
+Options de la compilation (`compiler <vidéos finales…>`) : `--transition cut|fondu|noir`, `--duree-transition 0.5`, `--nom "…"`,
+`--remplacer`, `--json`.
 
 Routes du pont (`montage_carte.py`) : `GET /montage/polices`, `POST /montage/apercu {video, reglages}` (coupes, durée finale,
-début du carton, mots calés, prolongation — rien n'est écrit), `POST /montage/carte {video, reglages}`, `GET /montage/etat?id=…`.
+début du carton, mots calés, prolongation — rien n'est écrit), `POST /montage/carte {video, reglages}`,
+`POST /montage/compilation {videos, reglages}` (finals sous Production, chemins relatifs ou absolus),
+`POST /montage/episode/plan {plans, reglages}` (durées, débuts, mots calés, sans rendu ; 404 + `manquants` si un plan
+n'est pas dans Production), `POST /montage/episode {plans, reglages}`, `GET /montage/etat?id=…`
+(montages, compilations et épisodes passent par la même file : un rendu à la fois).
 La vidéo et la voix-off sont des chemins relatifs au dossier Production ; le moteur n'écrit que dans `Final`.
 
 Fonctions offertes aux autres extensions :
-- Montage : `AgnesPlugins.get("montage").monterCarte(1, { vitesse: 1.1 })` ;
+- Montage : `AgnesPlugins.get("montage").monterCarte(1, { vitesse: 1.1 })` ; étape 5 : `etatCartes()`, `listeModeles()`,
+  `monterCartes("1,2"|[1,2]|"tous", { modele, reglages, resserrer, karaoke, appel })`, `compilerFinales(cartes, { transition,
+  duree_transition, nom, remplacer })`, `compilerEpisode({ ep_lufs, ep_karaoke, ep_carton, ep_carton_texte, ep_carton_sous, nom,
+  remplacer })` (utilisées par Piloté par Claude et par le Chef de l'Atelier) ;
 - AutoCaption : `chunksFromWords`, `assFromChunks`, `srtFromChunks`, `temoin` (style et dessin des sous-titres), `modeles`,
   `appliquerModele`, `nouveauModele` (voir [22](22-autocaption.md)) ;
 - Extraire : `motsBlob(blob, onEtat)` → `[{ text, start, end }]` (Whisper local ; si le modèle réglé ne sait pas minuter les mots,
   un modèle « _timestamped » est essayé) ;
 - Voix : `speak(texte, rôle)`, `cast()`, `micro()` → `{ arreter() → Blob }`.
 
-Données : réglages du projet dans `projet.montageCarte` ; modèles dans `core.store` (« montage:modeles », « captions:modeles ») ;
+Données : réglages du projet dans `projet.montageCarte` (et `compilation`, `derniereCompilation`) ; modèles dans `core.store` (« montage:modeles », « captions:modeles ») ;
 voix-off des cartes dans `core.store` (« montage:appel:<carte> ») ; tout est dans la Sauvegarde complète.
 Le CSS est dans `css/studio.css` (sections « Montage » et « AutoCaption — vos modèles et favoris »).
 
-## 7. Tests
-- `prod-fruits\test_montage_carte.py` (vidéos synthétiques : format, coupes, carton, karaoké, taille des sous-titres, voix-off) :
+## 8. Tests
+- `prod-fruits\test_montage_carte.py` (vidéos synthétiques : format, coupes, carton, karaoké, taille des sous-titres, voix-off,
+  compilation : coupe, fondu, .srt recalés, refus hors Production ; épisode : coupes début/fin, image fixe, transition par
+  plan, son réglé une fois, karaoké au temps de l'épisode, carton, étalonnage refusé s'il est douteux) :
   `python -m unittest test_montage_carte -v`
-- Lumina : `tests/agnes-montage.test.cjs` (dans `npm test`).
-- Agent Marketing : `tests/test_appel.py` (`python -m pytest -q`).
+- Lumina : `tests/agnes-montage.test.cjs` et `tests/agnes-montage-commandes.test.cjs` (compilation, commandes de Claude, outils
+  du Chef ; dans `npm test`).
+- Agent Marketing : `tests/test_appel.py`, `tests/test_validator.py` (appel « mon profil ») (`python -m pytest -q`).

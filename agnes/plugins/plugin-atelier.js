@@ -743,7 +743,23 @@ AgnesPlugins.register("atelier", {
     { type: "function", function: { name: "marketing_notes_cartes", description: "Recopie sur les cartes du Storyboard la fiche de chaque vidéo d'un document « Marketing — date » (réplique, montage, CARTON DE FIN, publication, description, hashtags), dans « Notes » de la carte. Les prompts ne changent pas. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { document: { type: "string" }, cartes: { type: "array", items: { type: "number" }, description: "Numéros des cartes, dans l'ordre des vidéos 01, 02, 03" } }, required: ["document", "cartes"] } } },
     { type: "function", function: { name: "marketing_extraire_fiche", description: "Agent Marketing : extrait les notions d'une formation (documents + transcriptions). La fiche passe « à valider » : seule l'utilisatrice la valide. Refusé si la fiche a déjà des notions, sauf ecraser (copie gardée). Nécessite l'autorisation.",
-      parameters: { type: "object", properties: { fiche: { type: "string" }, ecraser: { type: "boolean" } }, required: ["fiche"] } } }
+      parameters: { type: "object", properties: { fiche: { type: "string" }, ecraser: { type: "boolean" } }, required: ["fiche"] } } },
+    // Montage (01/10, étape 5) : mêmes fonctions que les boutons de l'extension Montage (si elle est active)
+    { type: "function", function: { name: "montage_etat", description: "Montage : état du montage des cartes (vidéo classée ou non, texte du carton, appel de fin, voix-off prête ou non, pauses resserrées, sous-titres karaoké, vidéo finale déjà faite), modèle et réglages du projet. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "montage_modeles", description: "Montage : modèles de montage et de carton enregistrés (favoris en tête) et ceux du projet. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "monter_cartes", description: "Montage : fabrique la vidéo finale de cartes (voix au maximum, vitesse, carton, sous-titres karaoké, pauses resserrées), dans le dossier Final de la journée. Ne génère aucune voix-off : une carte « Carton + voix-off » sans voix-off est refusée (l'utilisatrice la fait d'un clic). À utiliser seulement quand l'utilisatrice demande le montage. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { cartes: { type: "array", items: { type: "number" }, description: "Numéros des cartes (#N) ; vide = toutes les cartes classées" },
+        modele: { type: "string", description: "Nom d'un modèle de montage ou de carton à appliquer d'abord au projet (montage_modeles)" },
+        resserrer: { type: "boolean", description: "Resserrer les pauses sur ces cartes" }, karaoke: { type: "boolean", description: "Sous-titres karaoké sur ces cartes" },
+        appel: { type: "string", enum: ["carton", "voixoff", "aucun"], description: "Appel de fin de ces cartes : carton, carton + voix-off (voix-off déjà faite), ou pas de carton" } } } } },
+    { type: "function", function: { name: "compiler_finales", description: "Montage : met bout à bout les vidéos finales de cartes déjà montées (ordre du storyboard), avec coupe franche, fondu enchaîné ou fondu au noir ; sous-titres .srt recalés ; sortie dans Final. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { cartes: { type: "array", items: { type: "number" }, description: "Numéros des cartes ; vide = toutes les cartes montées" },
+        transition: { type: "string", enum: ["cut", "fondu", "noir"] }, duree_transition: { type: "number", description: "secondes (0,2 à 1,5)" }, nom: { type: "string", description: "nom du fichier, facultatif" } } } } },
+    { type: "function", function: { name: "rendre_episode", description: "Montage : rend l'épisode de série à partir des plans cochés de l'Assemblage (ordre, début/fin, images fixes, transitions par plan, étalonnage, cartons de l'extension Épisodes), son réglé une seule fois sur tout l'épisode, sous-titres karaoké et carton de fin au choix ; sortie dans Final. Les voix attachées et la musique de l'onglet Son ne sont pas reprises. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { lufs: { type: "number", enum: [-14, -16, -23], description: "-14 réseaux, -16 plateformes, -23 télévision" },
+        karaoke: { type: "boolean" }, carton: { type: "string", description: "texte du carton de fin (vide = pas de carton)" }, sous_texte: { type: "string" }, nom: { type: "string" } } } } }
   ],
   managerSystem: function () {
     var self = this, st = this.project();
@@ -776,6 +792,7 @@ AgnesPlugins.register("atelier", {
       "l'étape Le lot devient update_shots avec document (nom du document) et cartes (leurs numéros, dans l'ordre 01, 02, 03). Ne crée de nouvelles cartes qu'avec l'accord explicite de l'utilisateur. " +
       "Ressources locales (formations sur l'ordinateur) : marketing_ressources pour voir les formations « à transcrire », transcrire_ressource (une vidéo à la fois : Extraire → Whisper, puis contrôle de la sortie par l'agent Marketing), puis marketing_extraire_fiche ; ne valide jamais une fiche toi-même : c'est l'utilisateur qui valide. " +
       "Sujet absent des ressources et de la veille : marketing_recherche_sujet (internet, forums = témoignages, fiche à valider). " +
+      "Montage (si l'extension Montage est active) : montage_etat pour voir où en sont les cartes ; monter_cartes, compiler_finales et rendre_episode (série : plans de l'Assemblage, son réglé sur tout l'épisode) seulement quand l'utilisatrice demande le montage ou la compilation ; tu ne génères jamais de voix-off : si une carte en attend une, dis-lui de cliquer « Faire la voix-off » dans Montage → Par carte. " +
       "Fiches à valider : quand l'utilisateur veut valider ou rejeter une fiche, lis-la (marketing_fiche), résume ses notions en clair, donne l'adresse du fichier et la commande, puis marketing_decider_fiche : il voit les notions dans l'autorisation et décide en cliquant. Ne le propose jamais sans sa demande. " +
       "Journée déjà publiée en partie mais écrite avec l'ancien procédé : marketing_generate_day avec la même date et garder (ex. « educatif »), puis update_shots document + cartes pour les cartes existantes. " +
       "Après la création des cartes d'une journée (ou update_shots document), marketing_notes_cartes recopie réplique, carton de fin, description et hashtags sur les cartes. " +
@@ -896,7 +913,7 @@ AgnesPlugins.register("atelier", {
   },
   NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true,
     generate_shots: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true, marketing_recherche_sujet: true,
-    marketing_decider_fiche: true, marketing_notes_cartes: true, set_replique: true },
+    marketing_decider_fiche: true, marketing_notes_cartes: true, set_replique: true, monter_cartes: true, compiler_finales: true, rendre_episode: true },
   handleCalls: function (calls, depth) {
     var self = this, st = this.project(), results = [];
     function next(i) {
@@ -957,6 +974,16 @@ AgnesPlugins.register("atelier", {
       case "marketing_decider_fiche": return (a.decision === "rejeter" ? "REJETER" : "VALIDER") + " la fiche « " + (a.fiche || "?") + " » (votre décision : relisez les notions ci-dessous)";
       case "marketing_notes_cartes": return "Recopier réplique, carton de fin, description et hashtags de « " + (a.document || "?") + " » dans les notes des cartes " + (a.cartes || []).map(function (x) { return "#" + x; }).join(", ");
       case "marketing_extraire_fiche": return "Agent Marketing : extraire les notions de « " + (a.fiche || "?") + " »" + (a.ecraser ? " (en remplaçant les notions actuelles, copie gardée)" : "") + " — fiche à valider ensuite";
+      case "montage_etat": return "Lire l'état du montage des cartes";
+      case "montage_modeles": return "Lire les modèles de montage";
+      case "monter_cartes": return "Monter " + ((a.cartes || []).length ? "les cartes " + a.cartes.map(function (x) { return "#" + x; }).join(", ") : "toutes les cartes classées") +
+        " (vidéo finale dans le dossier Final)" + (a.modele ? " avec le modèle « " + a.modele + " »" : "") +
+        (a.resserrer !== undefined ? (a.resserrer ? ", pauses resserrées" : ", pauses gardées") : "") + (a.karaoke !== undefined ? (a.karaoke ? ", sous-titres karaoké" : ", sans sous-titres") : "") +
+        (a.appel ? ", appel : " + ({ carton: "carton", voixoff: "carton + voix-off déjà faite", aucun: "pas de carton" }[a.appel] || a.appel) : "");
+      case "compiler_finales": return "Compiler les vidéos finales " + ((a.cartes || []).length ? "des cartes " + a.cartes.map(function (x) { return "#" + x; }).join(", ") : "de toutes les cartes montées") +
+        " (" + ({ fondu: "fondu enchaîné", noir: "fondu au noir" }[a.transition] || "coupe franche") + ")" + (a.nom ? ", fichier « " + a.nom + " »" : "");
+      case "rendre_episode": return "Rendre l'épisode à partir des plans de l'Assemblage (son réglé sur tout l'épisode" + (a.lufs ? ", " + a.lufs + " LUFS" : "") + ")" +
+        (a.karaoke ? ", sous-titres karaoké" : "") + (a.carton ? ", carton de fin « " + a.carton + " »" : "") + (a.nom ? ", fichier « " + a.nom + " »" : "");
       default: return c.name;
     }
   },
@@ -1032,12 +1059,53 @@ AgnesPlugins.register("atelier", {
         return "Fiche « " + d.fiche + " » : " + (d.statut === "valide" ? "VALIDÉE par l'utilisatrice — Anthony peut s'en servir" : "rejetée") + ". Fichier : `" + d.fichier + "`";
       });
       case "marketing_notes_cartes": return this.applyCardNotes(a.document, a.cartes);
+      case "montage_etat": case "montage_modeles": case "monter_cartes": case "compiler_finales": case "rendre_episode": return this.montageTool(c.name, a);
       case "marketing_extraire_fiche": return this.marketingCall("POST", "/marketing/extraire", { fiche: a.fiche, ecraser: !!a.ecraser }).then(function (d) {
         return "Fiche « " + d.fiche + " » : " + d.notions + " notion(s), " + d.blocages + " blocage(s) du garde-fou, statut " + d.statut +
           " (l'utilisatrice valide).\n" + d.apercu.map(function (x) { return "- " + x; }).join("\n");
       });
     }
     return "Outil inconnu.";
+  },
+  // Montage (étape 5) : appelle l'extension Montage sans la modifier ; inactive = message, rien ne casse
+  montageTool: function (nom, a) {
+    var P = window.AgnesPlugins, M = P && P.isLoaded && P.isLoaded("montage") ? P.get("montage") : null;
+    if (!M || !M.monterCartes) return "Montage indisponible : l'extension Montage est désactivée (⚙ → Extensions). Dis-le à l'utilisatrice.";
+    var fr = function (x) { return String(x).replace(".", ","); }, cartes = a.cartes && a.cartes.length ? a.cartes : "tous";
+    if (nom === "montage_etat") {
+      var e = M.etatCartes();
+      return "Modèle du projet : " + (e.modele || "aucun") + "\n" + (e.cartes.length ? e.cartes.map(function (c) {
+        return "#" + c.carte + " " + c.titre + " · vidéo : " + (c.video || "aucune") + " · carton : « " + (c.carton || "") + " »" + (c.sous_texte ? " + « " + c.sous_texte + " »" : "") +
+          " · appel : " + c.appel + (c.voix_off ? " (voix-off " + c.voix_off + ")" : "") + (c.resserrer ? " · pauses resserrées" : "") + (c.karaoke ? " · karaoké" : "") +
+          " · " + (c.final ? "MONTÉE le " + c.final.date + " : `" + c.final.chemin + "`" : "pas encore montée");
+      }).join("\n") : "Aucune carte.");
+    }
+    if (nom === "montage_modeles") {
+      var m = M.listeModeles(), l = function (x) { return x.length ? x.map(function (y) { return y.nom + (y.favori ? " (favori)" : ""); }).join(", ") : "aucun"; };
+      return "Modèles de montage : " + l(m.montage) + "\nModèles de carton : " + l(m.carton) + "\nCe projet : montage " + (m.projet.montage || "sans modèle") + ", carton " + (m.projet.carton || "sans modèle");
+    }
+    if (nom === "monter_cartes") return M.monterCartes(cartes, { modele: a.modele, resserrer: a.resserrer, karaoke: a.karaoke, appel: a.appel }).then(function (out) {
+      return out.map(function (r) {
+        return "#" + r.carte + " : " + (r.ok ? "montée → `" + r.chemin + "`" + (r.lufs != null ? " (" + fr(r.lufs) + " LUFS, crête " + fr(r.crete) + " dBTP)" : "") +
+          (r.alertes.length ? " — à vérifier : " + r.alertes.join(" ; ") : "") : "ÉCHEC : " + r.erreur);
+      }).join("\n");
+    });
+    if (nom === "rendre_episode") {
+      if (!M.compilerEpisode) return "Montage trop ancien : rechargez Agnes.";
+      var re = { ep_karaoke: !!a.karaoke, ep_carton: !!a.carton, ep_carton_texte: a.carton || "", ep_carton_sous: a.sous_texte || "" };
+      if (a.lufs) re.ep_lufs = Number(a.lufs);
+      if (a.nom) re.nom = a.nom;
+      return M.compilerEpisode(re).then(function (r) {
+        return "Épisode prêt : `" + r.chemin + "` (" + fr(r.duree) + " s, " + r.plans.length + " plans, " + fr(r.son.apres_lufs) + " LUFS)" +
+          (r.sous_titres && r.sous_titres.srt ? "\nSous-titres : `" + r.sous_titres.srt + "`" : "") + "\nCompte rendu : `" + r.compte_rendu + "`" +
+          (r.alertes.length ? "\nÀ vérifier : " + r.alertes.join(" ; ") : "");
+      });
+    }
+    var rc = {}; ["transition", "duree_transition", "nom"].forEach(function (k) { if (a[k] !== undefined) rc[k] = a[k]; });
+    return M.compilerFinales(cartes, rc).then(function (r) {
+      return "Compilation prête : `" + r.chemin + "` (" + fr(r.duree) + " s, " + r.transition + (r.son ? ", " + fr(r.son.lufs) + " LUFS" : "") + ")" +
+        (r.srt ? "\nSous-titres : `" + r.srt + "`" : "") + "\nCompte rendu : `" + r.compte_rendu + "`" + (r.alertes.length ? "\nÀ vérifier : " + r.alertes.join(" ; ") : "");
+    });
   },
   setBusy: function (t) { this.busy = !!t && !/autorisation/.test(t); var el = document.getElementById("atBusy"); if (el) el.textContent = t || ""; },
 

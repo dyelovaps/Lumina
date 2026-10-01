@@ -35,3 +35,8 @@ Avec *Brancher sur le premier plan*, le premier plan de l'épisode passe en **Im
 
 ## Réglages dans l'Assemblage
 Les plans ajoutés sont des plans normaux : durée, découpe et transition se règlent dans la timeline de l'Assemblage ([07](07-assemblage.md)).
+
+## Rendre l'épisode (extension Montage)
+Avec l'extension Montage active, l'Assemblage propose aussi **« Épisode de série »** : les plans de l'Assemblage (récap,
+cartons d'ouverture et de fin compris) sont rendus par le pont local avec ffmpeg, le son est réglé **une seule fois sur
+tout l'épisode** (les nuances restent), avec sous-titres karaoké et carton de fin au choix. Voir [28 — Montage, § 6](28-montage.md).

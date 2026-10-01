@@ -6,6 +6,12 @@ Monte le film à partir des plans terminés, dans l'ordre du storyboard, avec le
 
 ---
 
+> **Extension Montage active** : en haut de l'onglet, « Compiler à partir de » laisse le choix entre ces **clips d'origine**
+> (cet Assemblage, inchangé), les **vidéos finales du Montage** (cartes déjà montées, avec carton et sous-titres) et
+> l'**épisode de série** (les plans réglés ici, rendus par le pont avec ffmpeg, son réglé une fois sur tout l'épisode,
+> karaoké et carton de fin au choix), voir [28 — Montage, § 6](28-montage.md). Montage désactivé : l'onglet est exactement
+> comme décrit ici.
+
 ## Réglages du film
 | Réglage | Détail |
 |---|---|

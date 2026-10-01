@@ -19,8 +19,17 @@
 // Modèles et favoris (01/10, étape 3) : modèles de CARTON et modèles de MONTAGE complets (réglages + carton + style des
 // sous-titres d'AutoCaption), communs à tous les projets (core.store « montage:modeles », dans la Sauvegarde complète) ;
 // chaque PROJET retient ses réglages et son modèle (projet.montageCarte). Les modèles de sous-titres seuls sont dans AutoCaption.
+// Compilation (01/10, étape 5), au choix dans l'onglet Assemblage : « Clips d'origine » (l'Assemblage d'origine, inchangé)
+// ou « Vidéos finales du Montage » (les finals des cartes mis bout à bout par le pont : coupe, fondu ou fondu au noir,
+// .srt recalés, sortie dans Final), ou « Épisode de série » (les plans de l'Assemblage — ordre, début/fin, images fixes,
+// transitions par plan, étalonnage, cartons et récap de l'extension Épisodes — rendus par le pont ; son réglé UNE fois sur
+// tout l'épisode ; karaoké et carton de fin au choix). Montage désactivé : l'Assemblage est exactement comme avant.
 // Même moteur pour un agent ou Claude : python montage_carte.py "<vidéo>" (voir docs/28-montage.md).
 // API : AgnesPlugins.get("montage").monterCarte(numéro, réglages?) → Promise(résultat du pont).
+// Étape 5 (commandes de Claude et outils du Chef, mêmes fonctions que les boutons) : etatCartes(), listeModeles(),
+// monterCartes(numéros|"tous", {modele, reglages, resserrer, karaoke, appel}), compilerFinales(numéros|"tous", réglages),
+// compilerEpisode({ep_lufs, ep_karaoke, ep_carton, ep_carton_texte, ep_carton_sous, nom, remplacer}).
+// Aucune voix-off n'est générée par ces commandes : une carte « Carton + voix-off » sans voix-off est refusée.
 AgnesPlugins.register("montage", {
   name: "Montage",
   version: "1.0",
@@ -42,11 +51,18 @@ AgnesPlugins.register("montage", {
   CARTON_CLES: ["police", "taille", "couleur", "fond", "fond_opacite", "assombrir", "position", "animation", "carton_duree"],
   // Réglages qui changent le minutage (coupes, durée, carton, mots) : l'aperçu est recalculé par le pont
   PLAN: /^(vitesse|carton|carton_duree|pause_courte|pause_longue|pauses_longues|st_avant_carton|format)$/,
+  // Compilation (étape 5) : réglages à part (ni dans les modèles de montage, ni envoyés au montage d'une carte)
+  COMPIL: { source: "origine", transition: "cut", duree_transition: 0.5, nom: "", remplacer: false,
+    // Épisode de série : plans de l'Assemblage rendus par le pont, son réglé une fois sur tout l'épisode
+    ep_lufs: -14, ep_karaoke: false, ep_carton: false, ep_carton_texte: "", ep_carton_sous: "" },
+  VOLUMES: [[-14, "-14 LUFS (réseaux : TikTok, YouTube, Instagram)"], [-16, "-16 LUFS (plateformes, plus de nuances)"], [-23, "-23 LUFS (télévision, norme EBU R128)"]],
+  TRANSITIONS: [["cut", "Coupe franche"], ["fondu", "Fondu enchaîné"], ["noir", "Fondu au noir"]],
 
   init: function (core) {
     var self = this;
     this.core = core; this.A = window.AgnesApp;
     this.cfg = core.pluginSettings("montage", Object.assign({ pont: this.PONT }, this.DEFAUTS));
+    this.compil = Object.assign({}, this.COMPIL); this.compCoches = {}; this.compEtat = null;
     this.etats = {}; this.polices = null; this.choix = {};
     this.mods = { cartons: [], montages: [], favoris: [] };
     this.chargerProjet();
@@ -68,10 +84,11 @@ AgnesPlugins.register("montage", {
       if (e.target.getAttribute("data-mtcap") || e.target.getAttribute("data-mtseek")) self.champ(e.target);
       else if (e.target.getAttribute("data-mtk")) self.texteDirect(e.target);   // carton : visible à chaque lettre
     });
-    core.on("view:change", function (id) { self.pole(id); if (id === "view_montage") self.render(); else self.arreter(); });
-    core.on("project:change", function () { self.choix = {}; self.chargerProjet(); if (self.ap) { self.arreter(); self.ap = null; } if (self.visible()) self.render(); });
+    core.on("view:change", function (id) { self.pole(id); if (id === "view_montage") self.render(); else self.arreter(); if (id === "viewMontage") self.renderCompil(); });
+    core.on("project:change", function () { self.choix = {}; self.compCoches = {}; self.compEtat = null; self.chargerProjet(); if (self.ap) { self.arreter(); self.ap = null; } if (self.visible()) self.render(); self.renderCompil(); });
     core.on("render", function () { self.pole(self.vueActive()); });
     this.pole(this.vueActive());
+    this.initCompil();
   },
 
   // ---------- pôle et sous-onglets ----------
@@ -100,6 +117,7 @@ AgnesPlugins.register("montage", {
   chargerProjet: function () {
     var p = this.core.getProject && this.core.getProject(), mc = p && p.montageCarte;
     if (mc && mc.reglages) { var self = this; this.CLES().forEach(function (k) { if (mc.reglages[k] !== undefined) self.cfg[k] = mc.reglages[k]; }); }
+    this.compil = Object.assign({}, this.COMPIL, (mc && mc.compilation) || {});   // chaque projet garde son choix de compilation
   },
   memoriser: function () {
     var p = this.core.getProject(); if (!p) return;
@@ -667,6 +685,293 @@ AgnesPlugins.register("montage", {
       .then(function () { self.core.toast("Montage terminé : " + n + " carte(s) sur " + liste.length + ".", n === liste.length ? "ok" : "err"); });
   },
 
+  // ---------- étape 5 : commandes (Claude, Chef de l'Atelier) — mêmes fonctions que les boutons ----------
+  // « 1,3 », 2, [1, 3] ou "tous" → cartes (dans l'ordre du storyboard pour « tous »)
+  choisirCartes: function (numeros, filtre) {
+    var cartes = this.cartes();
+    if (numeros === undefined || numeros === null || numeros === "" || numeros === "tous") return cartes.filter(filtre || function () { return true; });
+    var nums = (Array.isArray(numeros) ? numeros : String(numeros).split(/[,\s]+/)).map(Number).filter(function (n) { return n > 0; });
+    if (!nums.length) throw new Error("numéros de cartes illisibles : " + numeros);
+    return nums.map(function (n) { var s = cartes[n - 1]; if (!s) throw new Error("carte " + n + " introuvable"); return s; });
+  },
+  numero: function (shot) { return this.cartes().indexOf(shot) + 1; },
+  finalDe: function (shot) { var d = shot.montage && shot.montage.dernier; return d && d.chemin ? d : null; },
+  etatCartes: function () {
+    var self = this, cur = this.etatModele("montage");
+    return {
+      modele: cur ? cur.m.nom + (cur.modifie ? " (modifié)" : "") : null,
+      reglages: this.photo(this.CLES()),
+      cartes: this.cartes().map(function (s, i) {
+        var v = self.video(s), k = self.carton(s), appel = self.appelDe(s), info = s.montage && s.montage.appelInfo, f = self.finalDe(s);
+        return { carte: i + 1, titre: String((s.notes || "").split("\n")[0] || s.prompt || "").replace(/^#+\s*/, "").slice(0, 70),
+          video: v.chemin ? "Production\\" + v.chemin.replace(/\//g, "\\") : v.prise ? "dans Agnes (carte à classer)" : null,
+          montable: !!v.chemin, carton: k.texte, sous_texte: k.sous, appel: appel,
+          voix_off: appel !== "voixoff" ? undefined : !info ? "à faire (dans Agnes, d'un clic)" : info.texte !== self.texteAppel(s) ? "à refaire" : "prête",
+          resserrer: !!(s.montage && s.montage.resserrer), karaoke: !!(s.montage && s.montage.karaoke),
+          final: f ? { chemin: f.chemin, date: f.date, lufs: f.lufs, crete: f.crete } : null };
+      })
+    };
+  },
+  listeModeles: function () {
+    var cm = this.etatModele("montage"), cc = this.etatModele("carton");
+    var court = function (m) { return { nom: m.nom, favori: m.favori }; };
+    return { montage: this.liste("montage").map(court), carton: this.liste("carton").map(court),
+      projet: { montage: cm ? cm.m.nom + (cm.modifie ? " (modifié)" : "") : null, carton: cc ? cc.m.nom + (cc.modifie ? " (modifié)" : "") : null } };
+  },
+  modeleParNom: function (type, nom) {
+    var q = String(nom || "").trim().toLowerCase(), l = type === "carton" ? this.mods.cartons : this.mods.montages;
+    return l.find(function (m) { return m.nom.toLowerCase() === q; }) || null;
+  },
+  // Monte des cartes, l'une après l'autre ; options de carte (resserrer, karaoke, appel) gardées comme un clic
+  monterCartes: function (numeros, o) {
+    var self = this; o = o || {};
+    var liste = this.choisirCartes(numeros, function (s) { return !!self.video(s).chemin; });
+    if (!liste.length) return Promise.reject(new Error("aucune carte classée à monter (bouton « Classer » sur la carte)"));
+    if (o.appel !== undefined && !this.APPELS.some(function (a) { return a[0] === o.appel; })) return Promise.reject(new Error("appel inconnu : " + o.appel + " (carton, voixoff ou aucun)"));
+    if (o.modele) {
+      var m = this.modeleParNom("montage", o.modele) || this.modeleParNom("carton", o.modele);
+      if (!m) return Promise.reject(new Error("modèle « " + o.modele + " » introuvable (modeles_montage pour la liste)"));
+      this.appliquerModele(this.mods.cartons.indexOf(m) !== -1 ? "carton" : "montage", m.id);
+    }
+    liste.forEach(function (s) {
+      var patch = {};
+      ["resserrer", "karaoke"].forEach(function (k) { if (o[k] !== undefined) patch[k] = !!o[k]; });
+      if (o.appel !== undefined) patch.appel = o.appel;
+      if (Object.keys(patch).length) s.montage = Object.assign({}, s.montage || {}, patch);
+    });
+    this.core.saveProject();
+    var out = [];
+    return liste.reduce(function (p, s) {
+      return p.then(function () {
+        return self.monter(s, o.reglages).then(function (r) {
+          out.push({ carte: self.numero(s), ok: true, chemin: r.chemin, duree: r.duree && r.duree.apres, lufs: r.son ? r.son.apres_lufs : null,
+            crete: r.son ? r.son.apres_crete : null, compte_rendu: r.compte_rendu, alertes: r.alertes || [] });
+        }, function (e) { out.push({ carte: self.numero(s), ok: false, erreur: e.message || String(e) }); });
+      });
+    }, Promise.resolve()).then(function () { if (self.visible()) self.render(); self.renderCompil(); return out; });
+  },
+  // Compilation des vidéos finales (ordre du storyboard pour « tous », sinon l'ordre donné)
+  compilerFinales: function (numeros, reglages) {
+    var self = this, liste;
+    try { liste = this.choisirCartes(numeros, function (s) { return !!self.finalDe(s); }); } catch (e) { return Promise.reject(e); }
+    var sans = liste.filter(function (s) { return !self.finalDe(s); }).map(function (s) { return self.numero(s); });
+    if (sans.length) return Promise.reject(new Error("carte(s) " + sans.join(", ") + " pas encore montée(s) : Montage → Par carte d'abord"));
+    if (liste.length < 2) return Promise.reject(new Error("il faut au moins deux cartes montées pour une compilation"));
+    var c = this.compil, r = Object.assign({ transition: c.transition, duree_transition: c.duree_transition, nom: c.nom, remplacer: c.remplacer }, reglages || {});
+    var etat = function (e) { self.compEtat = e; self.majCompil(); };
+    etat({ statut: "en_cours", etape: "envoi au pont" });
+    return this.appel("POST", "/montage/compilation", { videos: liste.map(function (s) { return self.finalDe(s).chemin; }), reglages: r }).then(function (j) {
+      if (!j.ok) throw new Error(j.error || "compilation refusée par le pont");
+      return self.suivre(j.id, etat);
+    }).then(function (res) {
+      var p = self.core.getProject();
+      p.montageCarte = Object.assign({}, p.montageCarte || {}, { derniereCompilation: { chemin: res.chemin, date: new Date().toLocaleString("fr-FR"),
+        cartes: liste.map(function (s) { return self.numero(s); }) } });
+      self.core.saveProject();
+      etat({ statut: "fini", resultat: res });
+      return res;
+    }).catch(function (e) { etat({ statut: "erreur", erreur: e.message || String(e) }); throw e; });
+  },
+
+  // ---------- étape 5 : choix de la compilation dans l'onglet Assemblage ----------
+  initCompil: function () {
+    var self = this, vue = document.getElementById("viewMontage");
+    if (!vue) return;   // Assemblage absent : rien à ajouter
+    this.carteAssemblage = vue.querySelector(":scope > .card");   // l'Assemblage d'origine (jamais modifié, masqué au besoin)
+    var el = document.createElement("div"); el.className = "card mt-compil"; el.id = "mtCompil";
+    vue.insertBefore(el, vue.firstChild);
+    this.compEl = el;
+    el.addEventListener("change", function (e) { self.champCompil(e.target); });
+    el.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-mtc-act]"); if (!b) return;
+      var act = b.getAttribute("data-mtc-act");
+      if (act === "episode") self.compilerEpisode().then(function (res) { self.core.toast("Épisode prêt : " + res.nom, "ok"); },
+        function (e) { self.core.toast("Épisode impossible : " + (e.message || e), "err"); });
+      if (act === "compiler") {
+        var nums = self.cartes().filter(function (s) { return self.finalDe(s) && self.compCoches[s.id] !== false; }).map(function (s) { return self.numero(s); });
+        if (nums.length < 2) return self.core.toast("Cochez au moins deux cartes montées.", "err");
+        self.compilerFinales(nums).then(function (res) { self.core.toast("Compilation prête : " + res.nom, "ok"); },
+          function (e) { self.core.toast("Compilation impossible : " + (e.message || e), "err"); });
+      }
+      if (act === "par-carte") self.A.showView("view_montage");
+      if (act === "ouvrir") self.appel("POST", "/ouvrir", { chemin: b.getAttribute("data-chemin") }).then(function (j) {
+        if (!j.ok) self.core.toast("Dossier non ouvert : " + (j.error || ""), "err");
+      }, function (e) { self.core.toast(e.message, "err"); });
+    });
+    this.renderCompil();
+  },
+  champCompil: function (el) {
+    var k = el.getAttribute("data-mtcomp"), id = el.getAttribute("data-mtcomp-coche");
+    if (id) { this.compCoches[id] = el.checked; return; }
+    if (!k) return;
+    this.compil[k] = el.type === "checkbox" ? el.checked : k === "duree_transition" || k === "ep_lufs" ? Number(el.value) : el.value;
+    var p = this.core.getProject();
+    if (p) { p.montageCarte = Object.assign({}, p.montageCarte || {}, { compilation: Object.assign({}, this.compil) }); this.core.saveProject(); }
+    if (k === "source" || k === "transition" || k === "ep_carton") this.renderCompil();
+  },
+  renderCompil: function () {
+    var el = this.compEl; if (!el) return;
+    var self = this, esc = this.A.esc, c = this.compil, finales = c.source === "finales";
+    if (this.carteAssemblage) this.carteAssemblage.style.display = finales ? "none" : "";
+    var opt = function (liste, val) { return liste.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(val) ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join(""); };
+    var html = '<h3>Compilation</h3><div class="grid2"><div class="field"><label>Compiler à partir de</label><select data-mtcomp="source">' +
+      opt([["origine", "Clips d'origine (Assemblage ci-dessous, comme avant)"], ["finales", "Vidéos finales du Montage (voix, carton et sous-titres compris)"],
+        ["episode", "Épisode de série (plans de l'Assemblage, son réglé sur tout l'épisode)"]], c.source) + "</select></div></div>";
+    if (c.source === "episode") { el.innerHTML = html + this.htmlEpisode(); this.majCompil(); return; }
+    if (!finales) { el.innerHTML = html; return; }
+    var cartes = this.cartes(), montees = cartes.filter(function (s) { return self.finalDe(s); });
+    html += '<p class="hint">Les vidéos finales des cartes (Montage → Par carte) sont mises bout à bout, dans l\'ordre du storyboard, par le pont local. ' +
+      "Elles gardent leur voix, leur carton et leurs sous-titres ; les fichiers .srt sont recalés. Le résultat va dans le dossier Final, avec un compte rendu. Les originaux ne changent pas.</p>" +
+      '<div class="mt-liste">' + (cartes.length ? cartes.map(function (s, i) {
+        var f = self.finalDe(s), n = (i + 1 < 10 ? "0" : "") + (i + 1);
+        return '<div class="mt-ligne"><label class="inline"><input type="checkbox" data-mtcomp-coche="' + s.id + '"' + (f ? (self.compCoches[s.id] !== false ? " checked" : "") : " disabled") + "> <b>Carte " + n + "</b></label> " +
+          (f ? '<span class="hint">' + esc(f.chemin.replace(/^.*[\\\/]/, "")) + " (montée le " + esc(f.date || "?") + ")</span>" : '<span class="hint">pas encore montée</span>') + "</div>";
+      }).join("") : '<p class="hint">Aucune carte dans ce projet.</p>') + "</div>" +
+      '<div class="grid3"><div class="field"><label>Transition</label><select data-mtcomp="transition">' + opt(this.TRANSITIONS, c.transition) + "</select></div>" +
+      (c.transition !== "cut" ? '<div class="field"><label>Durée de la transition</label><select data-mtcomp="duree_transition">' +
+        opt([0.3, 0.5, 0.8, 1].map(function (v) { return [v, String(v).replace(".", ",") + " s"]; }), c.duree_transition) + "</select></div>" : "") +
+      '<div class="field"><label>Nom du fichier (facultatif)</label><input type="text" maxlength="50" data-mtcomp="nom" value="' + esc(c.nom) + '" placeholder="Automatique : Compilation - Cartes …"></div></div>' +
+      '<div class="row-inline"><label class="inline"><input type="checkbox" data-mtcomp="remplacer"' + (c.remplacer ? " checked" : "") + "> Remplacer une compilation du même nom (sinon « (2) »)</label></div>" +
+      '<div class="row-inline"><button class="primary-btn" data-mtc-act="compiler"' + (montees.length < 2 ? " disabled" : "") + ">Compiler les vidéos finales</button>" +
+      '<button class="small-btn" data-mtc-act="par-carte">Monter des cartes (Par carte)</button>' +
+      '<span id="mtCompEtat"></span></div>' +
+      (montees.length < 2 ? '<p class="hint">Il faut au moins deux cartes montées (Montage → Par carte).</p>' : "");
+    el.innerHTML = html;
+    this.majCompil();
+  },
+  // ---------- épisode de série : les plans de l'Assemblage rendus par le pont ----------
+  reglagesAssemblage: function (proj) {
+    var o = Object.assign({ aspect: proj.aspect, res: proj.resolution, fps: 30, fit: "cover" }, (proj.montage && proj.montage.opts) || {});
+    if (o.res === "2160p" || o.res === "1440p") o.res = "1080p";   // comme l'Assemblage
+    var t = this.A.computeSize ? this.A.computeSize(o.aspect, o.res) : { w: 1920, h: 1080 };
+    return { largeur: t.w, hauteur: t.h, fps: Number(o.fps) || 30, cadrage: o.fit === "contain" ? "adapter" : "remplir", aspect: o.aspect, res: o.res };
+  },
+  plansEpisode: function () {
+    var A = this.A, proj = this.core.getProject();
+    return A.montagePlan ? A.montagePlan(proj).filter(function (it) { return it.on; }) : [];
+  },
+  htmlEpisode: function () {
+    var esc = this.A.esc, c = this.compil, proj = this.core.getProject() || {}, plans = this.plansEpisode(), ra = proj.montage ? this.reglagesAssemblage(proj) : null;
+    var opt = function (liste, val) { return liste.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(val) ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join(""); };
+    var voix = plans.filter(function (it) { return it.voice; }).length, images = plans.filter(function (it) { return it.kind === "image"; }).length;
+    return '<p class="hint">Les plans cochés dans l\'Assemblage ci-dessous (ordre, début et fin, durée des images, transition de chaque plan, étalonnage) ' +
+      "sont rendus par le pont local avec ffmpeg, en qualité maximale. Le son n'est pas réglé plan par plan : les nuances restent, le volume est réglé " +
+      "une seule fois sur tout l'épisode. Les cartons et le récap de l'extension Épisodes sont des plans de l'Assemblage : ils sont repris. " +
+      "Le résultat va dans le dossier Final de l'épisode, avec un compte rendu.</p>" +
+      '<p class="hint">' + plans.length + " plan(s) coché(s)" + (images ? " dont " + images + " image(s) fixe(s)" : "") +
+      (ra ? " · format " + esc(ra.aspect) + " " + esc(ra.res) + " (" + ra.largeur + "×" + ra.hauteur + "), " + ra.fps + " images/s, cadrage " + (ra.cadrage === "adapter" ? "adapter" : "remplir") + " (réglages de l'Assemblage)" : "") + "</p>" +
+      (voix ? '<p class="hint mt-alerte">' + voix + " plan(s) ont une voix attachée (onglet Voix) : elle n'est pas reprise ici. Pour les voix attachées, la musique de l'onglet Son et les sous-titres d'AutoCaption, utilisez l'Assemblage ou le kit FFmpeg.</p>" : "") +
+      '<div class="grid3"><div class="field"><label>Volume de l\'épisode</label><select data-mtcomp="ep_lufs">' + opt(this.VOLUMES, c.ep_lufs) + "</select></div>" +
+      '<div class="field"><label>Nom du fichier (facultatif)</label><input type="text" maxlength="50" data-mtcomp="nom" value="' + esc(c.nom) + '" placeholder="' + esc(String(proj.name || "Episode").slice(0, 50)) + '"></div></div>' +
+      '<div class="row-inline"><label class="inline"><input type="checkbox" data-mtcomp="ep_karaoke"' + (c.ep_karaoke ? " checked" : "") + "> Sous-titres karaoké sur tout l'épisode (Whisper écoute chaque plan une fois ; texte exact des répliques ; style AutoCaption)</label></div>" +
+      '<div class="row-inline"><label class="inline"><input type="checkbox" data-mtcomp="ep_carton"' + (c.ep_carton ? " checked" : "") + "> Carton de fin sur l'épisode (style du carton de Montage → Par carte)</label></div>" +
+      (c.ep_carton ? '<div class="grid2"><div class="field"><label>Texte du carton</label><input type="text" maxlength="160" data-mtcomp="ep_carton_texte" value="' + esc(c.ep_carton_texte) + '" placeholder="À suivre…"></div>' +
+        '<div class="field"><label>Sous-texte (facultatif)</label><input type="text" maxlength="160" data-mtcomp="ep_carton_sous" value="' + esc(c.ep_carton_sous) + '" placeholder="Épisode 2 — demain 19 h"></div></div>' : "") +
+      '<div class="row-inline"><label class="inline"><input type="checkbox" data-mtcomp="remplacer"' + (c.remplacer ? " checked" : "") + "> Remplacer un épisode du même nom (sinon « (2) »)</label></div>" +
+      '<div class="row-inline"><button class="primary-btn" data-mtc-act="episode"' + (plans.length ? "" : " disabled") + ">Rendre l'épisode (pont local)</button>" +
+      '<span id="mtCompEtat"></span></div>' + (plans.length ? "" : '<p class="hint">Aucun plan terminé et coché dans l\'Assemblage.</p>');
+  },
+  // Fichier du plan dans Production : prise Flow rangée, sinon dossier de classement (vidéo, ou image du plan)
+  cheminPlan: function (it, ext) {
+    var A = this.A, t = it.take;
+    if (it.kind === "video" && t && t.localPath) return t.localPath;
+    var loc = A.classementLocal ? A.classementLocal(it.shot) : null;
+    if (!loc) return null;
+    if (it.kind === "video") return loc.video + "/" + loc.nom + ".mp4";
+    return loc.video.replace(/\/video$/i, "") + "/Images/" + loc.nom + " - plan." + (ext || "png");
+  },
+  deposer: function (chemin, blob) {
+    return fetch(this.pont() + "/classement/fichier", { method: "POST", headers: { "X-Chemin": encodeURIComponent(chemin) }, body: blob })
+      .then(function (x) { return x.json(); }).then(function (w) { if (!w.ok) throw new Error(w.error || "dépôt refusé par le pont"); });
+  },
+  compilerEpisode: function (o) {
+    var self = this, A = this.A, proj = this.core.getProject(), c = Object.assign({}, this.compil, o || {});
+    var plan = this.plansEpisode();
+    if (!plan.length) return Promise.reject(new Error("aucun plan terminé et coché dans l'Assemblage"));
+    var ra = this.reglagesAssemblage(proj), g = A.gradeActive ? A.gradeActive(proj) : null, gf = g && A.gradeFfmpeg ? A.gradeFfmpeg(g) : "";
+    var etat = function (e) { self.compEtat = e; self.majCompil(); };
+    var items = plan.map(function (it) {
+      return { type: it.kind === "image" ? "image" : "video", debut: it.tin || 0, fin: it.tout, duree: it.still, transition: it.trans,
+        duree_transition: it.tdur, etalonnage: g && (g.skip || []).indexOf(it.shot.id) === -1 ? gf : "" };
+    });
+    var cap = this.captions(), karaoke = !!c.ep_karaoke;
+    if (karaoke && !cap) return Promise.reject(new Error("sous-titres karaoké : activez l'extension AutoCaption (c'est elle qui donne le style)"));
+    var r = Object.assign(this.photo(this.CARTON_CLES), { largeur: ra.largeur, hauteur: ra.hauteur, fps: ra.fps, cadrage: ra.cadrage, lufs: c.ep_lufs,
+      nom: c.nom || proj.name, remplacer: c.remplacer, carton: !!(c.ep_carton && c.ep_carton_texte), carton_texte: c.ep_carton_texte,
+      carton_sous_texte: c.ep_carton_sous, st_avant_carton: this.cfg.st_avant_carton });
+    etat({ statut: "en_cours", etape: "préparation des plans" });
+    // 1. chemins ; les images fixes (cartons, récap…) sont déposées dans Production à chaque rendu (petites)
+    var prep = plan.reduce(function (p, it, k) {
+      return p.then(function () {
+        if (it.kind !== "image") { items[k].chemin = self.cheminPlan(it); if (!items[k].chemin) throw new Error("plan " + it.index + " : pas de dossier local (bouton « Classer » sur la carte)"); return; }
+        return A.getTakeBlobOrFetch(it.take).then(function (b) {
+          if (!b) throw new Error("plan " + it.index + " : image illisible dans Agnes");
+          var ext = /jpe?g/.test(b.type) ? "jpg" : /webp/.test(b.type) ? "webp" : "png";
+          items[k].chemin = self.cheminPlan(it, ext);
+          if (!items[k].chemin) throw new Error("plan " + it.index + " : pas de dossier local (bouton « Classer » sur la carte)");
+          return self.deposer(items[k].chemin, b);
+        });
+      });
+    }, Promise.resolve());
+    // 2. vidéos absentes de Production : la prise du plan y est copiée (même chemin que Classer)
+    var planPont = function (essai) {
+      return self.appel("POST", "/montage/episode/plan", { plans: items, reglages: r }).then(function (j) {
+        if (j._code === 404 && j.manquants && !essai) {
+          etat({ statut: "en_cours", etape: "copie de " + j.manquants.length + " plan(s) dans Production" });
+          return j.manquants.reduce(function (p, k) {
+            return p.then(function () { return A.getTakeBlobOrFetch(plan[k].take); }).then(function (b) {
+              if (!b) throw new Error("plan " + plan[k].index + " : vidéo illisible dans Agnes");
+              return self.deposer(items[k].chemin, b);
+            });
+          }, Promise.resolve()).then(function () { return planPont(true); });
+        }
+        if (j.error) throw new Error(j.error);
+        return j;
+      });
+    };
+    return prep.then(function () {
+      if (!karaoke) return;
+      // 3. mots de Whisper par plan (gardés sur la carte), puis calage au temps de l'épisode par le pont
+      return plan.reduce(function (p, it, k) {
+        return p.then(function () {
+          if (it.kind !== "video") return;
+          etat({ statut: "en_cours", etape: "Whisper : plan " + it.index });
+          return self.mots(it.shot, { chemin: items[k].chemin, prise: it.take }, function () { }).then(function (l) {
+            items[k].mots = l; items[k].replique = self.replique(it.shot);
+          }, function () { /* plan sans parole : pas de sous-titres */ });
+        });
+      }, Promise.resolve());
+    }).then(function () { return planPont(false); }).then(function (pl) {
+      if (karaoke && pl.mots && pl.mots.length) {
+        var ch = cap.chunksFromWords(self.motsSortie(pl));
+        r.ass = cap.assFromChunks(pl.largeur, pl.hauteur, ch); r.srt = cap.srtFromChunks(ch); r.ass_temoin = cap.temoin();
+      }
+      etat({ statut: "en_cours", etape: "envoi au pont" });
+      return self.appel("POST", "/montage/episode", { plans: items, reglages: r });
+    }).then(function (j) {
+      if (!j.ok) throw new Error(j.error || "épisode refusé par le pont");
+      return self.suivre(j.id, etat);
+    }).then(function (res) {
+      proj.montageCarte = Object.assign({}, proj.montageCarte || {}, { derniereCompilation: { chemin: res.chemin, date: new Date().toLocaleString("fr-FR"), type: "episode" } });
+      self.core.saveProject();
+      etat({ statut: "fini", resultat: res });
+      return res;
+    }).catch(function (e) { etat({ statut: "erreur", erreur: e.message || String(e) }); throw e; });
+  },
+  majCompil: function () {
+    var el = this.compEl && this.compEl.querySelector("#mtCompEtat"); if (!el) return;
+    var esc = this.A.esc, e = this.compEtat, p = this.core.getProject() || {}, d = p.montageCarte && p.montageCarte.derniereCompilation;
+    if (e && e.statut === "en_cours") { el.innerHTML = '<span class="hint">En cours : ' + esc(e.etape || "") + "…</span>"; return; }
+    if (e && e.statut === "erreur") { el.innerHTML = '<span class="mt-err">Erreur : ' + esc(e.erreur) + "</span>"; return; }
+    var res = e && e.statut === "fini" ? e.resultat : null, chemin = res ? res.chemin : d && d.chemin;
+    if (!chemin) { el.innerHTML = ""; return; }
+    var fr = function (x) { return String(x).replace(".", ","); };
+    el.innerHTML = '<span class="mt-ok">' + (res ? "Compilation prête" : "Dernière compilation le " + esc(d.date)) + "</span>" +
+      (res && res.son ? '<span class="hint"> · ' + fr(res.duree) + " s · " + fr(res.son.lufs != null ? res.son.lufs : res.son.apres_lufs) + " LUFS</span>" : "") +
+      ' <button class="small-btn" data-mtc-act="ouvrir" data-chemin="' + esc(chemin) + '">Voir le fichier</button>' +
+      (res && res.alertes && res.alertes.length ? '<br><span class="mt-alerte">À vérifier : ' + esc(res.alertes.join(" ; ")) + "</span>" : "");
+  },
+
   // ---------- interface ----------
   action: function (b) {
     var mm = b.getAttribute("data-mtm");
@@ -676,6 +981,11 @@ AgnesPlugins.register("montage", {
       self.core.toast("Carte montée : " + res.nom, "ok");
     }, function (e) { self.core.toast("Montage impossible : " + (e.message || e), "err"); });
     if (act === "cochees") this.monterCochees();
+    if (act === "vers-compil") {   // étape 5 : l'Assemblage s'ouvre sur « Vidéos finales du Montage »
+      this.compil.source = "finales";
+      var pc = this.core.getProject(); pc.montageCarte = Object.assign({}, pc.montageCarte || {}, { compilation: Object.assign({}, this.compil) }); this.core.saveProject();
+      this.A.showView("viewMontage");
+    }
     if (act === "appel-voix" && shot) this.faireAppel(shot, "voix");
     if (act === "appel-micro" && shot) this.faireAppel(shot, "micro");
     if (act === "appel-ecouter" && shot) this.core.store.get(this.cleAppel(shot.id)).then(function (b) {
@@ -818,7 +1128,8 @@ AgnesPlugins.register("montage", {
     var cartes = this.cartes(), lignes = cartes.map(function (s, i) { return self.ligne(s, i + 1); }).join("");
     var liste = '<div class="card"><h3>Cartes du projet</h3>' +
       '<p class="hint">Texte du carton : repris des notes de la carte (ligne « CARTON DE FIN »), modifiable ici pour cette carte seulement. Pas de nom ni de logo.</p>' +
-      (cartes.length ? '<div class="mt-liste">' + lignes + '</div><div class="row-inline"><button class="primary-btn" data-mt="cochees">Monter les cartes cochées</button></div>'
+      (cartes.length ? '<div class="mt-liste">' + lignes + '</div><div class="row-inline"><button class="primary-btn" data-mt="cochees">Monter les cartes cochées</button>' +
+        (this.compEl ? '<button class="small-btn" data-mt="vers-compil">Compiler les cartes montées (Assemblage)</button>' : "") + "</div>"
         : '<p class="hint">Aucune carte dans ce projet.</p>') + "</div>";
     var vid = body.querySelector("#mtApVideo"), reprise = vid && this.ap ? { t: vid.currentTime, url: vid.getAttribute("src") } : null;
     body.innerHTML = this.htmlApercu() + reglages + liste;

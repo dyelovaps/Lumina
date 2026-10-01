@@ -175,6 +175,8 @@ Il connaît à chaque message l'état de chaque agent, votre Bible, votre Biblio
 | Valider ou rejeter une fiche connaissance (votre décision) | **Toujours** |
 | Recopier réplique, carton, description, hashtags dans les Notes des cartes | **Toujours** |
 | Remplacer la réplique d'une carte (après contrôle du Calculateur de répliques) | **Toujours** |
+| Montage : lire l'état du montage des cartes et les modèles | Non (lecture seule) |
+| Montage : monter des cartes (vidéo finale), compiler les vidéos finales, rendre un épisode de série | **Toujours** (extension Montage active ; aucune voix-off n'est générée par le chef, voir [28](28-montage.md)) |
 
 Chaque demande s'affiche dans la discussion avec un **aperçu du contenu** : **Autoriser** ou **Refuser**. Après un refus, le chef ne recommence pas sans vous le demander.
 

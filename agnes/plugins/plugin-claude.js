@@ -8,6 +8,10 @@
 //   lot {script, lancer?} · plans {plans:[{plan, image_prompt?, video_prompt?}]} · generer {plans?:[n]|"tous", etape?}
 //   moteurs {image?, video?} · chef {message} · autoriser {reponse:"oui"|"non"} · agent {agent, demande}
 //   sortie_agent {agent} · exporter_prises {plans?, dossier?}
+//   Montage (01/10, étape 5 ; extension Montage, mêmes fonctions que ses boutons) :
+//   etat_montage · modeles_montage · monter {cartes?|"tous", modele?, reglages?, resserrer?, karaoke?, appel?}
+//   compiler {cartes?|"tous", transition? (cut|fondu|noir), duree_transition?, nom?, remplacer?}
+//   episode {lufs? (-14|-16|-23), karaoke?, carton?, sous_texte?, nom?, remplacer?} : plans de l'Assemblage rendus par le pont
 AgnesPlugins.register("claude", {
   name: "Piloté par Claude",
   version: "1.0",
@@ -61,6 +65,11 @@ AgnesPlugins.register("claude", {
 
   // ---- Outils ----
   atelier: function () { var P = AgnesPlugins.get("atelier"); if (!P || !P.project) throw new Error("extension Atelier IA inactive (⚙ → Extensions)"); return P; },
+  montage: function () {
+    var M = AgnesPlugins.isLoaded && AgnesPlugins.isLoaded("montage") ? AgnesPlugins.get("montage") : null;
+    if (!M || !M.monterCartes) throw new Error("extension Montage inactive (⚙ → Extensions)");
+    return M;
+  },
   shotByNum: function (n) { var s = this.A.sortedShots()[(+n || 0) - 1]; if (!s) throw new Error("plan " + n + " introuvable"); return s; },
   pick: function (plans) {
     var A = this.A, all = A.sortedShots();
@@ -248,6 +257,26 @@ AgnesPlugins.register("claude", {
         return "Pack « " + pk.title + " » : " + added + " skill(s) ajouté(s), " + (pk.skills.length - added) + " déjà présent(s).";
       }
       case "exporter_prises": return this.exporter(a);
+      // Montage (étape 5) : aucune voix-off n'est générée ici ; une carte « Carton + voix-off » sans voix-off est refusée
+      case "etat_montage": return this.montage().etatCartes();
+      case "modeles_montage": return this.montage().listeModeles();
+      case "monter": return this.montage().monterCartes(a.cartes !== undefined ? a.cartes : a.plans,
+        { modele: a.modele, reglages: a.reglages, resserrer: a.resserrer, karaoke: a.karaoke, appel: a.appel });
+      case "compiler": {
+        var rc = {};
+        ["transition", "duree_transition", "nom", "remplacer"].forEach(function (k) { if (a[k] !== undefined) rc[k] = a[k]; });
+        return this.montage().compilerFinales(a.cartes !== undefined ? a.cartes : a.plans, rc);
+      }
+      case "episode": {
+        var re = {};
+        if (a.lufs !== undefined) re.ep_lufs = Number(a.lufs);
+        if (a.karaoke !== undefined) re.ep_karaoke = !!a.karaoke;
+        if (a.carton !== undefined) { re.ep_carton = !!a.carton; re.ep_carton_texte = a.carton === true ? "À suivre…" : String(a.carton || ""); }
+        if (a.sous_texte !== undefined) re.ep_carton_sous = String(a.sous_texte);
+        if (a.nom !== undefined) re.nom = String(a.nom);
+        if (a.remplacer !== undefined) re.remplacer = !!a.remplacer;
+        return this.montage().compilerEpisode(re);
+      }
       case "vers_bibliotheque": {
         // Image choisie d'un plan (image validée, sinon prise image) → Bibliothèque, sous un nom (planche de personnage…)
         var sv = this.shotByNum(a.plan), tk = A.keyTake(sv) || A.selectedTake(sv);

@@ -618,7 +618,12 @@ AgnesPlugins.register("atelier", {
     (entries || []).forEach(function (x) {
       if (!x || !x.name) return;
       var kind = /lieu|d[ée]cor|place|location/i.test(x.kind || "") ? "lieu" : /objet|accessoire|prop/i.test(x.kind || "") ? "objet" : /costume|look/i.test(x.kind || "") ? "costume" : "personnage";
+      var nouveau = !B.series().entries.some(function (y) { return y.name.toLowerCase() === String(x.name).trim().toLowerCase(); });
       var e = B.addEntry(String(x.name).trim(), kind);
+      // 02/10 — une tenue ou un lieu NOUVEAU ne s'ajoute pas tout seul aux prompts qui citent son nom (« Café », « Studio »…) :
+      // il s'applique quand sa référence est cochée sur la carte (tenue du jour, lieu de la scène). Les fiches existantes
+      // gardent leur réglage ; « auto » explicite l'emporte.
+      if (x.auto !== undefined) e.auto = !!x.auto; else if (nouveau && (kind === "costume" || kind === "lieu")) e.auto = false;
       if (x.dna) e.dna = String(x.dna).trim();
       if (x.aliases) e.aliases = String(x.aliases).trim();
       if (x.episode_note) { e.byProject = e.byProject || {}; e.byProject[proj.id] = String(x.episode_note).trim(); }
@@ -700,7 +705,7 @@ AgnesPlugins.register("atelier", {
       parameters: { type: "object", properties: { name: { type: "string", description: "Nom du document, tel qu'il apparaît dans la liste" } }, required: ["name"] } } },
     { type: "function", function: { name: "bible_upsert", description: "Crée ou met à jour des fiches de la Bible de l'app (personnages, lieux, objets) avec leur ADN visuel en anglais, et éventuellement le style commun de la série. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { series_style: { type: "string", description: "Style visuel commun en anglais (facultatif)" },
-        entries: { type: "array", items: { type: "object", properties: { name: { type: "string" }, kind: { type: "string", enum: ["personnage", "lieu", "objet", "costume"] }, aliases: { type: "string" }, dna: { type: "string", description: "ADN visuel en anglais" }, episode_note: { type: "string", description: "Changement propre à cet épisode (facultatif)" } }, required: ["name", "kind"] } } } } } },
+        entries: { type: "array", items: { type: "object", properties: { name: { type: "string" }, kind: { type: "string", enum: ["personnage", "lieu", "objet", "costume"] }, aliases: { type: "string" }, dna: { type: "string", description: "ADN visuel en anglais" }, episode_note: { type: "string", description: "Changement propre à cet épisode (facultatif)" }, auto: { type: "boolean", description: "ajouter l'ADN quand le nom est cité dans un prompt (défaut : oui pour un personnage, non pour une nouvelle tenue ou un nouveau lieu)" } }, required: ["name", "kind"] } } } } } },
     { type: "function", function: { name: "bible_attacher_image", description: "Studio : rattache l'image VALIDÉE d'une fiche de l'onglet Studio (identifiant av…) à la fiche de la Bible du même nom, et la range dans la Bibliothèque de l'épisode. À appeler après bible_upsert, quand le document « Studio — … » indique une image validée. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { fiche: { type: "string", description: "Identifiant de la fiche Studio (av…), indiqué dans le document" }, nom: { type: "string", description: "Nom de la fiche de la Bible à laquelle rattacher l'image" } }, required: ["fiche", "nom"] } } },
     { type: "function", function: { name: "send_to_scenario", description: "Place un scénario (format INT./EXT., NOM en majuscules, répliques) dans l'onglet Scénario et lance l'analyse. Nécessite l'autorisation.",

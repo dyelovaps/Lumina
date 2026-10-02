@@ -451,3 +451,9 @@ Ce que le Chef ne pilote pas, parce que ces onglets demandent vos choix à l'éc
 - **Stills → Clip** : vos fichiers.
 
 Il vous dit où cliquer. Claude peut utiliser les mêmes outils directement avec `python agnes.py outil nom=…`.
+
+**Bible et prompts (02/10)** : une tenue (`costume`) ou un lieu (`lieu`) **nouveau**, rangé par le Chef, ne s'ajoute pas
+tout seul à chaque prompt qui cite son nom. Sinon « Café », « Studio » ou « Podcast » ajouteraient leur décor à des scènes
+qui ne s'y passent pas. Il s'applique quand sa référence est cochée sur la carte : c'est ainsi qu'on choisit la tenue du
+jour et le lieu de la scène. Un personnage reste automatique. Le réglage « auto » de chaque fiche reste modifiable dans
+l'onglet Bible.

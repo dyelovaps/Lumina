@@ -163,3 +163,16 @@ test('Studio : importerMaj crée puis met à jour par type + nom (pas de doublon
   assert.throws(() => V.importerMaj('{"format":"autre"}'), /format non reconnu/);
   assert.match(read('plugins', 'plugin-claude.js'), /case "avatar_importer"/);
 });
+
+test("Bible par le Chef : une nouvelle tenue ou un nouveau lieu ne s'ajoute pas tout seul aux prompts (auto: false), un personnage si", () => {
+  const { plugins } = charge(['plugin-atelier.js']);
+  const P = plugins.atelier; P.core = { getProject: () => ({ id: 'p1' }) };
+  const entries = [{ name: 'Lieu existant', kind: 'lieu', auto: true }];
+  plugins.bible = { ensureEntries() {}, series: () => ({ entries }), persist() {},
+    addEntry: (n, k) => { const ex = entries.find((e) => e.name.toLowerCase() === n.toLowerCase()); if (ex) return ex; const e = { name: n, kind: k, auto: true }; entries.push(e); return e; } };
+  P.bibleUpsert([{ name: 'Anthony', kind: 'personnage', dna: 'man' }, { name: 'Café', kind: 'lieu', dna: 'a café' }, { name: 'Chemise en lin', kind: 'costume', dna: 'linen shirt' },
+    { name: 'Lieu existant', kind: 'lieu', dna: 'x' }, { name: 'Podcast', kind: 'lieu', auto: true }]);
+  const g = (n) => entries.find((e) => e.name === n);
+  assert.equal(g('Anthony').auto, true); assert.equal(g('Café').auto, false); assert.equal(g('Chemise en lin').auto, false);
+  assert.equal(g('Lieu existant').auto, true); assert.equal(g('Podcast').auto, true);
+});

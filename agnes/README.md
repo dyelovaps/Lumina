@@ -95,6 +95,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | [25 — Mentions @ et #](docs/25-mentions.md) | `@[Personnage]` coche sa référence, `#[Skill]` place un skill dans le texte ; suggestions en tapant @ ou # |
 | [24 — Moteurs de génération](docs/24-moteurs.md) | Images par ChatGPT (via le pont local) ou Agnes, vidéos par Grok ou Google Flow (via Lumina) ou Agnes |
 | [23 — Lumina et sauvegarde](docs/23-lumina.md) | Ouvrir Agnes dans l'extension Lumina, plans → Grok Imagine, rendus → prises, pilote auto ; sauvegarde complète et restauration |
+| [31 — Claude aux commandes](docs/31-pilotage-claude.md) | Toutes les commandes du pont pour que Claude pilote Agnes de A à Z : projet, extensions, styles, Studio, Bible, cartes, générations, Atelier, classement, montage |
 | [30 — Studio](docs/30-creation-avatar.md) | Onglet Studio : fiches d'avatar, de tenue, de lieu et d'objet, listes déroulantes modifiables, prompt anglais (ADN, aperçu, combinaison), aperçu 9:16 / 16:9, envoi à l'Atelier (le Chef crée la Bible et rattache l'image), pastille Bible sur les cartes, filtres de la Bible |
 | [29 — Styles de prompt](docs/29-styles.md) | Onglet Projet → Style des prompts : Réaliste — Marketing, Série réaliste, Cartoon / satire et les vôtres (ajouter, modifier, supprimer) ; règles ajoutées aux prompts (jeu, textes écrits, musique), compteur de répliques et consignes de l'Atelier IA ; textes écrits et bruitages entre guillemets distingués des répliques |
 | [28 — Montage](docs/28-montage.md) | Pôle Montage (sous-onglets Assemblage, Voix, Son, AutoCaption, Étalonnage, Épisodes, Publication) et montage par carte : 1080×1920, voix au maximum sans casse (-14 LUFS), vitesse, carton de fin, sortie dans `Final` avec compte rendu |
@@ -217,6 +218,7 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
   - `studio_fiches` et `studio_fiche` (lecture) ;
   - `style_projet` (lecture) et `choisir_style` (avec autorisation) ;
   - `classer_cartes` (avec autorisation).
+- **Claude aux commandes (02/10)** ([31](docs/31-pilotage-claude.md)) : Claude lit et écrit la Bible, active les extensions, règle et supprime projets et cartes, coche les références, écrit les notes, voit le prompt final, lit ou efface la discussion du Chef, génère et valide les aperçus du Studio ou y importe une image du dossier Production. Le Chef lit la Bible (`bible_lire`) avant de l'écrire.
 - **Classement sans fenêtre (02/10)** ([26](docs/26-classement.md)) : commande Claude `classer` et outil du Chef, mêmes dossiers que le bouton Classer.
 - **Le Chef pilote aussi Voix, Son, Étalonnage et Sous-titres (02/10)** ([21](docs/21-atelier.md)) : lecture libre, et avec votre autorisation la génération (payante) des voix et du son, le choix du look et du modèle de sous-titres. Claude utilise les mêmes outils avec `agnes.py outil nom=…`.
 - **Claude** : commandes `avatars`, `avatar`, `avatar_prompt`, `envoyer_avatar`.

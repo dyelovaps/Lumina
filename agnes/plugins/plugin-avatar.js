@@ -781,7 +781,7 @@ AgnesPlugins.register("avatar", {
     this.gen = { id: f.id, ctrl: ctrl };
     var say = function (t) { var el = document.getElementById("avInfo"); if (el) el.textContent = t || ""; };
     this.render(); say("Préparation (traduction des champs libres)…");
-    this.traduire(f).then(function (r) {
+    return this.traduire(f).then(function (r) {   // 02/10 : promesse rendue (Claude attend la fin : studio_generer)
       if (r.echecs) self.core.toast(r.echecs + " champ(s) libre(s) non traduit(s) : le français est gardé dans le prompt.", "err");
       return self.refsDe(f);
     }).then(function (refs) {

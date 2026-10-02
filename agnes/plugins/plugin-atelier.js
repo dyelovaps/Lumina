@@ -809,6 +809,8 @@ AgnesPlugins.register("atelier", {
       parameters: { type: "object", properties: { preset: { type: "string", description: "identifiant d'un préréglage (voir etalonnage_etat)" }, actif: { type: "boolean" } } } } },
     { type: "function", function: { name: "soustitres_modeles", description: "AutoCaption : modèles de sous-titres (favoris en tête) et modèle utilisé. Lecture seule, sans autorisation.",
       parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "bible_lire", description: "Bible du projet : série, style commun et fiches (nom, type, automatique ou non, ADN, nombre d'images). À lire AVANT bible_upsert pour ne rien écraser par erreur. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: { type: { type: "string", enum: ["personnage", "costume", "lieu", "objet", "autre"], description: "facultatif : un seul type" } } } } },
     { type: "function", function: { name: "soustitres_appliquer", description: "AutoCaption : applique un modèle de sous-titres au projet. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { modele: { type: "string", description: "identifiant ou nom du modèle" } }, required: ["modele"] } } }
   ],
@@ -860,6 +862,8 @@ AgnesPlugins.register("atelier", {
       "- Studio : studio_fiches et studio_fiche te montrent les fiches (lecture seule) ; la tenue du jour et le lieu de chaque scène viennent des fiches liées à l'avatar. Style des prompts : style_projet (lecture) ; choisir_style seulement si l'utilisatrice le demande. Classement : classer_cartes copie les cartes terminées dans Production\\<Thématique>\\…, seulement à sa demande.\n" +
       "- Voix, Son, Étalonnage, Sous-titres : voix_etat, son_pistes, etalonnage_etat, soustitres_modeles (lecture) ; voix_generer et son_generer sont PAYANTS (ElevenLabs) : seulement à sa demande, en le disant ; etalonnage_regler et soustitres_appliquer seulement à sa demande. Épisodes (récap, cartons), Planning et Stills → Clip se font dans leur onglet : indique-lui où cliquer.\n" +
       "- Chaque action qui modifie l'app est soumise à l'autorisation de l'utilisateur : ne la présente jamais comme déjà faite avant le résultat de l'outil.\n" +
+      "- Résultat « REFUSÉ » ou « ÉCHEC » : dis-le tel quel (« refusé, rien n'a changé ») ; n'annonce JAMAIS l'action comme faite et ne la relance pas sans nouvelle demande. Une ancienne demande restée en attente ne se reprend pas d'elle-même : traite seulement la demande en cours.\n" +
+      "- Bible : lis-la avec bible_lire avant bible_upsert ; ne change le style commun (series_style) que si l'utilisatrice le demande explicitement.\n" +
       "- Un seul épisode à la fois pour les étapes 5 à 15, sauf demande contraire.\n" +
       "- Quand l'utilisateur parle d'un document, lis-le avec get_document avant de décider. Pour qu'un agent le lise, il suffit qu'il soit destiné à cet agent ou à « tous » ; sinon cite l'essentiel dans la consigne de run_agent.\n" +
       "- Les messages « ▸ N. Agent a terminé » viennent d'appels directs de l'utilisateur (@N) : tiens-en compte.\n" +
@@ -1081,6 +1085,7 @@ AgnesPlugins.register("atelier", {
       case "etalonnage_etat": return "Lire le look d'étalonnage du projet";
       case "etalonnage_regler": return "Étalonnage : préréglage « " + (a.preset || "inchangé") + " »" + (a.actif !== undefined ? (a.actif ? ", appliqué à l'Assemblage" : ", désactivé") : "");
       case "soustitres_modeles": return "Lire les modèles de sous-titres";
+      case "bible_lire": return "Lire la Bible du projet";
       case "soustitres_appliquer": return "Appliquer le modèle de sous-titres « " + (a.modele || "?") + " »";
       default: return c.name;
     }
@@ -1161,7 +1166,7 @@ AgnesPlugins.register("atelier", {
       case "montage_etat": case "montage_modeles": case "monter_cartes": case "compiler_finales": case "rendre_episode": return this.montageTool(c.name, a);
       case "studio_fiches": case "studio_fiche": case "style_projet": case "choisir_style": case "classer_cartes":
       case "voix_etat": case "voix_generer": case "son_pistes": case "son_generer": case "etalonnage_etat": case "etalonnage_regler":
-      case "soustitres_modeles": case "soustitres_appliquer": return this.outilsExtensions(c.name, a);
+      case "soustitres_modeles": case "soustitres_appliquer": case "bible_lire": return this.outilsExtensions(c.name, a);
       case "marketing_extraire_fiche": return this.marketingCall("POST", "/marketing/extraire", { fiche: a.fiche, ecraser: !!a.ecraser }).then(function (d) {
         return "Fiche « " + d.fiche + " » : " + d.notions + " notion(s), " + d.blocages + " blocage(s) du garde-fou, statut " + d.statut +
           " (l'utilisatrice valide).\n" + d.apercu.map(function (x) { return "- " + x; }).join("\n");
@@ -1195,6 +1200,13 @@ AgnesPlugins.register("atelier", {
       }, Promise.resolve()).then(function () { return "Classé dans Production :\n" + out.join("\n"); }, function (e) { return (out.length ? out.join("\n") + "\n" : "") + "Arrêt : " + (e.message || e); });
     }
     var Ap = window.AgnesApp, cartes = function () { return Ap.sortedShots(); };
+    if (nom === "bible_lire") {
+      var Bl = ext("bible"); if (!Bl) return "Bible indisponible : l'extension « Bible de continuité » est désactivée (⚙ → Extensions). Dis-le à l'utilisatrice.";
+      var sl = Bl.series(), ty = String(a.type || "");
+      if (!sl) return "Aucune Bible pour ce projet (elle sera créée au premier bible_upsert).";
+      return j({ serie: sl.name, style_commun: sl.style || "", fiches: sl.entries.filter(function (e) { return !ty || e.kind === ty; }).map(function (e) {
+        return { nom: e.name, type: e.kind, auto: e.auto !== false, adn: e.dna || "", images: (e.refs || []).length }; }) });
+    }
     if (nom === "voix_etat" || nom === "voix_generer") {
       var T = ext("tts"); if (!T) return "Voix indisponibles : activez l'extension « Voix-off & dialogues » (⚙ → Extensions).";
       if (nom === "voix_etat") return j(cartes().map(function (s, i) {

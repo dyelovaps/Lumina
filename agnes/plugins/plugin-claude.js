@@ -87,6 +87,14 @@ AgnesPlugins.register("claude", {
     });
   },
   engine: function (t) { return t ? (this.A.engineOf(t) || "importé") : null; },
+  // 02/10 — extension chargée ou null
+  ext: function (id) { var P = window.AgnesPlugins; return P && P.isLoaded && P.isLoaded(id) ? P.get(id) : null; },
+  // 02/10 — fichier du disque via le pont : sous Production → /classement/lire (lecture seule), sinon /file (prod-fruits, sortie)
+  blobDu: function (chemin) {
+    var c = String(chemin || "").replace(/\\/g, "/"), i = c.toLowerCase().lastIndexOf("/production/");
+    var url = i !== -1 ? this.pont() + "/classement/lire?chemin=" + encodeURIComponent(c.slice(i + 12)) : this.pont() + "/file?path=" + encodeURIComponent(c);
+    return fetch(url).then(function (r) { return r.ok ? r.blob() : null; }, function () { return null; });
+  },
 
   etat: function () {
     var A = this.A, self = this, p = A.getProject(), m = AgnesPlugins.get("moteurs"), P = AgnesPlugins.get("atelier");
@@ -245,9 +253,9 @@ AgnesPlugins.register("claude", {
         if (!a.chemin || !a.nom) throw new Error("chemin et nom obligatoires");
         var ex = A.getProject().library.find(function (l) { return l.name.toLowerCase() === String(a.nom).toLowerCase(); });
         if (ex && !a.remplacer) throw new Error("« " + a.nom + " » existe déjà dans la Bibliothèque (remplacer=true pour changer son image)");
-        return fetch(this.pont() + "/file?path=" + encodeURIComponent(a.chemin)).then(function (r) {
-          if (!r.ok) throw new Error("image introuvable via le pont : " + a.chemin);
-          return r.blob();
+        return this.blobDu(a.chemin).then(function (b) {   // 02/10 : aussi les images du dossier Production
+          if (!b) throw new Error("image introuvable via le pont : " + a.chemin);
+          return b;
         }).then(function (b) {
           if (!ex) return core.addToLibrary(b, { name: String(a.nom), kind: kd2 }).then(function (it) { return "« " + it.name + " » importé dans la Bibliothèque (" + kd2 + ")."; });
           // Même nom, même identifiant : les cartes qui la citent suivent automatiquement
@@ -299,6 +307,120 @@ AgnesPlugins.register("claude", {
         if (a.nom !== undefined) re.nom = String(a.nom);
         if (a.remplacer !== undefined) re.remplacer = !!a.remplacer;
         return this.montage().compilerEpisode(re);
+      }
+      // ===== 02/10 — Commandes pour piloter Agnes de A à Z (elle a donné toutes les autorisations) =====
+      case "bible": {   // lecture : séries, style commun, fiches (nom, type, auto, ADN, images)
+        var Bb = this.ext("bible"); if (!Bb) throw new Error("extension Bible inactive (agnes.py extension cle=bible actif=oui)");
+        var sb = Bb.series(), q = String(a.type || "").toLowerCase();
+        if (!sb) return { projet: A.getProject().name, serie: null, fiches: [] };
+        return { projet: A.getProject().name, serie: sb.name, style_commun: sb.style || "", fiches: sb.entries.filter(function (e) { return !q || e.kind === q; }).map(function (e) {
+          return { nom: e.name, type: e.kind, auto: e.auto !== false, adn: e.dna || "", note_episode: (e.byProject || {})[A.getProject().id] || "", images: (e.refs || []).length, alias: e.aliases || "" }; }) };
+      }
+      case "bible_maj": {   // écriture directe (comme bible_upsert du Chef) : --json '{"entries":[{"name","kind","dna","auto"}],"series_style":"…"}'
+        var At2 = this.ext("atelier"); if (!At2) throw new Error("Atelier IA inactif");
+        if (!this.ext("bible")) throw new Error("extension Bible inactive (agnes.py extension cle=bible actif=oui)");
+        return At2.bibleUpsert(a.entries || [], a.series_style);
+      }
+      case "bible_image": {   // image → fiche de la Bible + Bibliothèque : fiche=av… (image validée du Studio) ou chemin=… (fichier)
+        var Bi = this.ext("bible"); if (!Bi || !Bi.attacherImage) throw new Error("extension Bible inactive");
+        if (!a.nom) throw new Error("nom=… (fiche de la Bible) obligatoire");
+        var src = a.fiche ? this.ext("avatar").imageValidee(a.fiche) : this.blobDu(a.chemin);
+        return src.then(function (b) { if (!b) throw new Error("aucune image (fiche sans image validée ou fichier introuvable)"); return Bi.attacherImage(a.nom, b); })
+          .then(function (e) { return "Image rattachée à « " + e.name + " » (Bible) et rangée dans la Bibliothèque."; });
+      }
+      case "bibliotheque": return A.getProject().library.map(function (l) { return { nom: l.name, type: l.kind, bible: !!l.bibleId }; });
+      case "extension": {   // cle=bible actif=oui|non (liste des clés : agnes.py extensions)
+        var etat = A.extensionsEtat ? A.extensionsEtat() : [], ex = etat.find(function (e) { return e.cle === a.cle; });
+        if (!ex) throw new Error("extension « " + a.cle + " » inconnue ; clés : " + etat.map(function (e) { return e.cle; }).join(", "));
+        var box = document.querySelector('#extensionsList input[data-ext="' + a.cle + '"]');
+        if (!box) throw new Error("liste des extensions introuvable");
+        if (box.checked !== !!a.actif) { box.checked = !!a.actif; box.dispatchEvent(new Event("change", { bubbles: true })); }
+        return this.sleep(1500).then(function () { var e2 = A.extensionsEtat().find(function (e) { return e.cle === a.cle; });
+          return e2.cochee && !e2.chargee ? e2 : Object.assign(e2, { note: e2.cochee ? "activée" : "désactivée (elle disparaît complètement au prochain rechargement d'Agnes)" }); });
+      }
+      case "projet_reglages": {   // nom, style_base, negatif, format, resolution, duree, sorties, seed
+        var pr = A.getProject(), fait = [];
+        if (a.nom) { pr.name = String(a.nom); fait.push("nom"); }
+        if (a.style_base !== undefined) { pr.styleGuide = String(a.style_base); fait.push("style de base"); }
+        if (a.negatif !== undefined) { pr.negative = String(a.negatif); fait.push("prompt négatif"); }
+        if (a.format) { pr.aspect = String(a.format); fait.push("format"); }
+        if (a.resolution) { pr.resolution = String(a.resolution); fait.push("résolution"); }
+        if (a.duree) { pr.duration = A.clamp(a.duree, 1, 60); fait.push("durée"); }
+        if (a.sorties) { pr.outputs = A.clamp(a.sorties, 1, 4); fait.push("sorties"); }
+        if (a.seed !== undefined) { pr.seed = String(a.seed); fait.push("seed"); }
+        A.touch(); A.render();
+        return { projet: pr.name, modifie: fait, style_base: pr.styleGuide || "", negatif: pr.negative || "", format: pr.aspect, resolution: pr.resolution, duree: pr.duration, sorties: pr.outputs };
+      }
+      case "supprimer_projet": {   // projet=… confirmer=oui (jamais le dernier projet)
+        if (!a.confirmer) throw new Error("ajoutez confirmer=oui (suppression définitive du projet et de ses rendus)");
+        var qp = String(a.projet || "").toLowerCase(), pid = Object.keys(A.db.projects).find(function (k) { return k === a.projet || A.db.projects[k].name.toLowerCase() === qp; });
+        if (!pid) throw new Error("projet « " + a.projet + " » introuvable");
+        if (Object.keys(A.db.projects).length <= 1) throw new Error("impossible de supprimer le dernier projet");
+        var nomP = A.db.projects[pid].name;
+        if (A.db.currentProjectId === pid) core.openProject(Object.keys(A.db.projects).find(function (k) { return k !== pid; }));
+        A.db.projects[pid].shots.forEach(function (s) { A.deleteShot(s, A.db.projects[pid]); });
+        delete A.db.projects[pid]; A.saveDB(); A.render();
+        return "Projet « " + nomP + " » supprimé. Projet ouvert : " + A.getProject().name;
+      }
+      case "supprimer_cartes": {   // cartes=2,3 confirmer=oui
+        if (!a.confirmer) throw new Error("ajoutez confirmer=oui (cartes et prises supprimées)");
+        var del = this.pick(a.cartes || a.plans), pj = A.getProject();
+        if (!del.length) throw new Error("aucune carte");
+        del.forEach(function (s) { A.deleteShot(s, pj); }); A.touch(); A.renderShots();
+        return del.length + " carte(s) supprimée(s). Il en reste " + A.sortedShots().length + ".";
+      }
+      case "references": {   // plan=1 noms="Anthony,Bureau" (vide = aucune) : coche les références de la Bibliothèque
+        var sr = this.shotByNum(a.plan); if (!sr) throw new Error("carte " + a.plan + " introuvable");
+        var lib = A.getProject().library, noms = String(a.noms || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean), manq = [];
+        sr.ingredients = noms.map(function (n) { var l = lib.find(function (x) { return x.name.toLowerCase() === n.toLowerCase(); }); if (!l) manq.push(n); return l && l.id; }).filter(Boolean);
+        A.touch(); A.renderShots();
+        if (manq.length) throw new Error("introuvable(s) dans la Bibliothèque : " + manq.join(", ") + " (les autres sont cochées)");
+        return "Carte #" + a.plan + " : références " + (noms.join(", ") || "aucune") + ".";
+      }
+      case "notes": {   // plan=1 texte="…" (carton de fin, réplique, description…) ; ajouter=oui pour compléter
+        var sn = this.shotByNum(a.plan); if (!sn) throw new Error("carte " + a.plan + " introuvable");
+        sn.notes = a.ajouter && sn.notes ? sn.notes + "\n" + String(a.texte || "") : String(a.texte || ""); A.touch(); A.renderShots();
+        return "Notes de la carte #" + a.plan + " : " + sn.notes;
+      }
+      case "prompt_final": {   // plan=1 [etape=image|video] : prompt réellement envoyé (style du projet, Bible, skills, règles)
+        var sp = this.shotByNum(a.plan); if (!sp) throw new Error("carte " + a.plan + " introuvable");
+        var vue = A.isTwoStep(sp) && A.stageView ? A.stageView(sp, a.etape === "image" ? "image" : "video") : sp;
+        return { carte: +a.plan, etape: a.etape || (A.isTwoStep(sp) ? "video" : A.modeKind(sp.mode)), prompt: A.buildPrompt(vue, A.getProject()) };
+      }
+      case "chef_historique": {   // n=10 derniers messages de la discussion avec le Chef
+        var stc = this.atelier().project(), nb = +a.n || 10;
+        return { en_attente: this.atelier().pending ? this.atelier().describe(this.atelier().pending.call) : null,
+          messages: stc.chat.slice(-nb).map(function (m) { return { role: m.role, texte: String(m.content || "").slice(0, 1500) }; }) };
+      }
+      case "chef_effacer": {   // efface la discussion et une demande d'autorisation restée en attente (le travail des agents est gardé)
+        var Pa = this.atelier(), stx = Pa.project(); stx.chat = []; Pa.pending = null; core.saveProject(); if (Pa.renderChat) Pa.renderChat();
+        return "Discussion avec le Chef effacée (demande en attente annulée).";
+      }
+      case "studio_generer": {   // id|nom=… [format=9:16] (PAYANT : moteur image de ⚙ → Moteurs) : un aperçu, attendu jusqu'au bout
+        var Vg = this.ext("avatar"), fg = Vg && Vg.trouver(a.id || a.nom); if (!fg) throw new Error("fiche Studio introuvable");
+        if (a.format) fg.priseDeVue.format = String(a.format);
+        var avant = (fg.essais || []).length;
+        return Promise.resolve(Vg.generer(fg)).then(function () {
+          if ((fg.essais || []).length <= avant) throw new Error("aucun aperçu produit (voir le message d'Agnes : pont, moteur, quota)");
+          var e = fg.essais[fg.essais.length - 1]; return { fiche: Vg.nomDe(fg), essai: e.cle, format: e.format, moteur: e.moteur, prompt: e.prompt };
+        });
+      }
+      case "studio_valider": {   // id|nom=… [essai=clé] (défaut : le dernier essai)
+        var Vv = this.ext("avatar"), fv = Vv && Vv.trouver(a.id || a.nom); if (!fv) throw new Error("fiche Studio introuvable");
+        var ess = (fv.essais || []), ch = a.essai ? ess.find(function (e) { return e.cle === a.essai; }) : ess[ess.length - 1];
+        if (!ch) throw new Error("aucun essai à valider");
+        fv.imageValidee = ch.cle; Vv.touch(fv); Vv.render(); return "Image validée pour « " + Vv.nomDe(fv) + " » (" + ch.cle + ").";
+      }
+      case "studio_image": {   // id|nom=… chemin=… : image du disque ajoutée comme essai ET validée (aucune génération)
+        var Vi = this.ext("avatar"), fi = Vi && Vi.trouver(a.id || a.nom); if (!fi) throw new Error("fiche Studio introuvable");
+        var cleI = "avatar:img:" + fi.id + ":" + Date.now().toString(36);
+        return this.blobDu(a.chemin).then(function (b) {
+          if (!b) throw new Error("fichier introuvable : " + a.chemin);
+          return core.store.put(cleI, b).then(function () {
+            (fi.essais = fi.essais || []).push({ cle: cleI, format: (fi.priseDeVue || {}).format || "9:16", prompt: "(image importée : " + a.chemin + ")", moteur: "fichier", date: Date.now() });
+            fi.imageValidee = cleI; Vi.touch(fi); Vi.render(); return "Image importée et validée pour « " + Vi.nomDe(fi) + " ».";
+          });
+        });
       }
       case "outil": {
         // 02/10 — Claude utilise directement les outils d'extensions du Chef (Studio, styles, classement, voix, son,

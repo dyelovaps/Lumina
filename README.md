@@ -168,6 +168,9 @@ Retouches du 02/10 :
   - autorisation donnée à la place de l'utilisatrice : `set_replique` puis `autoriser`, carte modifiée ;
   - lectures Montage et Studio : OK.
 - **Ponts :** 8177 (`/health`, `/codex`, `/classement/thematiques`, `/marketing`) et FlowKit 8100 répondent. Tests : `tests/agnes-chaine-outils.test.cjs`, 217 au total.
+- **Outils du Chef pour Voix, Son, Étalonnage et AutoCaption :** `voix_etat`, `son_pistes`, `etalonnage_etat` et `soustitres_modeles` en lecture ; `voix_generer` et `son_generer` (payants), `etalonnage_regler` et `soustitres_appliquer` avec autorisation. Claude utilise les mêmes outils avec `agnes.py outil nom=…`. Épisodes, Planning et Stills restent dans leur onglet.
+- **Google Flow passé en mode « Agent » (nouvelle page Flow, 01–02/10) :** `flow/background.js` (`prepareFlowComposer`) s'arrête quand le menu « Vidéo · 720p · 8 s » est absent, avec un message clair (« cliquez sur Agent pour revenir au mode normal ») au lieu d'écrire le prompt dans l'agent. Le diagnostic relève maintenant l'état des boutons bascule (`aria-pressed`, `data-state`…). Le 02/10, Google affichait aussi « Image uploads are failing for some users » : c'est une panne chez Google.
+- **219 tests.**
 
 ## Agnes : Chef de l'Atelier et ressources locales (1.13.4, 01/10/2026)
 

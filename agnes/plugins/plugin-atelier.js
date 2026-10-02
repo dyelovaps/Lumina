@@ -788,7 +788,24 @@ AgnesPlugins.register("atelier", {
       parameters: { type: "object", properties: { style: { type: "string", description: "nom ou identifiant du style" } }, required: ["style"] } } },
     { type: "function", function: { name: "classer_cartes", description: "Classement : copie l'image, la vidéo et la fiche des cartes dans Production\\<Thématique>\\… sur l'ordinateur (via le pont), comme le bouton Classer en mode local. Rien n'est supprimé d'Agnes. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { cartes: { type: "array", items: { type: "number" }, description: "numéros des cartes ; vide = toutes" }, thematique: { type: "string", description: "Serie, Film, Marketing, Court_metrage… (vide = celle du projet)" },
-        nom: { type: "string", description: "série / campagne / titre (vide = celui du projet)" }, episode: { type: "number" }, date: { type: "string", description: "AAAAMMJJ (marketing)" }, sujet: { type: "string" } } } } }
+        nom: { type: "string", description: "série / campagne / titre (vide = celui du projet)" }, episode: { type: "number" }, date: { type: "string", description: "AAAAMMJJ (marketing)" }, sujet: { type: "string" } } } } },
+    // 02/10 — Voix, Son, Étalonnage, AutoCaption
+    { type: "function", function: { name: "voix_etat", description: "Voix (onglet Voix) : pour chaque carte, texte de la voix (dialogue ou voix-off), voix générée ou non. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "voix_generer", description: "Voix : génère la voix des cartes (ElevenLabs / OpenAI de l'onglet Voix, PAYANT) et l'attache à la carte. Texte : celui donné, sinon celui déjà écrit dans l'onglet Voix. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { cartes: { type: "array", items: { type: "number" } }, texte: { type: "string", description: "facultatif, une seule carte : « NOM : réplique » par ligne, ou voix-off" } }, required: ["cartes"] } } },
+    { type: "function", function: { name: "son_pistes", description: "Son (onglet Son) : pistes de musique, d'ambiance et de bruitage du projet. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "son_generer", description: "Son : génère une musique, une ambiance ou un bruitage (ElevenLabs, PAYANT) et l'ajoute aux pistes de l'onglet Son. Respecte le style du projet (pas de musique s'il l'interdit, sauf demande explicite). Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { type: { type: "string", enum: ["musique", "ambiance", "bruitage"] }, prompt: { type: "string", description: "description en anglais" }, duree: { type: "number", description: "secondes (musique 10 à 300, autres 0,5 à 30)" }, instrumental: { type: "boolean" }, nom: { type: "string" } }, required: ["type", "prompt", "duree"] } } },
+    { type: "function", function: { name: "etalonnage_etat", description: "Étalonnage : look du projet (préréglage, actif ou non) et préréglages disponibles. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "etalonnage_regler", description: "Étalonnage : choisit le préréglage du look et l'active ou non pour l'Assemblage et le kit FFmpeg. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { preset: { type: "string", description: "identifiant d'un préréglage (voir etalonnage_etat)" }, actif: { type: "boolean" } } } } },
+    { type: "function", function: { name: "soustitres_modeles", description: "AutoCaption : modèles de sous-titres (favoris en tête) et modèle utilisé. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "soustitres_appliquer", description: "AutoCaption : applique un modèle de sous-titres au projet. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { modele: { type: "string", description: "identifiant ou nom du modèle" } }, required: ["modele"] } } }
   ],
   // 01/10 — Style du projet (extension Styles de prompt) : null sans l'extension
   styleProjet: function () {
@@ -836,6 +853,7 @@ AgnesPlugins.register("atelier", {
       "- Pour ranger dans l'app, lis d'abord le travail (get_output), puis utilise l'outil de destination avec le contenu exact, sans le réécrire (sauf pour extraire les fiches de la Bible).\n" +
       "- Un document « Studio — … » vient de l'utilisatrice (onglet Studio) : lis-le avec get_document ; son ADN (anglais, une ligne) se recopie MOT POUR MOT dans bible_upsert, sans le réécrire. Toi seul écris la Bible. Les tenues et les lieux d'un avatar sont des entrées SÉPARÉES (costume, lieu) : la tenue du jour et le lieu de chaque scène se choisissent parmi elles. Si une image est validée, rattache-la avec bible_attacher_image (identifiant de fiche du document). Ne crée aucune carte : les cartes restent créées par l'utilisatrice ou par Claude.\n" +
       "- Studio : studio_fiches et studio_fiche te montrent les fiches (lecture seule) ; la tenue du jour et le lieu de chaque scène viennent des fiches liées à l'avatar. Style des prompts : style_projet (lecture) ; choisir_style seulement si l'utilisatrice le demande. Classement : classer_cartes copie les cartes terminées dans Production\\<Thématique>\\…, seulement à sa demande.\n" +
+      "- Voix, Son, Étalonnage, Sous-titres : voix_etat, son_pistes, etalonnage_etat, soustitres_modeles (lecture) ; voix_generer et son_generer sont PAYANTS (ElevenLabs) : seulement à sa demande, en le disant ; etalonnage_regler et soustitres_appliquer seulement à sa demande. Épisodes (récap, cartons), Planning et Stills → Clip se font dans leur onglet : indique-lui où cliquer.\n" +
       "- Chaque action qui modifie l'app est soumise à l'autorisation de l'utilisateur : ne la présente jamais comme déjà faite avant le résultat de l'outil.\n" +
       "- Un seul épisode à la fois pour les étapes 5 à 15, sauf demande contraire.\n" +
       "- Quand l'utilisateur parle d'un document, lis-le avec get_document avant de décider. Pour qu'un agent le lise, il suffit qu'il soit destiné à cet agent ou à « tous » ; sinon cite l'essentiel dans la consigne de run_agent.\n" +
@@ -972,7 +990,8 @@ AgnesPlugins.register("atelier", {
   },
   NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true,
     generate_shots: true, bible_attacher_image: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true, marketing_recherche_sujet: true,
-    marketing_decider_fiche: true, marketing_notes_cartes: true, set_replique: true, monter_cartes: true, compiler_finales: true, rendre_episode: true, choisir_style: true, classer_cartes: true },
+    marketing_decider_fiche: true, marketing_notes_cartes: true, set_replique: true, monter_cartes: true, compiler_finales: true, rendre_episode: true, choisir_style: true, classer_cartes: true,
+    voix_generer: true, son_generer: true, etalonnage_regler: true, soustitres_appliquer: true },
   handleCalls: function (calls, depth) {
     var self = this, st = this.project(), results = [];
     function next(i) {
@@ -1050,6 +1069,14 @@ AgnesPlugins.register("atelier", {
       case "choisir_style": return "Choisir le style des prompts du projet : « " + (a.style || "?") + " » (le compteur de répliques suit)";
       case "classer_cartes": return "Classer " + ((a.cartes || []).length ? "les cartes " + a.cartes.map(function (x) { return "#" + x; }).join(", ") : "toutes les cartes") +
         " dans Production" + (a.thematique ? "\\" + a.thematique : "") + (a.nom ? "\\" + a.nom : "") + (a.episode ? "\\Ep" + a.episode : "") + " (copie sur l'ordinateur, rien n'est supprimé d'Agnes)";
+      case "voix_etat": return "Lire l'état des voix des cartes";
+      case "voix_generer": return "Générer la voix des cartes " + (a.cartes || []).map(function (x) { return "#" + x; }).join(", ") + " (PAYANT : ElevenLabs / OpenAI de l'onglet Voix)" + (a.texte ? " avec le texte : « " + a.texte + " »" : "");
+      case "son_pistes": return "Lire les pistes de l'onglet Son";
+      case "son_generer": return "Générer " + ({ musique: "une musique", ambiance: "une ambiance", bruitage: "un bruitage" }[a.type] || a.type) + " de " + (a.duree || "?") + " s (PAYANT : ElevenLabs) : « " + (a.prompt || "") + " »";
+      case "etalonnage_etat": return "Lire le look d'étalonnage du projet";
+      case "etalonnage_regler": return "Étalonnage : préréglage « " + (a.preset || "inchangé") + " »" + (a.actif !== undefined ? (a.actif ? ", appliqué à l'Assemblage" : ", désactivé") : "");
+      case "soustitres_modeles": return "Lire les modèles de sous-titres";
+      case "soustitres_appliquer": return "Appliquer le modèle de sous-titres « " + (a.modele || "?") + " »";
       default: return c.name;
     }
   },
@@ -1127,7 +1154,9 @@ AgnesPlugins.register("atelier", {
       });
       case "marketing_notes_cartes": return this.applyCardNotes(a.document, a.cartes);
       case "montage_etat": case "montage_modeles": case "monter_cartes": case "compiler_finales": case "rendre_episode": return this.montageTool(c.name, a);
-      case "studio_fiches": case "studio_fiche": case "style_projet": case "choisir_style": case "classer_cartes": return this.outilsExtensions(c.name, a);
+      case "studio_fiches": case "studio_fiche": case "style_projet": case "choisir_style": case "classer_cartes":
+      case "voix_etat": case "voix_generer": case "son_pistes": case "son_generer": case "etalonnage_etat": case "etalonnage_regler":
+      case "soustitres_modeles": case "soustitres_appliquer": return this.outilsExtensions(c.name, a);
       case "marketing_extraire_fiche": return this.marketingCall("POST", "/marketing/extraire", { fiche: a.fiche, ecraser: !!a.ecraser }).then(function (d) {
         return "Fiche « " + d.fiche + " » : " + d.notions + " notion(s), " + d.blocages + " blocage(s) du garde-fou, statut " + d.statut +
           " (l'utilisatrice valide).\n" + d.apercu.map(function (x) { return "- " + x; }).join("\n");
@@ -1159,6 +1188,50 @@ AgnesPlugins.register("atelier", {
       return list.reduce(function (pr, s) {
         return pr.then(function () { return C.classerLocal(s, opt); }).then(function (r) { out.push("Carte #" + (all.indexOf(s) + 1) + " → `" + r.dossier.replace(/\//g, "\\") + "` (" + r.fichiers.join(", ") + ")"); });
       }, Promise.resolve()).then(function () { return "Classé dans Production :\n" + out.join("\n"); }, function (e) { return (out.length ? out.join("\n") + "\n" : "") + "Arrêt : " + (e.message || e); });
+    }
+    var Ap = window.AgnesApp, cartes = function () { return Ap.sortedShots(); };
+    if (nom === "voix_etat" || nom === "voix_generer") {
+      var T = ext("tts"); if (!T) return "Voix indisponibles : activez l'extension « Voix-off & dialogues » (⚙ → Extensions).";
+      if (nom === "voix_etat") return j(cartes().map(function (s, i) {
+        return { carte: i + 1, texte: (s.voice && s.voice.text) || s.voiceDraft || "", voix: !!(s.voice && s.voice.key), source: (s.voice && s.voice.source) || "" };
+      }));
+      var all = cartes(), cibles = (a.cartes || []).map(function (n) { return { n: n, s: all[(+n || 0) - 1] }; }).filter(function (x) { return x.s; }), rap = [];
+      if (!cibles.length) return "Aucune carte valide.";
+      return cibles.reduce(function (pr, x) {
+        var texte = (cibles.length === 1 && a.texte) || (x.s.voice && x.s.voice.text) || x.s.voiceDraft || "";
+        return pr.then(function () {
+          if (!String(texte).trim()) { rap.push("Carte #" + x.n + " : aucun texte de voix (écrivez-le dans l'onglet Voix ou donnez « texte »)"); return; }
+          return T.generateFor(x.s.id, texte).then(function () { rap.push("Carte #" + x.n + " : voix générée et attachée"); }, function (e) { rap.push("Carte #" + x.n + " : échec (" + (e.message || e) + ")"); });
+        });
+      }, Promise.resolve()).then(function () { return rap.join("\n"); });
+    }
+    if (nom === "son_pistes" || nom === "son_generer") {
+      var M = ext("musique"); if (!M) return "Son indisponible : activez l'extension « Musique, ambiances & bruitages » (⚙ → Extensions).";
+      if (nom === "son_pistes") return j((M.beds ? M.beds() : []).map(function (b) { return { nom: b.name, type: b.type, duree_s: b.dur ? Math.round(b.dur) : null, volume: b.volume, muet: !!b.mute }; }));
+      if (["musique", "ambiance", "bruitage"].indexOf(a.type) === -1) return "Type inconnu : musique, ambiance ou bruitage.";
+      return M.generate(a.type === "musique" ? "musique" : "effet", String(a.prompt || ""), +a.duree || 10, a.instrumental !== false)
+        .then(function (b) { return M.addBed(b, a.nom || a.prompt.slice(0, 40), a.type); })
+        .then(function (b) { return "Piste « " + b.name + " » (" + b.type + ", " + (b.dur ? Math.round(b.dur) + " s" : "durée inconnue") + ") ajoutée à l'onglet Son."; }, function (e) { return "Son non généré : " + (e.message || e); });
+    }
+    if (nom === "etalonnage_etat" || nom === "etalonnage_regler") {
+      var G = ext("etalonnage"); if (!G || !G.g) return "Étalonnage indisponible : activez l'extension « Étalonnage & finition » (⚙ → Extensions).";
+      var gr = G.g();
+      if (nom === "etalonnage_regler") {
+        if (a.preset) { if (!G.PRESETS[a.preset]) return "Préréglage inconnu. Disponibles : " + Object.keys(G.PRESETS).join(", "); Object.assign(gr, G.values(a.preset), { preset: a.preset }); }
+        if (a.actif !== undefined) gr.on = !!a.actif;
+        this.core.saveProject();
+      }
+      return (nom === "etalonnage_regler" ? "Étalonnage réglé. " : "") + j({ preset: gr.preset, actif: !!gr.on, prereglages: Object.keys(G.PRESETS).map(function (k) { return k + " (" + G.PRESETS[k][0] + ")"; }) });
+    }
+    if (nom === "soustitres_modeles" || nom === "soustitres_appliquer") {
+      var K = ext("captions"); if (!K || !K.modeles) return "AutoCaption indisponible : activez l'extension AutoCaption (⚙ → Extensions).";
+      var mods = K.modeles(), actuel = ((K.state && K.state().style) || {}).preset || "";
+      if (nom === "soustitres_appliquer") {
+        var q = String(a.modele || "").toLowerCase(), m = mods.find(function (x) { return x.id === a.modele || String(x.nom || "").toLowerCase() === q; });
+        if (!m) return "Modèle introuvable. Modèles : " + mods.map(function (x) { return x.nom; }).join(", ");
+        K.appliquerModele(m.id); return "Modèle de sous-titres « " + m.nom + " » appliqué.";
+      }
+      return j({ actuel: actuel, modeles: mods.map(function (x) { return { id: x.id, nom: x.nom, favori: x.favori, perso: x.perso }; }) });
     }
     return "Outil inconnu.";
   },

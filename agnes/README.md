@@ -218,6 +218,7 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
   - `style_projet` (lecture) et `choisir_style` (avec autorisation) ;
   - `classer_cartes` (avec autorisation).
 - **Classement sans fenêtre (02/10)** ([26](docs/26-classement.md)) : commande Claude `classer` et outil du Chef, mêmes dossiers que le bouton Classer.
+- **Le Chef pilote aussi Voix, Son, Étalonnage et Sous-titres (02/10)** ([21](docs/21-atelier.md)) : lecture libre, et avec votre autorisation la génération (payante) des voix et du son, le choix du look et du modèle de sous-titres. Claude utilise les mêmes outils avec `agnes.py outil nom=…`.
 - **Claude** : commandes `avatars`, `avatar`, `avatar_prompt`, `envoyer_avatar`.
 
 ### 3.12 — octobre 2026

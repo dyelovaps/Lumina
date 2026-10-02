@@ -1196,7 +1196,9 @@ async function describeFlowPage() {
         .filter(vis).slice(0, 20).map(attrs);
       const boutons = [...document.querySelectorAll('button, [role="button"]')].filter(vis).slice(0, 80)
         .map((b) => ({ text: (b.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 40), aria: b.getAttribute('aria-label') || '',
-          disabled: Boolean(b.disabled || b.getAttribute('aria-disabled') === 'true'), box: box(b) }));
+          disabled: Boolean(b.disabled || b.getAttribute('aria-disabled') === 'true'), box: box(b),
+          // 02/10 — état d'un bouton bascule (ex. « Agent » activé ou non)
+          etat: ['aria-pressed', 'aria-checked', 'aria-selected', 'aria-expanded', 'data-state'].map((k) => b.getAttribute(k) ? k + '=' + b.getAttribute(k) : '').filter(Boolean).join(' ') }));
       const fichiers = [...document.querySelectorAll('input[type="file"]')].map((f) => ({ accept: f.accept || '', multiple: f.multiple, id: f.id || '' }));
       // Messages des générations en échec (bloc avec le bouton « Réessayer ») : texte visible du bloc
       const echecs = [...document.querySelectorAll('button[aria-label="Réessayer"]')].filter(vis).slice(0, 5).map((b) => {
@@ -1275,6 +1277,16 @@ async function prepareFlowComposer({ images = [], ingredients = [], prompt = '',
       if (!editeur) return { ok: false, error: 'Zone de saisie de Flow introuvable : ouvrez le projet sur l’écran de création.', etapes };
       await attendre(() => boutons().find((b) => (b.getAttribute('aria-label') || '') === 'Déclencheur des paramètres'), 10000);
       await pause(800);
+      // 02/10/2026 — Mode « Agent » de Flow : la zone de saisie n'a plus le menu « Vidéo · 720p · 8 s » ni Début / Fin
+      // (boutons « Agent », « Instructions pour l'agent », « Paramètres »). Rien n'est écrit : un prompt confié à l'agent
+      // pourrait lancer autre chose qu'une vidéo. L'utilisatrice repasse en mode normal, puis relance.
+      const aria = (b) => b.getAttribute('aria-label') || '';
+      if (!boutons().some((b) => aria(b) === 'Déclencheur des paramètres')) {
+        const agent = boutons().some((b) => aria(b) === "Instructions pour l'agent" || txt(b) === 'Agent');
+        return { ok: false, agent, etapes, error: agent
+          ? 'Google Flow est en mode « Agent » : cliquez sur le bouton « Agent » sous la zone de saisie de Flow pour revenir au mode normal (menu « Vidéo · 720p · 8 s » visible), puis relancez. Rien n’a été écrit dans Flow.'
+          : 'Menu des réglages de Google Flow introuvable (« Vidéo · 720p · 8 s ») : la page a peut-être changé. Lancez le diagnostic de la page Flow pour Claude. Rien n’a été écrit dans Flow.' };
+      }
 
       // 0) Réglages (menu « Vidéo · 720p · 8 s … ») AVANT les images : changer de mode pourrait les effacer.
       //    Modèle d'abord (il décide des durées proposées), puis mode Images, format, résolution, durée, x1.

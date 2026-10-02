@@ -99,3 +99,44 @@ test('Studio : prompts plus propres (majuscule après un point, « and » dans l
   const a = V.nouvelleFiche('avatar', ''); a.champs.prenom = 'Nicolas'; V.fiches.push(a);
   assert.equal(V.nomDe(a), 'Nicolas'); assert.equal(V.trouver('nicolas'), a);
 });
+
+test('Chef : voix, son, étalonnage et sous-titres (lecture libre, actions payantes ou réglages avec autorisation)', async () => {
+  const shots = [{ id: 's1', voiceDraft: 'LÉA : Bonjour.' }, { id: 's2' }];
+  const { plugins } = charge(['plugin-atelier.js'], { AgnesApp: { uid: () => 'u', esc: (s) => String(s), sortedShots: () => shots } });
+  const P = plugins.atelier; P.core = { saveProject() {} };
+  const noms = P.TOOLS.map((t) => t.function.name);
+  ['voix_etat', 'voix_generer', 'son_pistes', 'son_generer', 'etalonnage_etat', 'etalonnage_regler', 'soustitres_modeles', 'soustitres_appliquer'].forEach((n) => assert.ok(noms.includes(n), n));
+  ['voix_generer', 'son_generer', 'etalonnage_regler', 'soustitres_appliquer'].forEach((n) => assert.equal(P.NEEDS_AUTH[n], true, n));
+  assert.match(P.describe({ name: 'voix_generer', args: { cartes: [1] } }), /PAYANT/);
+  assert.match(P.describe({ name: 'son_generer', args: { type: 'musique', duree: 20, prompt: 'calm piano' } }), /PAYANT.*calm piano/);
+  // extensions absentes : message clair
+  assert.match(P.outilsExtensions('voix_etat', {}), /Voix indisponibles/);
+  assert.match(P.outilsExtensions('son_pistes', {}), /Son indisponible/);
+  assert.match(P.outilsExtensions('etalonnage_etat', {}), /Étalonnage indisponible/);
+  assert.match(P.outilsExtensions('soustitres_modeles', {}), /AutoCaption indisponible/);
+  // voix
+  const faites = []; plugins.tts = { generateFor: async (id, t) => { faites.push([id, t]); } };
+  assert.match(P.outilsExtensions('voix_etat', {}), /"texte": "LÉA : Bonjour\."/);
+  const rv = await P.outilsExtensions('voix_generer', { cartes: [1, 2] });
+  assert.deepEqual(faites, [['s1', 'LÉA : Bonjour.']]); assert.match(rv, /#1 : voix générée/); assert.match(rv, /#2 : aucun texte/);
+  // son
+  const pistes = []; plugins.musique = { beds: () => pistes, generate: async (type, p, d) => ({ type, p, d }), addBed: async (b, n, t) => { const x = { name: n, type: t, dur: 20 }; pistes.push(x); return x; } };
+  assert.match(await P.outilsExtensions('son_generer', { type: 'musique', prompt: 'calm piano', duree: 20 }), /Piste « calm piano » \(musique, 20 s\) ajoutée/);
+  assert.match(P.outilsExtensions('son_pistes', {}), /"type": "musique"/);
+  assert.match(await P.outilsExtensions('son_generer', { type: 'chanson', prompt: 'x', duree: 5 }), /Type inconnu/);
+  // étalonnage
+  const gr = { preset: 'neutre', on: false };
+  plugins.etalonnage = { g: () => gr, PRESETS: { neutre: ['Neutre', {}], noir: ['Cyber-noir', { contrast: 1.25 }] }, values: (k) => Object.assign({}, plugins.etalonnage.PRESETS[k][1]) };
+  assert.match(P.outilsExtensions('etalonnage_regler', { preset: 'noir', actif: true }), /Étalonnage réglé/);
+  assert.equal(gr.preset, 'noir'); assert.equal(gr.on, true); assert.equal(gr.contrast, 1.25);
+  assert.match(P.outilsExtensions('etalonnage_regler', { preset: 'zzz' }), /Préréglage inconnu/);
+  // sous-titres
+  let applique = null;
+  plugins.captions = { modeles: () => [{ id: 'tiktok', nom: 'TikTok', favori: true }], state: () => ({ style: { preset: 'tiktok' } }), appliquerModele: (id) => { applique = id; return true; } };
+  assert.match(P.outilsExtensions('soustitres_modeles', {}), /"actuel": "tiktok"/);
+  assert.match(P.outilsExtensions('soustitres_appliquer', { modele: 'TikTok' }), /appliqué/); assert.equal(applique, 'tiktok');
+});
+
+test('Claude : commande outil (accès direct aux outils d\'extensions du Chef)', () => {
+  assert.match(read('plugins', 'plugin-claude.js'), /case "outil": \{[\s\S]*outilsExtensions/);
+});

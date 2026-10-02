@@ -438,3 +438,16 @@ L'onglet **Studio** ([30](30-creation-avatar.md)) envoie au Chef un document **�
 | `classer_cartes` | Copie les cartes dans `Production\<Thématique>\…`, comme le bouton Classer. Seulement à votre demande | **oui** |
 
 Le Chef écrit toujours seul dans la Bible. Il lit le Studio, mais ne le modifie pas.
+| `voix_etat` | Texte de voix de chaque carte, voix générée ou non | non (lecture) |
+| `voix_generer` | Génère la voix des cartes (ElevenLabs / OpenAI, **payant**) | **oui** |
+| `son_pistes` | Pistes de l'onglet Son | non (lecture) |
+| `son_generer` | Musique, ambiance ou bruitage (ElevenLabs, **payant**), ajouté aux pistes | **oui** |
+| `etalonnage_etat` / `etalonnage_regler` | Look du projet : lecture / choix du préréglage, actif ou non | non / **oui** |
+| `soustitres_modeles` / `soustitres_appliquer` | Modèles AutoCaption : lecture / application | non / **oui** |
+
+Ce que le Chef ne pilote pas, parce que ces onglets demandent vos choix à l'écran :
+- **Épisodes** : épisode précédent et plans du récap ;
+- **Planning** : dates ;
+- **Stills → Clip** : vos fichiers.
+
+Il vous dit où cliquer. Claude peut utiliser les mêmes outils directement avec `python agnes.py outil nom=…`.

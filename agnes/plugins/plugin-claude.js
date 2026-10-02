@@ -294,6 +294,15 @@ AgnesPlugins.register("claude", {
         if (a.remplacer !== undefined) re.remplacer = !!a.remplacer;
         return this.montage().compilerEpisode(re);
       }
+      case "outil": {
+        // 02/10 — Claude utilise directement les outils d'extensions du Chef (Studio, styles, classement, voix, son,
+        // étalonnage, sous-titres) : python agnes.py outil nom=voix_etat [--json '{"cartes":[1]}']
+        var Po = window.AgnesPlugins, At = Po && Po.isLoaded && Po.isLoaded("atelier") ? Po.get("atelier") : null;
+        if (!At || !At.outilsExtensions) throw new Error("Atelier IA inactif (⚙ → Extensions)");
+        if (!a.nom) throw new Error("nom=… obligatoire (studio_fiches, style_projet, voix_etat, son_pistes, etalonnage_etat, soustitres_modeles…)");
+        var argsO = Object.assign({}, a); delete argsO.nom;
+        return Promise.resolve(At.outilsExtensions(String(a.nom), argsO));
+      }
       case "classer": {
         // 02/10 — Classement local (Production\Thématique\…) sans fenêtre, comme le bouton Classer : cartes=1,2 ou tous
         var Pc = window.AgnesPlugins, Cl = Pc && Pc.isLoaded && Pc.isLoaded("classement") ? Pc.get("classement") : null;

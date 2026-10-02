@@ -133,6 +133,7 @@ AgnesPlugins.register("claude", {
     var self = this, A = this.A, core = this.core;
     switch (action) {
       case "etat": return this.etat();
+      case "extensions": return A.extensionsEtat ? A.extensionsEtat() : "état des extensions indisponible (Agnes à recharger)";   // 02/10
       case "projets": return Object.keys(A.db.projects).map(function (id) { var p = A.db.projects[id]; return { id: id, nom: p.name, plans: p.shots.length, actuel: id === A.db.currentProjectId }; });
       case "ouvrir_projet": {
         var q = String(a.projet || "").toLowerCase(), id = Object.keys(A.db.projects).find(function (k) { return k === a.projet || A.db.projects[k].name.toLowerCase() === q; });

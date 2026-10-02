@@ -34,14 +34,25 @@
     EXTENSIONS.forEach(function (e) { if (e.defaultOn && ex[e.key] === undefined) ex[e.key] = true; });
     return ex;
   }
+  // 02/10 — erreurs de chargement gardées (lisibles par Claude : agnes.py extensions). Au DÉMARRAGE (silent), une extension
+  // qui échoue reste cochée : avant, elle était décochée et enregistrée, et l'utilisatrice la retrouvait désactivée après
+  // chaque rechargement sans savoir pourquoi. Cochée à la main et en échec : décochée comme avant (on voit l'erreur tout de suite).
+  A.extErreurs = A.extErreurs || {};
   function load(ext, silent) {
     return AgnesPlugins.load(ext.id, ext.file).then(function () {
+      delete A.extErreurs[ext.key];
       if (!silent) A.toast("Extension activée : " + ext.label, "ok");
     }).catch(function (err) {
-      enabled()[ext.key] = false; A.persistSettings(); render();
-      A.toast("Extension « " + ext.label + " » indisponible : " + err.message, "err");
+      A.extErreurs[ext.key] = String((err && (err.stack || err.message)) || err).slice(0, 600);
+      try { console.error("Extension " + ext.key + " :", err); } catch (e) { }
+      if (!silent) { enabled()[ext.key] = false; A.persistSettings(); render(); }
+      A.toast("Extension « " + ext.label + " » indisponible : " + (err && err.message) + (silent ? " (elle reste cochée)" : ""), "err");
     });
   }
+  // État des extensions (pour Claude et le diagnostic) : cochée, chargée, erreur
+  A.extensionsEtat = function () {
+    return EXTENSIONS.map(function (e) { return { cle: e.key, nom: e.label.split(" — ")[0], cochee: !!enabled()[e.key], chargee: AgnesPlugins.isLoaded(e.id), erreur: A.extErreurs[e.key] || "" }; });
+  };
   function render() {
     var host = document.getElementById("extensionsList"); if (!host) return;
     host.innerHTML = EXTENSIONS.map(function (e) {

@@ -176,3 +176,10 @@ test("Bible par le Chef : une nouvelle tenue ou un nouveau lieu ne s'ajoute pas 
   assert.equal(g('Anthony').auto, true); assert.equal(g('Café').auto, false); assert.equal(g('Chemise en lin').auto, false);
   assert.equal(g('Lieu existant').auto, true); assert.equal(g('Podcast').auto, true);
 });
+
+test("Extensions : une extension en échec au démarrage reste cochée, l'erreur est gardée ; commande Claude extensions", () => {
+  const src = read('Module-reglage', 'active-module.js');
+  assert.match(src, /if \(!silent\) \{ enabled\(\)\[ext\.key\] = false; A\.persistSettings\(\); render\(\); \}/);
+  assert.match(src, /A\.extErreurs\[ext\.key\] = /); assert.match(src, /A\.extensionsEtat = function/);
+  assert.match(read('plugins', 'plugin-claude.js'), /case "extensions": return A\.extensionsEtat/);
+});

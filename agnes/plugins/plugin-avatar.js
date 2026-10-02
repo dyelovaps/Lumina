@@ -824,6 +824,38 @@ AgnesPlugins.register("avatar", {
   exporter: function () {
     this.core.download(new Blob([JSON.stringify({ format: "agnes-avatar", version: 1, fiches: this.fiches.map(function (f) { var c = Object.assign({}, f); c.essais = []; c.imageValidee = ""; return c; }), listes: this.listes }, null, 1)], { type: "application/json" }), "creation-avatar.json");
   },
+  // 02/10 — Import qui CRÉE OU MET À JOUR par type + nom (pour Claude : agnes.py avatar_importer --fichier …) :
+  // une fiche déjà présente garde son identifiant, ses essais et son image validée ; les liens (tenues, lieux, objets,
+  // combinaisons) sont recâblés vers les identifiants finaux. Aucune génération, rien n'est envoyé au Chef.
+  importerMaj: function (j) {
+    var self = this; if (typeof j === "string") j = JSON.parse(j);
+    if (!j || j.format !== "agnes-avatar") throw new Error("format non reconnu (format: \"agnes-avatar\")");
+    var map = {}, crees = [], majs = [], norm = function (s) { return String(s || "").trim().toLowerCase(); };
+    (j.fiches || []).forEach(function (f) {
+      if (!f || !f.type || !self.estType(f.type)) return;
+      var base = self.nouvelleFiche(f.type, f.nom || ""), ex = self.fiches.find(function (x) { return x.type === f.type && norm(x.nom) === norm(f.nom); });
+      var nv = Object.assign(base, f, { champs: Object.assign({}, f.champs || {}), traductions: Object.assign({}, f.traductions || {}),
+        liens: Object.assign(base.liens, f.liens || {}), priseDeVue: Object.assign(base.priseDeVue, f.priseDeVue || {}), modifie: Date.now() });
+      if (ex) {
+        map[f.id || ex.id] = ex.id;
+        Object.keys(nv).forEach(function (k) { if (["id", "essais", "imageValidee", "envois", "cree"].indexOf(k) === -1) ex[k] = nv[k]; });
+        majs.push(ex);
+      } else {
+        var id = "av" + self.A.uid(); map[f.id || id] = id;
+        nv.id = id; nv.essais = []; nv.imageValidee = ""; nv.envois = []; nv.cree = Date.now();
+        self.fiches.push(nv); crees.push(nv);
+      }
+    });
+    var re = function (x) { return map[x] || x; };
+    crees.concat(majs).forEach(function (f) {
+      var L = f.liens; ["tenues", "lieux", "objets"].forEach(function (k) { L[k] = (L[k] || []).map(re); });
+      L.tenueDefaut = re(L.tenueDefaut || ""); L.lieuDefaut = re(L.lieuDefaut || "");
+      (f.combinaisons || []).forEach(function (c) { c.tenue = re(c.tenue || ""); c.lieu = re(c.lieu || ""); c.objets = (c.objets || []).map(re); });
+    });
+    this.saveFiches(); this.render();
+    return { crees: crees.map(function (f) { return f.type + " « " + self.nomDe(f) + " »"; }), mis_a_jour: majs.map(function (f) { return f.type + " « " + self.nomDe(f) + " »"; }) };
+  },
+  estType: function (t) { return ["avatar", "personnage", "tenue", "lieu", "objet"].indexOf(t) !== -1; },
   importer: function (txt) {
     var j = JSON.parse(txt), self = this; if (!j || j.format !== "agnes-avatar") throw new Error("format non reconnu");
     var ids = {}; this.fiches.forEach(function (f) { ids[f.id] = 1; });

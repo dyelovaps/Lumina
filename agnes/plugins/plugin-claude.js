@@ -191,11 +191,12 @@ AgnesPlugins.register("claude", {
         return { projet: A.getProject().name, style: cur.nom, repliques: rp5 && rp5.reglageProjet ? rp5.reglageProjet() : cur.repliques,
           styles: St.list.map(function (x) { return { id: x.id, nom: x.nom, textes_ecrits: !!x.texteEcran, musique: !!x.musique, repliques: x.repliques, actuel: x === cur }; }) };
       }
-      case "avatars": case "avatar": case "avatar_prompt": case "envoyer_avatar": {
+      case "avatars": case "avatar": case "avatar_prompt": case "envoyer_avatar": case "avatar_importer": {
         // 01/10 — Studio : lecture des fiches et de leurs prompts ; envoyer_avatar = le bouton « Envoyer à l'Atelier » ; aucune génération payante
         var P6 = window.AgnesPlugins, Av = P6 && P6.isLoaded && P6.isLoaded("avatar") ? P6.get("avatar") : null;
         if (!Av) throw new Error("extension Studio inactive (⚙ → Extensions)");
         if (action === "avatars") return Av.cmdListe(a.type);
+        if (action === "avatar_importer") return Av.importerMaj(String(a.script || a.contenu || ""));   // 02/10 — crée ou met à jour par nom
         var ref = a.id || a.nom; if (!ref) throw new Error("précisez id=av… ou nom=\"…\"");
         return action === "avatar" ? Av.cmdFiche(ref) : action === "avatar_prompt" ? Av.cmdPrompt(ref, a.format) : Av.cmdEnvoyer(ref);
       }

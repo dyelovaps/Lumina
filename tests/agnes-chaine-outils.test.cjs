@@ -140,3 +140,26 @@ test('Chef : voix, son, étalonnage et sous-titres (lecture libre, actions payan
 test('Claude : commande outil (accès direct aux outils d\'extensions du Chef)', () => {
   assert.match(read('plugins', 'plugin-claude.js'), /case "outil": \{[\s\S]*outilsExtensions/);
 });
+
+test('Studio : importerMaj crée puis met à jour par type + nom (pas de doublon), garde images et recâble les liens', () => {
+  const { plugins, ctx } = charge(['plugin-avatar.js'], { setTimeout: (f) => f(), clearTimeout() {}, document: { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] } });
+  const V = plugins.avatar; let n = 0;
+  V.core = { getProject: () => ({ name: 'Marketing', library: [] }), store: { setKV: async () => {} } }; V.A = { uid: () => 'u' + (++n) }; V.listes = V.listesParDefaut(); V.fiches = []; V.render = () => {};
+  const j = { format: 'agnes-avatar', fiches: [
+    { id: 'a1', type: 'avatar', nom: 'Anthony', champs: { genre: 'homme', teint: 'brun' }, liens: { tenues: ['t1'], lieux: ['l1'], tenueDefaut: 't1', lieuDefaut: 'l1' },
+      combinaisons: [{ id: 'c1', nom: 'Éducatif — Bureau', tenue: 't1', lieu: 'l1', objets: [] }] },
+    { id: 't1', type: 'tenue', nom: 'Pull noir', champs: { haut: 'pull noir' }, traductions: { haut: { fr: 'pull noir', en: 'black sweater' } } },
+    { id: 'l1', type: 'lieu', nom: 'Bureau', champs: { elements: 'bureau' }, traductions: { elements: { fr: 'bureau', en: 'a bright office' } } }] };
+  const r = V.importerMaj(JSON.stringify(j));
+  assert.equal(r.crees.length, 3);
+  const a = V.trouver('Anthony'), t = V.fiches.find((f) => f.type === 'tenue');
+  assert.equal(a.liens.tenueDefaut, t.id); assert.equal(a.combinaisons[0].tenue, t.id); assert.ok(V.fiche(a.liens.lieux[0]));
+  a.imageValidee = 'cle1'; a.essais = [{ cle: 'cle1' }];
+  j.fiches[0].champs.teint = 'fonce';
+  const r2 = V.importerMaj(j);
+  assert.equal(r2.crees.length, 0); assert.equal(r2.mis_a_jour.length, 3); assert.equal(V.fiches.length, 3);
+  assert.equal(V.trouver('Anthony').champs.teint, 'fonce'); assert.equal(V.trouver('Anthony').imageValidee, 'cle1');
+  assert.match(V.adn(t), /black sweater/);
+  assert.throws(() => V.importerMaj('{"format":"autre"}'), /format non reconnu/);
+  assert.match(read('plugins', 'plugin-claude.js'), /case "avatar_importer"/);
+});

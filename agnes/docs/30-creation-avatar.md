@@ -149,3 +149,8 @@ python agnes.py envoyer_avatar id=av…                  # comme le bouton « En
   - majuscule après chaque point ;
   - « navy blue and dusty pink » au lieu d'une liste avec des virgules ;
   - plus de « fabric fabrics ».
+- **Import qui met à jour (02/10)** : `python agnes.py avatar_importer --fichier fiches.json` (format `agnes-avatar`, comme
+  l'export). Il crée les fiches nouvelles et met à jour celles qui existent déjà, par type et par nom, sans doublon. Les
+  images d'aperçu et l'image validée sont gardées, et les liens (tenues, lieux, combinaisons) sont recâblés. Exemple :
+  `Production\Marketing\Anthony_Studio\anthony_studio.json` (Anthony, ses 7 tenues, ses 11 lieux, 3 combinaisons), tiré de
+  la configuration de l'agent Marketing.

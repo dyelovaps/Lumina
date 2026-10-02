@@ -94,7 +94,7 @@ AgnesPlugins.register("styles", {
       '<div class="row-inline"><select id="stEdit" style="width:auto">' + opts(ed.id) + '</select>' +
       '<button class="small-btn" type="button" data-st="new">Nouveau</button>' +
       '<button class="small-btn" type="button" data-st="dup">Dupliquer</button>' +
-      '<button class="small-btn" type="button" data-st="del">Supprimer</button>' +
+      (this.estOrigine(ed.id) ? '' : '<button class="small-btn" type="button" data-st="del">Supprimer « ' + esc(ed.nom || "") + ' »</button>') +
       '<button class="small-btn" type="button" data-st="reset">Rétablir les styles d\'origine</button></div>' +
       '<div class="field"><label for="stNom">Nom</label><input type="text" id="stNom" value="' + esc(ed.nom || "") + '"></div>' +
       '<div class="field"><label for="stImage">Règles ajoutées aux IMAGES (anglais)</label><textarea id="stImage" style="min-height:56px">' + esc(ed.image || "") + '</textarea></div>' +
@@ -122,13 +122,28 @@ AgnesPlugins.register("styles", {
       var n = Object.assign({}, base, { id: "st-" + Date.now().toString(36), nom: a === "dup" ? base.nom + " (copie)" : "Nouveau style" });
       this.list.push(n); this.edit = n.id; this.open = true; this.save(); this.render();
     } else if (a === "del" && ed) {
-      if (this.list.length < 2) return this.core.toast("Gardez au moins un style.", "err");
+      if (this.estOrigine(ed.id)) return this.core.toast("« " + ed.nom + " » est un style d'origine : il ne se supprime pas (modifiez-le, ou « Rétablir les styles d'origine »).", "err");
       if (!window.confirm("Supprimer le style « " + ed.nom + " » ? Les projets qui l'utilisent reprendront leur style automatique.")) return;
-      this.list = this.list.filter(function (s) { return s !== ed; }); this.edit = null; this.save(); this.render();
+      try { this.supprimer(ed.id); } catch (e) { return this.core.toast(e.message, "err"); }
+      this.render();
     } else if (a === "reset") {
       if (!window.confirm("Rétablir les 3 styles d'origine ? Vos styles ajoutés sont gardés, les styles d'origine modifiés reprennent leurs règles.")) return;
-      this.DEFAULTS().forEach(function (d) { var i = self.list.findIndex(function (s) { return s.id === d.id; }); if (i === -1) self.list.push(d); else self.list[i] = d; });
-      this.save(); this.render();
+      this.retablir(); this.render();
     }
+  },
+  // 02/10 — les 3 styles d'origine ne se suppriment plus (le bouton Supprimer visait le style du projet affiché par défaut)
+  estOrigine: function (id) { return ["realiste-marketing", "serie-realiste", "cartoon"].indexOf(id) !== -1; },
+  supprimer: function (ref) {
+    var s = this.get(ref) || this.list.find(function (x) { return x.nom.toLowerCase() === String(ref || "").toLowerCase(); });
+    if (!s) throw new Error("style « " + ref + " » introuvable");
+    if (this.estOrigine(s.id)) throw new Error("« " + s.nom + " » est un style d'origine : il ne se supprime pas");
+    this.list = this.list.filter(function (x) { return x !== s; }); if (this.edit === s.id) this.edit = null; this.save();
+    return s;
+  },
+  // Remet les styles d'origine manquants ou modifiés ; les styles ajoutés sont gardés
+  retablir: function () {
+    var self = this;
+    this.DEFAULTS().forEach(function (d) { var i = self.list.findIndex(function (s) { return s.id === d.id; }); if (i === -1) self.list.push(d); else self.list[i] = d; });
+    this.save();
   }
 });

@@ -182,7 +182,11 @@ AgnesPlugins.register("claude", {
         // 01/10 — Styles de prompt : liste, style du projet ; style nom="Cartoon / satire" (ou id) le choisit pour le projet
         var P5 = window.AgnesPlugins, St = P5 && P5.isLoaded && P5.isLoaded("styles") ? P5.get("styles") : null;
         if (!St) throw new Error("extension Styles de prompt inactive (⚙ → Extensions)");
+        // 02/10 — retablir=oui remet les styles d'origine ; supprimer="…" retire un style ajouté (jamais un style d'origine)
+        if (a.retablir) St.retablir();
+        if (a.supprimer) St.supprimer(a.supprimer);
         if (a.nom) St.choisir(a.nom);
+        if (a.retablir || a.supprimer) St.render();
         var cur = St.courant(), rp5 = P5.get("repliques");
         return { projet: A.getProject().name, style: cur.nom, repliques: rp5 && rp5.reglageProjet ? rp5.reglageProjet() : cur.repliques,
           styles: St.list.map(function (x) { return { id: x.id, nom: x.nom, textes_ecrits: !!x.texteEcran, musique: !!x.musique, repliques: x.repliques, actuel: x === cur }; }) };

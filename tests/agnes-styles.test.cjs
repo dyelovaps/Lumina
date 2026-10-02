@@ -116,3 +116,18 @@ test('Atelier IA : consignes des agents et du Chef selon le style du projet', ()
   assert.doesNotMatch(c, /Pas de texte, sous-titres ni musique/); assert.doesNotMatch(c, /Jeu humain et subtil/);
   assert.match(c, /reads 'TOUT VA BIEN'/); assert.match(c, /Musique, jingles et bruitages permis/); assert.match(c, /STYLE DU PROJET : « Cartoon \/ satire »/);
 });
+
+test("02/10 — styles d'origine protégés : Supprimer ne vise plus « Série réaliste » ; rétablir le remet ; un style ajouté se supprime", () => {
+  const { plugins, context } = ctx();
+  context.document = { getElementById: () => null, addEventListener() {}, querySelectorAll: () => [] };
+  run(context, 'plugin-styles.js');
+  const S = plugins.styles; S.list = S.DEFAULTS(); S.save = () => {};
+  assert.throws(() => S.supprimer('serie-realiste'), /style d'origine/);
+  S.list.push({ id: 'st-x', nom: 'Nouveau style' });
+  assert.equal(S.supprimer('Nouveau style').id, 'st-x');
+  assert.ok(!S.get('st-x'));
+  // la suppression du 02/10 (Série réaliste disparue) se répare : retablir() remet les styles d'origine, garde les ajouts
+  S.list = S.list.filter((s) => s.id !== 'serie-realiste'); S.list.push({ id: 'st-y', nom: 'Mon style' });
+  S.retablir();
+  assert.ok(S.get('serie-realiste')); assert.ok(S.get('st-y'));
+});

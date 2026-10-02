@@ -1028,3 +1028,167 @@ input[type="color"].cap-color, input[type="color"].mt-couleur { flex: none; widt
 /* AutoCaption — vos modèles et favoris (01/10/2026) */
 .chip.cap-fav { font-weight: 600; border-color: var(--silver); }
 .cap-modeles { width: 100%; margin-top: 8px; }
+
+/* Studio (extension, 2026-10-01) — fiches avatar / tenue / lieu / objet, écran de visualisation 9:16 et 16:9, pastilles Bible, filtres de la Bible */
+.av-app { display: grid; grid-template-columns: 220px minmax(0, 1fr) minmax(360px, 440px); grid-template-areas: "nav centre fiche"; gap: 16px; align-items: start; }
+.av-nav { grid-area: nav; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 12px; }
+.av-centre { grid-area: centre; min-width: 0; }
+.av-fiche { grid-area: fiche; min-width: 0; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; border: 1px solid var(--edge-soft); border-radius: 14px; background: var(--glass); padding: 14px; }
+.av-nav-btn { font: inherit; font-size: 13.5px; text-align: left; padding: 8px 12px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--text-dim); cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.av-nav-btn:hover { color: var(--text); background: var(--glass); }
+.av-nav-btn[aria-pressed="true"] { color: var(--text); border-color: var(--steel); background: rgba(143,160,171,.16); }
+.av-nb { color: var(--text-dim); font-size: 12px; }
+.av-nav-sep { height: 1px; background: var(--edge-soft); margin: 6px 0; }
+.av-barre { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.av-barre > * { min-width: 0; }
+.av-recherche { flex: 1 1 200px; }
+.av-barre select { width: auto; max-width: 100%; }
+.av-barre .primary-btn { flex: none; }
+.av-galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.av-carte { font: inherit; color: var(--text); text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; border: 1px solid var(--edge-soft); background: var(--glass); cursor: pointer; min-width: 0; }
+.av-carte:hover { border-color: var(--edge); }
+.av-carte.sel { border-color: var(--steel); background: rgba(143,160,171,.12); }
+.av-vignette { display: block; width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; overflow: hidden; position: relative; }
+.av-carte[data-fmt="16:9"] .av-vignette { aspect-ratio: 16 / 9; }
+.av-carte[data-fmt="1:1"] .av-vignette { aspect-ratio: 1 / 1; }
+.av-carte[data-fmt="4:5"] .av-vignette { aspect-ratio: 4 / 5; }
+.av-carte[data-fmt="3:4"] .av-vignette { aspect-ratio: 3 / 4; }
+.av-vignette img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.av-vide { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; color: var(--text-dim); font-size: 12px; }
+.av-carte-nom { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.av-carte-meta { font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere; }
+.av-pastilles { display: flex; gap: 4px; flex-wrap: wrap; }
+.av-etoile, .av-fav-pt { display: inline-block; width: 18px; height: 18px; background: var(--silver-dim); clip-path: polygon(50% 0, 62% 35%, 98% 35%, 69% 57%, 80% 92%, 50% 71%, 20% 92%, 31% 57%, 2% 35%, 38% 35%); }
+.av-fav-pt { width: 12px; height: 12px; background: var(--warn); vertical-align: -1px; }
+.av-favori[aria-pressed="true"] .av-etoile { background: var(--warn); }
+.av-favori { font: inherit; border: 1px solid var(--edge); background: transparent; border-radius: 10px; padding: 6px 8px; cursor: pointer; display: inline-flex; }
+.av-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.av-fiche-tete { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.av-titre { display: flex; gap: 8px; align-items: center; }
+.av-nom { flex: 1; min-width: 0; font-weight: 600; font-size: 16px; }
+.av-ligne { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.av-ligne label { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--text-dim); min-width: 0; }
+.av-ligne input[type="text"], .av-ligne select { min-width: 0; max-width: 100%; }
+.av-pleine { flex: 1 1 100%; }
+.av-pleine input { flex: 1; }
+.av-retour { display: none; align-self: flex-start; }
+.av-onglets { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; scrollbar-width: thin; }
+.av-onglet { font: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--edge); background: transparent; color: var(--text-dim); cursor: pointer; white-space: nowrap; flex: none; }
+.av-onglet[aria-selected="true"] { color: var(--text); border-color: var(--steel); background: rgba(143,160,171,.16); }
+.av-champs { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 4px 12px; }
+.av-champs .field { margin-bottom: 8px; min-width: 0; }
+.av-champs input, .av-champs select, .av-champs textarea { width: 100%; min-width: 0; }
+.av-num { display: flex; gap: 6px; align-items: center; }
+.av-hors { font-size: 10.5px; color: var(--text-dim); border: 1px solid var(--edge-soft); border-radius: 99px; padding: 0 6px; margin-left: 4px; }
+.av-trad { font-size: 11px; color: var(--warn); }
+.av-trad.ok { color: var(--ok); }
+.av-h4 { margin: 14px 0 4px; font-size: 14px; }
+.av-combi { border: 1px solid var(--edge-soft); border-radius: 10px; padding: 10px; margin-bottom: 10px; background: var(--glass-field); display: flex; flex-direction: column; gap: 8px; }
+.av-visu { margin-top: 14px; border-top: 1px solid var(--edge-soft); padding-top: 12px; }
+.av-ecran { position: relative; background: #000; border-radius: 10px; overflow: hidden; margin: 10px auto; max-width: 100%; }
+.av-ecran[data-fmt="9:16"] { aspect-ratio: 9 / 16; height: min(70vh, 640px); }
+.av-ecran[data-fmt="16:9"] { aspect-ratio: 16 / 9; width: 100%; }
+.av-ecran[data-fmt="1:1"] { aspect-ratio: 1 / 1; width: min(100%, 480px); }
+.av-ecran[data-fmt="4:5"] { aspect-ratio: 4 / 5; height: min(70vh, 600px); }
+.av-ecran[data-fmt="3:4"] { aspect-ratio: 3 / 4; height: min(70vh, 600px); }
+.av-ecran img, .av-ecran canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.av-ecran [hidden] { display: none; }
+.av-info { min-height: 18px; font-size: 12.5px; color: var(--text-dim); }
+.av-essais { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin: 8px 0; }
+.av-essai { border: 1px solid var(--edge-soft); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.av-essai.voit { border-color: var(--steel); }
+.av-essai.validee { outline: 2px solid var(--ok); outline-offset: 1px; }
+.av-mini { padding: 0; border: 0; background: #000; border-radius: 6px; cursor: pointer; aspect-ratio: 1 / 1; overflow: hidden; }
+.av-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.av-essai-meta { font-size: 11.5px; color: var(--text-dim); }
+.av-essai-act { display: flex; flex-direction: column; gap: 4px; }
+.av-essai-act .small-btn { padding: 3px 6px; font-size: 11.5px; }
+.av-prompts { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.av-prompt .ext-copy { max-height: 160px; }
+.av-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.av-tableau { overflow-x: auto; margin-bottom: 10px; }
+.av-tableau table { width: 100%; border-collapse: collapse; }
+.av-tableau th { text-align: left; font-size: 12px; color: var(--text-dim); padding: 4px 6px; }
+.av-tableau td { padding: 3px 6px; }
+.av-tableau input { width: 100%; min-width: 120px; }
+.av-td-act { white-space: nowrap; }
+.av-fichier { cursor: pointer; }
+.av-demande { margin-top: 12px; }
+.av-td-act .small-btn { margin-right: 4px; }
+.av-vide-fiche { text-align: center; padding: 24px 8px; }
+.av-zoom { position: fixed; inset: 0; z-index: 200; background: rgba(0, 0, 0, .92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; }
+.av-zoom-cadre { background: #000; max-width: 100%; max-height: calc(100vh - 80px); }
+.av-zoom-cadre[data-fmt="9:16"] { aspect-ratio: 9 / 16; height: calc(100vh - 80px); }
+.av-zoom-cadre[data-fmt="16:9"] { aspect-ratio: 16 / 9; width: min(100%, 1280px); }
+.av-zoom-cadre[data-fmt="1:1"] { aspect-ratio: 1 / 1; height: calc(100vh - 80px); }
+.av-zoom-cadre[data-fmt="4:5"] { aspect-ratio: 4 / 5; height: calc(100vh - 80px); }
+.av-zoom-cadre[data-fmt="3:4"] { aspect-ratio: 3 / 4; height: calc(100vh - 80px); }
+.av-zoom-cadre img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.av-nav-btn:focus-visible, .av-carte:focus-visible, .av-onglet:focus-visible, .av-mini:focus-visible, .av-favori:focus-visible, .av-bible-chip:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+/* Pastille Bible sur les cartes du Storyboard */
+.av-bible-ligne { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.av-bible-chip { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; border: 1px solid var(--steel); background: rgba(143,160,171,.12); color: var(--text); cursor: pointer; }
+.av-bible-chip img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.av-bible-chip:not(:has(img)) { padding-left: 10px; }
+/* Filtres de la Bible (comme la Bibliothèque) */
+.bb-filtres { margin-top: 12px; gap: 10px; }
+.bb-filtres .chips { margin-top: 0; }
+.bb-recherche { flex: 1 1 200px; min-width: 0; }
+/* 02/10 — Centre « studio » : écran de visualisation, format, essais, actions et prompts au milieu ; réglages de la fiche à droite */
+.av-app { grid-template-columns: 200px minmax(0, 1fr) minmax(340px, 400px); }
+.av-studio { border: 1px solid var(--edge-soft); border-radius: 14px; background: var(--glass); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.av-studio-tete { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.av-studio-titre { display: flex; flex-direction: column; min-width: 0; }
+.av-studio-titre b { font-size: 16px; overflow-wrap: anywhere; }
+.av-studio .av-visu { margin-top: 0; border-top: 0; padding-top: 0; }
+.av-studio .av-visu > .av-ligne { justify-content: space-between; }
+.av-studio .av-ecran { margin: 8px auto; }
+.av-studio .av-ecran[data-fmt="9:16"] { height: min(72vh, 680px); }
+.av-studio .av-ecran[data-fmt="4:5"], .av-studio .av-ecran[data-fmt="3:4"] { height: min(72vh, 640px); }
+.av-studio .av-ecran[data-fmt="16:9"] { width: 100%; height: auto; }
+.av-studio .av-essais { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 6px; scrollbar-width: thin; }
+.av-studio .av-essai { flex: 0 0 132px; }
+.av-studio .av-essais > .hint { flex: 1; margin: 0; }
+.av-studio .av-actions { justify-content: center; margin-top: 0; }
+.av-studio .av-prompts { margin-top: 4px; border-top: 1px solid var(--edge-soft); padding-top: 12px; }
+.av-fiche-titre { margin: 0; font-size: 15px; }
+.av-fiche-pied { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--edge-soft); }
+/* 960 à 1279 px : navigation en barre horizontale, galerie + fiche */
+@media (max-width: 1279px) {
+  .av-app { grid-template-columns: minmax(0, 1fr) minmax(340px, 400px); grid-template-areas: "nav nav" "centre fiche"; }
+  .av-nav { flex-direction: row; overflow-x: auto; position: static; padding-bottom: 6px; scrollbar-width: thin; }
+  .av-nav-btn { flex: none; white-space: nowrap; }
+  .av-nav-sep { width: 1px; height: auto; margin: 0 4px; flex: none; }
+}
+/* Moins de 960 px : une colonne ; l'écran de visualisation, puis les réglages de la fiche en dessous (galerie : réglages masqués) */
+@media (max-width: 959px) {
+  .av-app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "nav" "centre" "fiche"; }
+  .av-fiche { position: static; max-height: none; overflow: visible; }
+  .av-app:not(.av-mode-studio) .av-fiche { display: none; }
+  .av-galerie { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .av-studio .av-ecran[data-fmt="9:16"], .av-studio .av-ecran[data-fmt="4:5"], .av-studio .av-ecran[data-fmt="3:4"] { height: min(62vh, 560px); }
+}
+@media (max-width: 639px) {
+  .av-galerie { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .av-champs { grid-template-columns: minmax(0, 1fr); }
+  .av-actions { position: sticky; bottom: 0; background: var(--bg-1); padding: 10px 0; margin: 14px 0 0; border-top: 1px solid var(--edge-soft); z-index: 2; }
+  .av-studio { padding: 10px; }
+  .av-studio .av-actions { position: static; border-top: 0; padding: 0; margin: 0; background: none; }   /* juste sous l'écran : ne le recouvre pas */
+  .av-actions .primary-btn { flex: 1 1 100%; }
+  .av-actions .small-btn { flex: 1 1 40%; }
+}
+@media (prefers-reduced-motion: reduce) { .av-app *, .av-zoom * { transition: none !important; animation: none !important; } }
+
+/* ===== Débordements des cartes (02/10/2026) — rien ne sort d'une carte, quelle que soit la largeur ===== */
+/* Storyboard : la colonne des champs peut rétrécir ; sous 720 px, une seule colonne (la règle 180px 1fr plus haut écrasait celle du téléphone) */
+.shot-body { grid-template-columns: 180px minmax(0, 1fr); }
+.shot-body > *, .shot-fields { min-width: 0; }
+@media (max-width: 720px) { .shot-body { grid-template-columns: minmax(0, 1fr); } }
+/* Champs et listes : jamais plus larges que leur carte (les listes à options longues comprises) */
+.card select, .card input, .card textarea, .shot-card select, .shot-card input, .shot-card textarea { max-width: 100%; }
+/* Libellés de cases à cocher : le texte long va à la ligne au lieu de dépasser ; un libellé avec une liste passe sous elle si besoin */
+.shot-row label.inline, .row-inline label.inline { white-space: normal; min-width: 0; max-width: 100%; }
+.shot-row label.inline:has(select), .row-inline label.inline:has(select), .card label.inline:has(select) { flex-wrap: wrap; }
+.row-inline > *, .shot-row > * { min-width: 0; }
+/* Lignes des extensions (Voix, Son, Publication…) : un élément ne dépasse jamais la ligne, son contenu passe à la ligne */
+.ext-row > * { min-width: 0; max-width: 100%; }

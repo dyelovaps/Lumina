@@ -95,6 +95,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | [25 — Mentions @ et #](docs/25-mentions.md) | `@[Personnage]` coche sa référence, `#[Skill]` place un skill dans le texte ; suggestions en tapant @ ou # |
 | [24 — Moteurs de génération](docs/24-moteurs.md) | Images par ChatGPT (via le pont local) ou Agnes, vidéos par Grok ou Google Flow (via Lumina) ou Agnes |
 | [23 — Lumina et sauvegarde](docs/23-lumina.md) | Ouvrir Agnes dans l'extension Lumina, plans → Grok Imagine, rendus → prises, pilote auto ; sauvegarde complète et restauration |
+| [30 — Studio](docs/30-creation-avatar.md) | Onglet Studio : fiches d'avatar, de tenue, de lieu et d'objet, listes déroulantes modifiables, prompt anglais (ADN, aperçu, combinaison), aperçu 9:16 / 16:9, envoi à l'Atelier (le Chef crée la Bible et rattache l'image), pastille Bible sur les cartes, filtres de la Bible |
 | [29 — Styles de prompt](docs/29-styles.md) | Onglet Projet → Style des prompts : Réaliste — Marketing, Série réaliste, Cartoon / satire et les vôtres (ajouter, modifier, supprimer) ; règles ajoutées aux prompts (jeu, textes écrits, musique), compteur de répliques et consignes de l'Atelier IA ; textes écrits et bruitages entre guillemets distingués des répliques |
 | [28 — Montage](docs/28-montage.md) | Pôle Montage (sous-onglets Assemblage, Voix, Son, AutoCaption, Étalonnage, Épisodes, Publication) et montage par carte : 1080×1920, voix au maximum sans casse (-14 LUFS), vitesse, carton de fin, sortie dans `Final` avec compte rendu |
 | [27 — Calculateur de répliques](docs/27-repliques.md) | Onglet Répliques : caractères, durée, ce qu'il faut ajouter ou retirer ; réglages modifiables (TikTok 10 s, série, court métrage, voix-off), calibrage de la vitesse ; utilisé par le Chef de l'Atelier |
@@ -202,6 +203,22 @@ Des bibliothèques de lecture (JSZip, mammoth pour les .docx, pdf.js pour les .p
 ---
 
 ## Nouveautés
+
+### 3.13 — octobre 2026
+- **Studio** ([30](docs/30-creation-avatar.md)) : nouvel onglet pour créer un avatar, un personnage, une tenue, un lieu ou un objet avec des listes déroulantes (modifiables, dictionnaire FR → EN intégré ; l'IA de l'Atelier ne traduit que les champs libres), trois niveaux de détail, un prompt anglais (ADN court, aperçu, combinaison « Mardi — bureau »), un écran de visualisation 9:16 / 16:9 (une image par clic, essais, validation) et **Envoyer à l'Atelier**.
+- **Le Chef crée la Bible** : nouvel outil **bible_attacher_image** (avec autorisation) qui rattache l'image validée à la fiche de la Bible et la range dans la Bibliothèque. L'onglet Studio n'écrit jamais dans la Bible.
+- **Pastille Bible** sur les cartes du Storyboard : lire l'ADN ou demander une modification au Chef.
+- **Bible** : filtres Tous, Personnages, Tenues, Lieux, Objets, Autres et recherche par nom ou alias.
+- **Moteurs** : une image sans carte (`genererImage`), utilisée par le Studio.
+- **Studio, disposition revue (02/10)** : au centre, l'écran de visualisation avec le format, le rendu, les essais, Générer / Envoyer et les prompts anglais ; à droite, seulement les réglages de la fiche. Le nom reprend le prénom ; l'ADN n'a plus de « ., ».
+- **Cartes qui débordaient (02/10)** : dans un panneau étroit (Lumina), la carte du Storyboard passe sur une colonne et ses champs rétrécissent, la liste « Réglage du projet » ne dépasse plus, les longues cases à cocher (Atelier IA, Montage) vont à la ligne, les lignes des extensions (Voix…) restent dans leur carte. Vérifié sur les 22 onglets à 375, 470, 704, 1024 et 1440 px.
+- **« Création d'avatar » devient « Studio » (02/10)** : onglet, extension, documents « Studio — Nom » envoyés au Chef.
+- **Nouveaux outils du Chef (02/10)** ([21](docs/21-atelier.md)) :
+  - `studio_fiches` et `studio_fiche` (lecture) ;
+  - `style_projet` (lecture) et `choisir_style` (avec autorisation) ;
+  - `classer_cartes` (avec autorisation).
+- **Classement sans fenêtre (02/10)** ([26](docs/26-classement.md)) : commande Claude `classer` et outil du Chef, mêmes dossiers que le bouton Classer.
+- **Claude** : commandes `avatars`, `avatar`, `avatar_prompt`, `envoyer_avatar`.
 
 ### 3.12 — octobre 2026
 - **Styles de prompt** ([29](docs/29-styles.md)) : les règles ajoutées automatiquement aux prompts ne sont plus celles d'Anthony pour tous les projets. Onglet **Projet → Style des prompts** : choisir le style du projet (Réaliste — Marketing, Série réaliste, Cartoon / satire) et ajouter, modifier, dupliquer ou supprimer des styles (règles images et vidéos, textes écrits gardés, musique permise, compteur de répliques). Projet sans style : Marketing si son nom contient « Marketing », sinon Série réaliste.

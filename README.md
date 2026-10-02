@@ -143,6 +143,32 @@ Copie `agnes/` mise à jour (`npm run sync:agnes`) :
   correctif du premier démarrage de l'Atelier avec des clés .env.
 - Tests : `tests/agnes-atelier-clarte.test.cjs`. Après mise à jour : relancer le pont (`lancer_pont.bat`), ↻ sur Lumina, F5 dans Agnes.
 
+## Agnes : Studio (ex-« Création d'avatar », 1.13.8, 01–02/10/2026)
+Nouvelle extension d'Agnes **Création d'avatar** (`agnes/plugins/plugin-avatar.js`, notice `agnes/docs/30-creation-avatar.md`, test `tests/agnes-avatar.test.cjs`) : onglet de fiches d'avatar, personnage, tenue, lieu et objet (listes déroulantes modifiables, dictionnaire FR → EN, 3 niveaux, prompt anglais, aperçu 9:16 / 16:9), **Envoyer à l'Atelier** (le Chef crée la Bible et rattache l'image validée avec le nouvel outil `bible_attacher_image`, avec autorisation), pastille Bible sur les cartes, filtres de la Bible, `moteurs.genererImage`, commandes Claude `avatars` / `avatar` / `avatar_prompt` / `envoyer_avatar`. Vérifié dans le navigateur intégré (1440, 1100, 800 et 375 px) ; **pas testé en réel** : génération ChatGPT et Chef avec une vraie IA.
+
+Retouches du 02/10 :
+- **Disposition de Création d'avatar :** l'écran de visualisation est au centre, avec le format, les essais, les actions et les prompts. La colonne de droite ne contient plus que les réglages de la fiche.
+- **Débordements des cartes :** une section `/* Débordements des cartes (02/10/2026) */` est ajoutée en fin de `agnes/css/studio.css`. Elle corrige :
+  - la colonne des champs du Storyboard, qui ne rétrécissait pas : elle est maintenant en `minmax(0, 1fr)`, et passe sur une seule colonne sous 720 px (l'ancienne règle `180px 1fr` écrasait celle du téléphone) ;
+  - les listes trop larges ;
+  - les libellés de cases à cocher qui ne passaient pas à la ligne (`nowrap`) dans l'Atelier et le Montage ;
+  - les lignes `.ext-row` (Voix…).
+- **Vérification :** les 22 onglets à 375, 470, 704, 1024 et 1440 px, aucun débordement ; test ajouté dans `agnes-avatar.test.cjs`.
+- **« Création d'avatar » devient « Studio » :** onglet, extension et documents « Studio — Nom » envoyés au Chef. L'identifiant interne `avatar` et les commandes `avatars` / `avatar` ne changent pas.
+- **Nouveaux outils du Chef** (`plugin-atelier.js`, `outilsExtensions`) :
+  - `studio_fiches` et `studio_fiche`, en lecture ;
+  - `style_projet` en lecture, et `choisir_style` avec autorisation ;
+  - `classer_cartes`, avec autorisation.
+- **Classement sans fenêtre :**
+  - `classement.classerLocal(shot, options)` fait les mêmes dossiers et les mêmes fichiers que le bouton Classer en mode local ;
+  - Claude : `python agnes.py classer cartes=… thematique=… nom=… episode=…`.
+- **Prompts du Studio :** majuscule après un point, « and » dans les listes, plus de « fabric fabrics » ; le prénom sert de nom.
+- **Essai de la chaîne sur l'Agnes réelle, via le pont :**
+  - ce qui a été fait : projet « Test chaîne 02-10 », style automatique Série réaliste, 2 cartes par `lot` (sans génération), document à l'Atelier, puis le Chef qui mesure les répliques avec le réglage Série et liste ses outils ;
+  - autorisation donnée à la place de l'utilisatrice : `set_replique` puis `autoriser`, carte modifiée ;
+  - lectures Montage et Studio : OK.
+- **Ponts :** 8177 (`/health`, `/codex`, `/classement/thematiques`, `/marketing`) et FlowKit 8100 répondent. Tests : `tests/agnes-chaine-outils.test.cjs`, 217 au total.
+
 ## Agnes : Chef de l'Atelier et ressources locales (1.13.4, 01/10/2026)
 
 Copie `agnes/` mise à jour depuis Agnes_production (`npm run sync:agnes`) :

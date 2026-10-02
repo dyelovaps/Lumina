@@ -46,3 +46,10 @@ Classer à nouveau la même carte remplace ses fichiers (par exemple après une 
 - Mode dossier choisi : le navigateur peut redemander l'autorisation d'écrire après un redémarrage. Sans sélecteur de dossier, les fichiers sont **téléchargés** avec le chemin dans leur nom.
 - Une carte sans image ni vidéo donne seulement la fiche.
 - L'extension ne dépend d'aucune autre extension. Elle indique aux autres (moteur Flow manuel) le dossier local de la carte.
+
+## Sans fenêtre : Claude et le Chef (02/10/2026)
+Le classement local se lance aussi sans ouvrir la fenêtre :
+- **Claude** : `python agnes.py classer cartes=1,2 thematique=Serie nom="Le Double des clés" episode=1` (ou `cartes=tous`) ;
+- **le Chef** : outil `classer_cartes`, avec votre autorisation.
+
+Les dossiers et les fichiers sont exactement ceux du bouton Classer en mode local. Rien n'est supprimé d'Agnes.

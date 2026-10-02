@@ -424,3 +424,17 @@ subtil. Avec « Cartoon / satire », les agents peuvent écrire les textes à l'
 après reads ou labeled), la musique et les bruitages (en anglais, sans guillemets), et un jeu cartoon expressif. Le Chef
 connaît le style. **mesurer_replique** sans réglage mesure avec le réglage du projet (Série pour une série, Anthony pour le
 projet Marketing), et non plus toujours avec Anthony. Sans l'extension Styles, les consignes d'origine restent mot pour mot.
+
+## Studio (01/10/2026)
+L'onglet **Studio** ([30](30-creation-avatar.md)) envoie au Chef un document **« Studio — Nom »** (identifiant de fiche `av…`, ADN anglais, résumé, fiches liées, combinaisons, prompts). Le Chef le lit (`get_document`), crée la fiche de la Bible avec `bible_upsert` (ADN recopié **mot pour mot**) puis, si une image est validée, appelle **`bible_attacher_image`** (fiche, nom de l'entrée de la Bible). Cet outil demande votre autorisation : il rattache l'image validée à la fiche de la Bible et la range dans la Bibliothèque de l'épisode (avec son `bibleId`, ce qui alimente la pastille Bible des cartes). Les tenues et les lieux d'un avatar sont des entrées séparées (costume, lieu). Le Chef ne crée aucune carte. Seul le Chef écrit la Bible.
+
+## Nouveaux outils du Chef (02/10/2026)
+| Outil | Ce qu'il fait | Autorisation |
+|---|---|---|
+| `studio_fiches` | Liste les fiches du Studio : avatar, personnage, tenue, lieu, objet | non (lecture) |
+| `studio_fiche` | Une fiche du Studio : ADN, prompt d'aperçu, combinaisons | non (lecture) |
+| `style_projet` | Style des prompts du projet : règles, textes écrits, musique, compteur de répliques | non (lecture) |
+| `choisir_style` | Change le style du projet. Seulement à votre demande | **oui** |
+| `classer_cartes` | Copie les cartes dans `Production\<Thématique>\…`, comme le bouton Classer. Seulement à votre demande | **oui** |
+
+Le Chef écrit toujours seul dans la Bible. Il lit le Studio, mais ne le modifie pas.

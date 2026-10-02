@@ -627,6 +627,21 @@ AgnesPlugins.register("atelier", {
     B.persist();
     return done.length ? "Bible mise à jour : " + done.join(", ") + "." : "Rien à ranger.";
   },
+  // 01/10 — Studio : image validée d'une fiche → fiche de la Bible + Bibliothèque (outil bible_attacher_image, avec autorisation)
+  avatarNom: function (id) {
+    var V = window.AgnesPlugins && AgnesPlugins.isLoaded && AgnesPlugins.isLoaded("avatar") ? AgnesPlugins.get("avatar") : null, f = V && V.fiche ? V.fiche(id) : null;
+    return f ? f.nom : "";
+  },
+  bibleAttacherImage: function (fiche, nom) {
+    var P = window.AgnesPlugins, V = P && P.isLoaded && P.isLoaded("avatar") ? P.get("avatar") : null, B = P && P.isLoaded && P.isLoaded("bible") ? P.get("bible") : null;
+    if (!V) throw { display: "Activez l'extension Studio (⚙ → Extensions)." };
+    if (!B || !B.attacherImage) throw { display: "Activez l'extension Bible de continuité (⚙) pour rattacher l'image." };
+    var f = V.fiche(fiche); if (!f) throw { display: "Fiche « " + fiche + " » introuvable dans le Studio." };
+    return V.imageValidee(fiche).then(function (blob) {
+      if (!blob) throw { display: "La fiche « " + f.nom + " » n'a pas d'image validée : l'utilisatrice doit en valider une dans le Studio." };
+      return B.attacherImage(nom || f.nom, blob);
+    }).then(function (e) { return "Image de « " + f.nom + " » rattachée à la fiche « " + e.name + " » de la Bible et rangée dans la Bibliothèque."; });
+  },
   toScenario: function (text) {
     var S = window.AgnesPlugins && AgnesPlugins.get("scenario"), ta = document.getElementById("scText");
     if (!S || !ta) throw { display: "Activez l'extension Import de scénario (⚙)." };
@@ -686,6 +701,8 @@ AgnesPlugins.register("atelier", {
     { type: "function", function: { name: "bible_upsert", description: "Crée ou met à jour des fiches de la Bible de l'app (personnages, lieux, objets) avec leur ADN visuel en anglais, et éventuellement le style commun de la série. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { series_style: { type: "string", description: "Style visuel commun en anglais (facultatif)" },
         entries: { type: "array", items: { type: "object", properties: { name: { type: "string" }, kind: { type: "string", enum: ["personnage", "lieu", "objet", "costume"] }, aliases: { type: "string" }, dna: { type: "string", description: "ADN visuel en anglais" }, episode_note: { type: "string", description: "Changement propre à cet épisode (facultatif)" } }, required: ["name", "kind"] } } } } } },
+    { type: "function", function: { name: "bible_attacher_image", description: "Studio : rattache l'image VALIDÉE d'une fiche de l'onglet Studio (identifiant av…) à la fiche de la Bible du même nom, et la range dans la Bibliothèque de l'épisode. À appeler après bible_upsert, quand le document « Studio — … » indique une image validée. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { fiche: { type: "string", description: "Identifiant de la fiche Studio (av…), indiqué dans le document" }, nom: { type: "string", description: "Nom de la fiche de la Bible à laquelle rattacher l'image" } }, required: ["fiche", "nom"] } } },
     { type: "function", function: { name: "send_to_scenario", description: "Place un scénario (format INT./EXT., NOM en majuscules, répliques) dans l'onglet Scénario et lance l'analyse. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } } },
     { type: "function", function: { name: "send_to_lot", description: "Place un script numéroté (01 — libellé / IMAGE : / VIDÉO : / RÉF :) dans Le lot pour créer les cartes du Storyboard. Nécessite l'autorisation.",
@@ -759,7 +776,19 @@ AgnesPlugins.register("atelier", {
         transition: { type: "string", enum: ["cut", "fondu", "noir"] }, duree_transition: { type: "number", description: "secondes (0,2 à 1,5)" }, nom: { type: "string", description: "nom du fichier, facultatif" } } } } },
     { type: "function", function: { name: "rendre_episode", description: "Montage : rend l'épisode de série à partir des plans cochés de l'Assemblage (ordre, début/fin, images fixes, transitions par plan, étalonnage, cartons de l'extension Épisodes), son réglé une seule fois sur tout l'épisode, sous-titres karaoké et carton de fin au choix ; sortie dans Final. Les voix attachées et la musique de l'onglet Son ne sont pas reprises. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
       parameters: { type: "object", properties: { lufs: { type: "number", enum: [-14, -16, -23], description: "-14 réseaux, -16 plateformes, -23 télévision" },
-        karaoke: { type: "boolean" }, carton: { type: "string", description: "texte du carton de fin (vide = pas de carton)" }, sous_texte: { type: "string" }, nom: { type: "string" } } } } }
+        karaoke: { type: "boolean" }, carton: { type: "string", description: "texte du carton de fin (vide = pas de carton)" }, sous_texte: { type: "string" }, nom: { type: "string" } } } } },
+    // 02/10 — Studio (fiches d'avatar, tenue, lieu, objet), Styles de prompt, Classement
+    { type: "function", function: { name: "studio_fiches", description: "Studio : liste des fiches (avatar, personnage, tenue, lieu, objet) avec identifiant, nom, collection, image validée, envoyée ou non. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: { type: { type: "string", enum: ["avatar", "personnage", "tenue", "lieu", "objet"], description: "facultatif : un seul type" } } } } },
+    { type: "function", function: { name: "studio_fiche", description: "Studio : une fiche complète (ADN anglais, prompt d'aperçu, liens, combinaisons). Lecture seule, sans autorisation. La Bible reste à toi : recopie l'ADN tel quel avec bible_upsert.",
+      parameters: { type: "object", properties: { fiche: { type: "string", description: "identifiant av… ou nom de la fiche" } }, required: ["fiche"] } } },
+    { type: "function", function: { name: "style_projet", description: "Style des prompts du projet (onglet Projet) : règles ajoutées aux prompts, textes écrits permis ou non, musique, réglage du compteur de répliques, et liste des styles. Lecture seule, sans autorisation.",
+      parameters: { type: "object", properties: {} } } },
+    { type: "function", function: { name: "choisir_style", description: "Choisit le style des prompts du projet (ex. « Série réaliste », « Cartoon / satire », « Réaliste — Marketing (avatar) »). Le compteur de répliques suit le style. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { style: { type: "string", description: "nom ou identifiant du style" } }, required: ["style"] } } },
+    { type: "function", function: { name: "classer_cartes", description: "Classement : copie l'image, la vidéo et la fiche des cartes dans Production\\<Thématique>\\… sur l'ordinateur (via le pont), comme le bouton Classer en mode local. Rien n'est supprimé d'Agnes. Seulement à la demande de l'utilisatrice. Nécessite l'autorisation.",
+      parameters: { type: "object", properties: { cartes: { type: "array", items: { type: "number" }, description: "numéros des cartes ; vide = toutes" }, thematique: { type: "string", description: "Serie, Film, Marketing, Court_metrage… (vide = celle du projet)" },
+        nom: { type: "string", description: "série / campagne / titre (vide = celui du projet)" }, episode: { type: "number" }, date: { type: "string", description: "AAAAMMJJ (marketing)" }, sujet: { type: "string" } } } } }
   ],
   // 01/10 — Style du projet (extension Styles de prompt) : null sans l'extension
   styleProjet: function () {
@@ -780,7 +809,7 @@ AgnesPlugins.register("atelier", {
     c = c.replace("Jeu humain et subtil ; celui qui parle regarde son interlocuteur. ",
       /subtle/i.test(ST.video || "") ? "Jeu humain et subtil ; celui qui parle regarde son interlocuteur. "
         : "Jeu d'acteur selon le style du projet" + (ST.video ? " (" + ST.video + ")" : "") + " ; celui qui parle regarde son interlocuteur. ");
-    return c + "\nSTYLE DU PROJET : « " + ST.nom + " »" + (ST.note ? " — " + ST.note : "") + ". L'app ajoute elle-même ses règles à chaque prompt : ne les recopie pas.";
+    return c + "\nSTYLE DU PROJET : « " + ST.nom + " »" + (ST.note ? " — " + String(ST.note).replace(/[.\s]+$/, "") : "") + ". L'app ajoute elle-même ses règles à chaque prompt : ne les recopie pas.";
   },
   managerSystem: function () {
     var self = this, st = this.project();
@@ -805,6 +834,8 @@ AgnesPlugins.register("atelier", {
       "RÈGLES\n- Tu n'écris pas toi-même le contenu créatif : tu le confies à l'agent compétent (run_agent), avec une consigne précise.\n" +
       "- Respecte l'ordre de la chaîne : un agent ne travaille que si ses entrées existent. Propose l'étape suivante logique.\n" +
       "- Pour ranger dans l'app, lis d'abord le travail (get_output), puis utilise l'outil de destination avec le contenu exact, sans le réécrire (sauf pour extraire les fiches de la Bible).\n" +
+      "- Un document « Studio — … » vient de l'utilisatrice (onglet Studio) : lis-le avec get_document ; son ADN (anglais, une ligne) se recopie MOT POUR MOT dans bible_upsert, sans le réécrire. Toi seul écris la Bible. Les tenues et les lieux d'un avatar sont des entrées SÉPARÉES (costume, lieu) : la tenue du jour et le lieu de chaque scène se choisissent parmi elles. Si une image est validée, rattache-la avec bible_attacher_image (identifiant de fiche du document). Ne crée aucune carte : les cartes restent créées par l'utilisatrice ou par Claude.\n" +
+      "- Studio : studio_fiches et studio_fiche te montrent les fiches (lecture seule) ; la tenue du jour et le lieu de chaque scène viennent des fiches liées à l'avatar. Style des prompts : style_projet (lecture) ; choisir_style seulement si l'utilisatrice le demande. Classement : classer_cartes copie les cartes terminées dans Production\\<Thématique>\\…, seulement à sa demande.\n" +
       "- Chaque action qui modifie l'app est soumise à l'autorisation de l'utilisateur : ne la présente jamais comme déjà faite avant le résultat de l'outil.\n" +
       "- Un seul épisode à la fois pour les étapes 5 à 15, sauf demande contraire.\n" +
       "- Quand l'utilisateur parle d'un document, lis-le avec get_document avant de décider. Pour qu'un agent le lise, il suffit qu'il soit destiné à cet agent ou à « tous » ; sinon cite l'essentiel dans la consigne de run_agent.\n" +
@@ -940,8 +971,8 @@ AgnesPlugins.register("atelier", {
     });
   },
   NEEDS_AUTH: { run_agent: true, bible_upsert: true, send_to_scenario: true, send_to_lot: true, set_publication: true, update_shots: true, create_agent: true,
-    generate_shots: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true, marketing_recherche_sujet: true,
-    marketing_decider_fiche: true, marketing_notes_cartes: true, set_replique: true, monter_cartes: true, compiler_finales: true, rendre_episode: true },
+    generate_shots: true, bible_attacher_image: true, marketing_veille: true, marketing_generate_day: true, transcrire_ressource: true, marketing_extraire_fiche: true, marketing_recherche_sujet: true,
+    marketing_decider_fiche: true, marketing_notes_cartes: true, set_replique: true, monter_cartes: true, compiler_finales: true, rendre_episode: true, choisir_style: true, classer_cartes: true },
   handleCalls: function (calls, depth) {
     var self = this, st = this.project(), results = [];
     function next(i) {
@@ -976,6 +1007,7 @@ AgnesPlugins.register("atelier", {
       case "get_output": return "Lire le travail de « " + (ag ? ag.name : a.agent_id) + " »";
       case "get_document": return "Lire le document « " + (a.name || "") + " »";
       case "bible_upsert": return "Ranger dans la Bible : " + ((a.entries || []).map(function (e) { return e.name; }).join(", ") || "") + (a.series_style ? (a.entries && a.entries.length ? " + " : "") + "style commun" : "");
+      case "bible_attacher_image": return "Rattacher l'image validée de la fiche " + (this.avatarNom(a.fiche) || a.fiche || "?") + " à la Bible (« " + (a.nom || "?") + " ») et la ranger dans la Bibliothèque";
       case "send_to_scenario": return "Envoyer le scénario dans l'onglet Scénario";
       case "send_to_lot": return "Envoyer le storyboard dans Le lot (" + ((String(a.script || "").match(/^\s*\d{1,4}\b/mg) || []).length) + " plans)";
       case "set_publication": return "Remplir la fiche Publication";
@@ -1012,6 +1044,12 @@ AgnesPlugins.register("atelier", {
         " (" + ({ fondu: "fondu enchaîné", noir: "fondu au noir" }[a.transition] || "coupe franche") + ")" + (a.nom ? ", fichier « " + a.nom + " »" : "");
       case "rendre_episode": return "Rendre l'épisode à partir des plans de l'Assemblage (son réglé sur tout l'épisode" + (a.lufs ? ", " + a.lufs + " LUFS" : "") + ")" +
         (a.karaoke ? ", sous-titres karaoké" : "") + (a.carton ? ", carton de fin « " + a.carton + " »" : "") + (a.nom ? ", fichier « " + a.nom + " »" : "");
+      case "studio_fiches": return "Lire les fiches du Studio";
+      case "studio_fiche": return "Lire la fiche « " + (a.fiche || "?") + " » du Studio";
+      case "style_projet": return "Lire le style des prompts du projet";
+      case "choisir_style": return "Choisir le style des prompts du projet : « " + (a.style || "?") + " » (le compteur de répliques suit)";
+      case "classer_cartes": return "Classer " + ((a.cartes || []).length ? "les cartes " + a.cartes.map(function (x) { return "#" + x; }).join(", ") : "toutes les cartes") +
+        " dans Production" + (a.thematique ? "\\" + a.thematique : "") + (a.nom ? "\\" + a.nom : "") + (a.episode ? "\\Ep" + a.episode : "") + " (copie sur l'ordinateur, rien n'est supprimé d'Agnes)";
       default: return c.name;
     }
   },
@@ -1026,6 +1064,7 @@ AgnesPlugins.register("atelier", {
         return d ? d.content.slice(0, 40000) + (d.content.length > 40000 ? "\n[… document tronqué à 40 000 caractères]" : "") : "(aucun document de ce nom)";
       }
       case "bible_upsert": return this.bibleUpsert(a.entries, a.series_style);
+      case "bible_attacher_image": return this.bibleAttacherImage(a.fiche, a.nom);
       case "send_to_scenario": return this.toScenario(a.text || "");
       case "send_to_lot": return this.toLot(a.script || "");
       case "set_publication": return this.toPublication(a);
@@ -1088,10 +1127,38 @@ AgnesPlugins.register("atelier", {
       });
       case "marketing_notes_cartes": return this.applyCardNotes(a.document, a.cartes);
       case "montage_etat": case "montage_modeles": case "monter_cartes": case "compiler_finales": case "rendre_episode": return this.montageTool(c.name, a);
+      case "studio_fiches": case "studio_fiche": case "style_projet": case "choisir_style": case "classer_cartes": return this.outilsExtensions(c.name, a);
       case "marketing_extraire_fiche": return this.marketingCall("POST", "/marketing/extraire", { fiche: a.fiche, ecraser: !!a.ecraser }).then(function (d) {
         return "Fiche « " + d.fiche + " » : " + d.notions + " notion(s), " + d.blocages + " blocage(s) du garde-fou, statut " + d.statut +
           " (l'utilisatrice valide).\n" + d.apercu.map(function (x) { return "- " + x; }).join("\n");
       });
+    }
+    return "Outil inconnu.";
+  },
+  // 02/10 — Studio, Styles de prompt, Classement : appelle ces extensions sans les modifier ; inactive = message, rien ne casse
+  outilsExtensions: function (nom, a) {
+    var P = window.AgnesPlugins, ext = function (id) { return P && P.isLoaded && P.isLoaded(id) ? P.get(id) : null; };
+    var j = function (o) { return JSON.stringify(o, null, 1); };
+    if (nom === "studio_fiches" || nom === "studio_fiche") {
+      var V = ext("avatar"); if (!V) return "Studio indisponible : l'extension Studio est désactivée (⚙ → Extensions). Dis-le à l'utilisatrice.";
+      if (nom === "studio_fiches") return j(V.cmdListe(a.type));
+      try { return j(V.cmdFiche(a.fiche)); } catch (e) { return "Fiche introuvable : " + (e.message || e); }
+    }
+    if (nom === "style_projet" || nom === "choisir_style") {
+      var S = ext("styles"); if (!S) return "Styles de prompt indisponibles : l'extension est désactivée (⚙ → Extensions). Les règles d'origine s'appliquent.";
+      if (nom === "choisir_style") { try { S.choisir(a.style); } catch (e) { return "Style introuvable : " + (e.message || e) + ". Styles : " + S.list.map(function (x) { return x.nom; }).join(", "); } }
+      var cur = S.courant(), R = ext("repliques");
+      return (nom === "choisir_style" ? "Style choisi. " : "") + j({ style: cur.nom, regles_images: cur.image, regles_videos: cur.video, textes_ecrits: !!cur.texteEcran, musique: !!cur.musique,
+        compteur_repliques: R && R.reglageProjet ? R.reglageProjet() : cur.repliques, styles: S.list.map(function (x) { return x.nom; }) });
+    }
+    if (nom === "classer_cartes") {
+      var C = ext("classement"); if (!C || !C.classerLocal) return "Classement indisponible : l'extension Classement est désactivée (⚙ → Extensions).";
+      var A = window.AgnesApp, all = A.sortedShots(), list = (a.cartes && a.cartes.length ? a.cartes.map(function (n) { return all[(+n || 0) - 1]; }) : all).filter(Boolean);
+      if (!list.length) return "Aucune carte à classer.";
+      var opt = { thematique: a.thematique, nom: a.nom, episode: a.episode, date: a.date, sujet: a.sujet }, out = [];
+      return list.reduce(function (pr, s) {
+        return pr.then(function () { return C.classerLocal(s, opt); }).then(function (r) { out.push("Carte #" + (all.indexOf(s) + 1) + " → `" + r.dossier.replace(/\//g, "\\") + "` (" + r.fichiers.join(", ") + ")"); });
+      }, Promise.resolve()).then(function () { return "Classé dans Production :\n" + out.join("\n"); }, function (e) { return (out.length ? out.join("\n") + "\n" : "") + "Arrêt : " + (e.message || e); });
     }
     return "Outil inconnu.";
   },

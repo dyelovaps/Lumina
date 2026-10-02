@@ -59,3 +59,6 @@ Les consignes communes des agents (`common()` de plugin-atelier.js) et celles du
 - jeu subtil ou cartoon.
 
 `mesurer_replique` sans réglage prend le réglage du projet. Voir [21](21-atelier.md).
+
+## Studio
+L'aperçu d'une fiche ([30](30-creation-avatar.md)) reçoit les règles du style du projet à l'envoi au moteur (jeu, texte écrit, grain), comme une carte. Le menu « Rendu de l'aperçu » permet de choisir à la place Réaliste ou Cartoon.

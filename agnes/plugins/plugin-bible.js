@@ -24,11 +24,23 @@ AgnesPlugins.register("bible", {
       '<div class="field" style="margin-top:10px"><label>Style commun de la série (ajouté à tous les prompts de ses épisodes)</label><textarea id="bbStyle" rows="2" placeholder="cyber-noir, cold teal and deep red neon, high contrast, 35mm anamorphic, no text, no subtitles, no music"></textarea></div>' +
       '</div>' +
       '<div class="card"><div class="row-inline" style="justify-content:space-between"><h3 style="margin:0">Fiches</h3>' +
-      '<div class="row-inline"><select id="bbFilter"><option value="">Toutes</option></select><button class="primary-btn" id="bbAdd">+ Fiche</button><button class="small-btn" id="bbLink">Relier les références aux plans</button></div></div>' +
+      '<div class="row-inline"><button class="primary-btn" id="bbAdd">+ Fiche</button><button class="small-btn" id="bbLink">Relier les références aux plans</button></div></div>' +
+      '<select id="bbFilter" hidden><option value="">Toutes</option></select>' +
+      '<div class="row-inline bb-filtres"><div class="chips" id="bbChips" role="group" aria-label="Filtrer les fiches par type"></div>' +
+      '<input type="text" id="bbSearch" class="bb-recherche" placeholder="Chercher par nom ou alias" aria-label="Chercher une fiche"></div>' +
       '<div id="bbList" style="margin-top:10px"></div></div>');
     this.view = view;
     var $ = function (id) { return view.querySelector("#" + id); };
     $("bbFilter").innerHTML += App.optionsHtml(this.KINDS, "");
+    // 01/10 — filtres comme la Bibliothèque : Tous, Personnages, Tenues, Lieux, Objets, Autres + recherche ; le filtre choisi est retenu
+    var FILTRES = [["", "Tous"], ["personnage", "Personnages"], ["costume", "Tenues"], ["lieu", "Lieux"], ["objet", "Objets"], ["autre", "Autres"]];
+    this.cfg = core.pluginSettings("bible", { filtre: "" });
+    $("bbFilter").value = this.cfg.filtre || "";
+    function renderChips() {
+      $("bbChips").innerHTML = FILTRES.map(function (f) {
+        return '<button type="button" class="chip' + ($("bbFilter").value === f[0] ? " on" : "") + '" data-bbf="' + f[0] + '" aria-pressed="' + ($("bbFilter").value === f[0]) + '">' + f[1] + '</button>';
+      }).join("");
+    }
 
     // ---------- Données ----------
     function persist() { core.store.setKV("plugin:bible", self.data); }
@@ -71,8 +83,9 @@ AgnesPlugins.register("bible", {
     function renderList() {
       var s = series();
       if (!s) { $("bbList").innerHTML = '<p class="hint">Créez ou choisissez une série pour ce projet.</p>'; return; }
-      var f = $("bbFilter").value, pid = core.getProject().id;
-      var list = s.entries.filter(function (e) { return !f || e.kind === f; });
+      var f = $("bbFilter").value, pid = core.getProject().id, q = $("bbSearch").value.trim().toLowerCase();
+      renderChips();
+      var list = s.entries.filter(function (e) { return (!f || e.kind === f) && (!q || self.names(e).concat([e.name]).some(function (n) { return n.toLowerCase().indexOf(q) !== -1; })); });
       if (!list.length) { $("bbList").innerHTML = '<p class="hint">Aucune fiche. Ajoutez vos personnages, lieux et objets récurrents.</p>'; return; }
       $("bbList").innerHTML = list.map(function (e) {
         var refs = (e.refs || []).map(function (r, i) {
@@ -116,7 +129,12 @@ AgnesPlugins.register("bible", {
       self.data.series.splice(self.data.series.indexOf(s), 1); core.getProject().bibleSeriesId = null; core.saveProject(); persist(); refresh();
     });
     $("bbStyle").addEventListener("change", function () { var s = series(); if (s) { s.style = this.value.trim(); persist(); } });
-    $("bbFilter").addEventListener("change", renderList);
+    $("bbFilter").addEventListener("change", function () { self.cfg.filtre = $("bbFilter").value; self.cfg.save(); renderList(); });
+    $("bbChips").addEventListener("click", function (ev) {
+      var b = ev.target.closest("[data-bbf]"); if (!b) return;
+      $("bbFilter").value = b.getAttribute("data-bbf"); $("bbFilter").dispatchEvent(new Event("change"));
+    });
+    $("bbSearch").addEventListener("input", renderList);
     $("bbAdd").addEventListener("click", function () { self.addEntry("Nouveau personnage", "personnage"); refresh(); });
     $("bbLink").addEventListener("click", function () { self.linkRefs(); });
     $("bbExport").addEventListener("click", function () {
@@ -279,7 +297,22 @@ AgnesPlugins.register("bible", {
         });
       });
     });
-    chain.then(function () { core.toast(done ? done + " référence(s) de « " + e.name + " » ajoutée(s) à la bibliothèque." : "Déjà dans la bibliothèque de cet épisode.", "ok"); });
+    return chain.then(function () { core.toast(done ? done + " référence(s) de « " + e.name + " » ajoutée(s) à la bibliothèque." : "Déjà dans la bibliothèque de cet épisode.", "ok"); return done; });
+  },
+  // 01/10 — Studio : l'image validée d'une fiche est rattachée à la fiche de la Bible (nom ou id) puis rangée dans la
+  // Bibliothèque de l'épisode avec son bibleId. Appelée par l'outil bible_attacher_image du Chef (jamais par le Studio).
+  attacherImage: function (nomOuId, blob) {
+    var s = this.series(), self = this;
+    if (!s) return Promise.reject({ display: "Aucune bible n'est reliée à ce projet (onglet Bible)." });
+    var q = String(nomOuId || "").trim().toLowerCase();
+    var e = s.entries.find(function (x) { return x.id === nomOuId; }) || s.entries.find(function (x) { return x.name.toLowerCase() === q; }) ||
+      s.entries.find(function (x) { return self.names(x).some(function (n) { return n.toLowerCase() === q; }); });
+    if (!e) return Promise.reject({ display: "Aucune fiche « " + nomOuId + " » dans la Bible : crée-la d'abord avec bible_upsert." });
+    if (!blob) return Promise.reject({ display: "Aucune image à rattacher." });
+    return this.storeRef(e, blob).then(function () { self.persist(); return self.toLibrary(e); }).then(function () {
+      if (self.refresh) self.refresh();
+      return e;
+    });
   },
   pickFromLibrary: function (e) {
     var core = this.core, App = window.AgnesApp, self = this, lib = core.getLibrary();

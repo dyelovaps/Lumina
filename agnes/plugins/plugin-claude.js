@@ -187,6 +187,14 @@ AgnesPlugins.register("claude", {
         return { projet: A.getProject().name, style: cur.nom, repliques: rp5 && rp5.reglageProjet ? rp5.reglageProjet() : cur.repliques,
           styles: St.list.map(function (x) { return { id: x.id, nom: x.nom, textes_ecrits: !!x.texteEcran, musique: !!x.musique, repliques: x.repliques, actuel: x === cur }; }) };
       }
+      case "avatars": case "avatar": case "avatar_prompt": case "envoyer_avatar": {
+        // 01/10 — Studio : lecture des fiches et de leurs prompts ; envoyer_avatar = le bouton « Envoyer à l'Atelier » ; aucune génération payante
+        var P6 = window.AgnesPlugins, Av = P6 && P6.isLoaded && P6.isLoaded("avatar") ? P6.get("avatar") : null;
+        if (!Av) throw new Error("extension Studio inactive (⚙ → Extensions)");
+        if (action === "avatars") return Av.cmdListe(a.type);
+        var ref = a.id || a.nom; if (!ref) throw new Error("précisez id=av… ou nom=\"…\"");
+        return action === "avatar" ? Av.cmdFiche(ref) : action === "avatar_prompt" ? Av.cmdPrompt(ref, a.format) : Av.cmdEnvoyer(ref);
+      }
       case "generer": {
         var list = this.pick(a.plans), n = 0;
         list.forEach(function (s) { var j = a.etape ? A.enqueueStage(s, a.etape) : A.enqueueShot(s); if (j) n++; });
@@ -285,6 +293,17 @@ AgnesPlugins.register("claude", {
         if (a.nom !== undefined) re.nom = String(a.nom);
         if (a.remplacer !== undefined) re.remplacer = !!a.remplacer;
         return this.montage().compilerEpisode(re);
+      }
+      case "classer": {
+        // 02/10 — Classement local (Production\Thématique\…) sans fenêtre, comme le bouton Classer : cartes=1,2 ou tous
+        var Pc = window.AgnesPlugins, Cl = Pc && Pc.isLoaded && Pc.isLoaded("classement") ? Pc.get("classement") : null;
+        if (!Cl || !Cl.classerLocal) throw new Error("extension Classement inactive (⚙ → Extensions)");
+        var lst = this.pick(a.cartes || a.plans), opt = { thematique: a.thematique, nom: a.nom, episode: a.episode, date: a.date, sujet: a.sujet };
+        if (!lst.length) throw new Error("aucune carte (cartes=1,2 ou cartes=tous)");
+        var resu = [];
+        return lst.reduce(function (pr, s) {
+          return pr.then(function () { return Cl.classerLocal(s, opt); }).then(function (r) { resu.push({ carte: A.sortedShots().indexOf(s) + 1, dossier: r.dossier, fichiers: r.fichiers }); });
+        }, Promise.resolve()).then(function () { return resu; });
       }
       case "vers_bibliotheque": {
         // Image choisie d'un plan (image validée, sinon prise image) → Bibliothèque, sous un nom (planche de personnage…)

@@ -199,6 +199,30 @@ AgnesPlugins.register("classement", {
   },
 
   // ---------- écriture ----------
+  // 02/10 — Classement local SANS fenêtre, pour Claude (agnes.py classer) et le Chef (classer_cartes) : mêmes dossiers et
+  // mêmes fichiers que le bouton Classer en mode local. o = { thematique, nom, episode, date, sujet, carte } (vides = valeurs du projet)
+  classerLocal: function (shot, o) {
+    var self = this, v = Object.assign(this.defaults(shot), { mode: "local" });
+    Object.keys(o || {}).forEach(function (k) { if (o[k] !== undefined && o[k] !== "") v[k] = o[k]; });
+    if (!v.thematique) return Promise.reject(new Error("thématique manquante (Serie, Film, Marketing, Court_metrage…)"));
+    var base = this.localBase(v), nom = this.clean(v.carte, 70);
+    return this.files(shot, v).then(function (files) {
+      return files.reduce(function (pr, f) {
+        var sub = f.name === "fiche.md" ? "Fiches" : /^image\./.test(f.name) ? "Images" : "Video";
+        var chemin = base.concat([sub, nom + f.name.slice(f.name.lastIndexOf("."))]).join("/");
+        return pr.then(function () {
+          return fetch(self.pont() + "/classement/fichier", { method: "POST", headers: { "X-Chemin": encodeURIComponent(chemin) }, body: f.blob })
+            .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) throw new Error(j.error || "refusé par le pont"); });
+        });
+      }, Promise.resolve()).then(function () { return files.map(function (f) { return f.name; }); });
+    }, null).then(function (noms) {
+      var p = self.core.getProject(), how = "Production/" + base.join("/");
+      p.classement = { projet: v.projet, saison: +v.saison || 1, episode: +v.episode || 1, mode: "local", thematique: v.thematique, nom: v.nom, date: v.date, sujet: v.sujet };
+      shot.classement = { date: new Date().toLocaleDateString("fr-FR"), dossier: how };
+      self.core.saveProject(); if (self.A.renderShots) self.A.renderShots();
+      return { dossier: how, fichiers: noms };
+    }).catch(function (e) { throw /fetch/i.test(String(e && e.message)) ? new Error("pont local injoignable (lancer_pont.bat)") : e; });
+  },
   run: function (btn) {
     var self = this, shot = this.shot, v = this.values, parts = this.pathOf(v), label = parts.join("/");
     if (btn) btn.disabled = true;

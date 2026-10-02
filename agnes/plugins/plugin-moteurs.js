@@ -417,22 +417,53 @@ AgnesPlugins.register("moteurs", {
       prompt = self.textRule(prompt, shot, self.style(proj));
       function one(n) {
         var tag = wanted > 1 ? " (" + n + "/" + wanted + ")" : "";
-        return fetch(pont + "/codex/image", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: prompt, ratio: ratio, refs: refs, planche: planche }), signal: job.signal })
-          .catch(function (e) {
-            if (e && e.name === "AbortError") throw { display: "Annulé.", cancelled: true };
-            throw { display: "Pont local injoignable (" + pont + ") : lancez lancer_pont.bat dans prod-fruits, ou repassez les images sur Agnes (⚙ → Moteurs)." };
-          })
-          .then(function (r) { return r.json(); })
-          .then(function (j) {
-            if (!j.id) throw { display: "Pont : " + (j.error || "demande refusée") };
-            return self.wait(job, j.id, tag);
-          })
+        return self.chatgptBlob(job, prompt, ratio, refs, planche, tag)
           .then(function (blob) { return self.storeTake(blob, "image", "chatgpt"); })
           .then(function (take) { takes.push(take); if (n < wanted) return one(n + 1); });
       }
       return one(1);
     }).then(function () { return takes; });
+  },
+
+  // Une image par ChatGPT (pont → Codex) : envoie la demande, attend le rendu, rend le Blob. Utilisé par les cartes et par le Studio.
+  chatgptBlob: function (job, prompt, ratio, refs, planche, tag) {
+    var self = this, pont = this.cfg.pont;
+    return fetch(pont + "/codex/image", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: prompt, ratio: ratio, refs: refs, planche: planche }), signal: job.signal })
+      .catch(function (e) {
+        if (e && e.name === "AbortError") throw { display: "Annulé.", cancelled: true };
+        throw { display: "Pont local injoignable (" + pont + ") : lancez lancer_pont.bat dans prod-fruits, ou repassez les images sur Agnes (⚙ → Moteurs)." };
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.id) throw { display: "Pont : " + (j.error || "demande refusée") };
+        return self.wait(job, j.id, tag || "");
+      });
+  },
+
+  // 01/10 — Studio : UNE image sans carte. o = { prompt, ratio, refs:[{nom,data}], planche, signal, onInfo, style }
+  // Règles du style du projet (ou o.style), image nette, texte selon le style, comme pour une carte ; ChatGPT si choisi dans ⚙ → Moteurs, sinon Agnes.
+  genererImage: function (o) {
+    var self = this, A = this.A, proj = A.getProject();
+    var ratio = A.nearestRatio(o.ratio || "9:16", ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2"]);
+    var shot = { mode: "t2i", prompt: String(o.prompt || ""), aspect: ratio, skills: [], ingredients: [], outputs: 1 };
+    var ST = o.style || this.style(proj);
+    var job = { signal: o.signal, info: "", onInfo: o.onInfo };
+    var info = function (t) { job.info = t; if (o.onInfo) o.onInfo(t); };
+    if (this.cfg.image !== "chatgpt") {
+      // Moteur image d'Agnes (gratuit) : même chemin qu'une carte, sur un plan jetable (jamais ajouté au storyboard)
+      shot.prompt = this.styleRule(shot.prompt, ST, "image");
+      info("Agnes dessine l'image…");
+      return A.generateImage(job, shot, proj).then(function (takes) {
+        var t = takes && takes[0]; if (!t) throw { display: "Agnes n'a rendu aucune image." };
+        return A.getTakeBlobOrFetch(t).then(function (b) { if (!b) throw { display: "Image indisponible." }; return b; });
+      });
+    }
+    var prompt = this.styleRule(shot.prompt, ST, "image");
+    if (!/no film grain/i.test(prompt)) prompt += ". Tack-sharp, crisp image, no film grain, no noise";
+    prompt = this.textRule(prompt, shot, ST);
+    info("ChatGPT : préparation…");
+    return this.chatgptBlob(job, prompt, ratio, o.refs || [], o.planche !== undefined ? !!o.planche : this.isSheet(shot, prompt), "");
   },
 
   wait: function (job, id, tag) {
@@ -451,7 +482,7 @@ AgnesPlugins.register("moteurs", {
         job.info = e.statut === "en_cours" ? "ChatGPT dessine l'image" + tag + "…"
           : e.statut === "injoignable" ? "Pont injoignable, nouvel essai…"
             : "En attente chez ChatGPT" + tag + (e.position ? " — position " + e.position : "") + "…";
-        A.emitJob(job);
+        if (job.onInfo) job.onInfo(job.info); else A.emitJob(job);
         return poll();
       });
     }

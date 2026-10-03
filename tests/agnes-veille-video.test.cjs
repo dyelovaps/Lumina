@@ -58,10 +58,13 @@ test('la recherche et les exports utilisent seulement les routes publiques prév
   assert.match(SOURCE, /verified_at \|\| "—"/);
   assert.match(SOURCE, /data-extract/);
   const extract = fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-extract.js'), 'utf8');
+  const modules = fs.readFileSync(path.join(AGNES, 'Module-reglage', 'active-module.js'), 'utf8');
+  assert.match(extract, /version: "2\.0\.1"/);
   assert.match(extract, /openUrl: function \(url\)/);
   assert.match(extract, /downloadForAnalysis: function/);
   assert.match(extract, /\/video\/importer/);
   assert.match(extract, /prepareReference: function/);
+  assert.match(modules, /plugin-extract\.js\?v=2\.0\.1/);
   assert.match(SOURCE, /id="vvAuto"/);
 });
 

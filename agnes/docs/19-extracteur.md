@@ -32,9 +32,9 @@ Changer la période, le classement, le nombre ou la durée **reclasse sans refai
 
 ### Tous les sites pris en charge : directement dans l'analyse
 
-Collez un lien YouTube, TikTok, Instagram, X, Facebook, Vimeo ou Dailymotion, puis cliquez **Télécharger pour analyser**. Le pont local lance `yt-dlp`, limite le fichier à 250 Mo, ne prend qu'une vidéo (jamais une playlist entière), puis transmet le fichier à l'étape 2. Le fichier temporaire du pont est supprimé après l'envoi ; la copie de travail reste enregistrée dans le projet Agnes.
+Collez un lien YouTube, TikTok, Instagram, X, Facebook, Vimeo ou Dailymotion, puis cliquez **Télécharger pour analyser**. Le pont local lance `yt-dlp`, limite le fichier à 250 Mo, ne prend qu'une vidéo (jamais une playlist entière), puis transmet le fichier à l'étape 2. Pour une longue vidéo YouTube, il choisit automatiquement la meilleure combinaison image + son qui reste sous cette limite. Le fichier temporaire est créé sur le disque du projet, puis supprimé après l'envoi ; la copie de travail reste enregistrée dans le projet Agnes.
 
-Si la vidéo est publique et accessible, elle apparaît dans le lecteur et peut être transcrite ou analysée normalement. Si elle est privée, protégée, indisponible, soumise à DRM ou demande une connexion, le téléchargement est refusé clairement et aucun onglet ne s'ouvre automatiquement.
+Si la vidéo est publique et accessible, elle apparaît dans le lecteur et peut être transcrite ou analysée normalement. Si elle est privée, protégée, indisponible, soumise à DRM ou demande une connexion, le téléchargement est refusé clairement et aucun onglet ne s'ouvre automatiquement. Le navigateur doit malgré tout disposer d'assez d'espace libre sur son propre disque pour recevoir la copie : si le transfert est interrompu alors que le pont répond, Extraire le signale séparément.
 
 ### TikTok : directement dans l'app
 Pour choisir entre HD, qualité standard ou filigrane, collez un ou plusieurs liens TikTok (`tiktok.com/@…/video/…` ou liens courts `vm.tiktok.com/…`), puis **Choisir une qualité TikTok**. L'app interroge **TikWM**, un service gratuit non officiel qui renvoie les fichiers disponibles. Pour chaque vidéo : titre, compte, durée, vues, et les boutons :
@@ -72,6 +72,16 @@ Le script met yt-dlp à jour à chaque lancement. Pour ajouter des liens plus ta
 Glissez une **vidéo** (ou un fichier **audio**) dans la zone, ou choisissez un **rendu vidéo de ce projet**. Elle s'affiche dans un lecteur.
 
 Chaque vidéo analysée est **enregistrée** avec son script et ses images. Le menu **Vidéos analysées de ce projet** permet de rouvrir une vidéo précédente (les 30 dernières sont gardées). **Retirer de la liste** supprime la vidéo, son script et ses images de l'app.
+
+### Analyse technique et visuelle
+
+Le panneau placé à droite du lecteur reste masqué tant qu'aucune vidéo n'est présente. L'analyse démarre uniquement avec **Analyser la vidéo** : charger ou lire une vidéo ne consomme donc aucun quota IA.
+
+- **Mesures locales** : définition, orientation et ratio, images par seconde, nombre total ou estimé d'images, codec, débit, taille et informations audio via FFprobe ;
+- **qualité mesurée** : netteté, luminosité, contraste et saturation moyens sur six photogrammes répartis dans la vidéo ;
+- **analyse visuelle IA** : médium probable, style, palette, lumière, composition, niveau de détail, cohérence et défauts visibles, puis quatre conseils pour reproduire cette qualité.
+
+Les mesures de netteté et de lumière sont des estimations, pas une certification. L'IA ne reçoit que six images fixes et doit séparer les observations visibles de ses interprétations. Si l'Atelier IA est désactivé ou indisponible, les mesures locales restent utilisables : Extraire ne dépend pas de l'Atelier pour fonctionner.
 
 ## 3. Récupérer le script
 | Moteur | Coût | Détail |

@@ -33,7 +33,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 |---|---|---|
 | 1 | **Atelier IA** | L'équipe d'agents écrit concept, bibles, épisodes, scénario et prompts. Le Chef de production range le travail dans l'app, avec votre autorisation |
 | 1 bis | **Veille vidéo** *(facultatif)* | Recherchez des références publiques TikTok et YouTube récentes, puis étudiez-les pour le marketing, un court métrage, une série ou un film sans les copier |
-| 1 ter | **Extraire** *(facultatif)* | Téléchargez une vidéo autorisée, puis récupérez son script, ses plans et ses images pour Le lot |
+| 1 ter | **Extraire** *(facultatif)* | Téléchargez une vidéo autorisée, mesurez sa qualité et son style à droite du lecteur, puis récupérez son script, ses plans et ses images pour Le lot |
 | 2 | **Bible** | Vérifiez l'ADN des personnages et des lieux, ajoutez leurs images de référence |
 | 3 | **Bibliothèque** | Préparez les références (personnages, décors), sous **les mêmes noms** que dans la Bible |
 | 4 | **Scénario** ou **Le lot** | Le scénario devient des plans avec leurs dialogues ; le script numéroté devient une carte par plan avec ses références |
@@ -91,7 +91,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | [16 — Kit FFmpeg](docs/16-kit-ffmpeg.md) | Rendu final haute qualité sur votre PC |
 | [17 — Publication](docs/17-publication.md) | Textes TikTok / Reels / Shorts / YouTube, couverture, kit |
 | [18 — Planning](docs/18-planning.md) | Calendrier, rythme de diffusion, export agenda |
-| [19 — Extraire](docs/19-extracteur.md) | Veille TikTok (meilleures vidéos d'une catégorie), TikTok par lien, kit yt-dlp, script (Whisper) converti en prompts pour Le lot, images d'une vidéo ; tout enregistré dans le projet |
+| [19 — Extraire](docs/19-extracteur.md) | Téléchargement intégré multi-site, analyse technique et visuelle déclenchée à la demande, script Whisper converti en prompts et extraction d'images ; tout enregistré dans le projet |
 | [32 — Veille vidéo](docs/32-veille-video.md) | Recherche publique TikTok et YouTube en cartes, filtre de date, métriques vérifiées, transfert vers Extraire, export facultatif vers Marketing_Avatar et parcours anti-copie Marketing/Court métrage/Série/Film |
 | [22 — AutoCaption](docs/22-autocaption.md) | Sous-titres animés et stylés (TikTok, karaoké, mot par mot…) posés après la génération, dans l'Assemblage et le kit FFmpeg ; exports .srt / .ass |
 | [25 — Mentions @ et #](docs/25-mentions.md) | `@[Personnage]` coche sa référence, `#[Skill]` place un skill dans le texte ; suggestions en tapant @ ou # |

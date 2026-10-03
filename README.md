@@ -2,11 +2,13 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
-## Agnes : téléchargement YouTube vers Extraire et parcours IA (1.13.17, 03/10/2026)
+## Agnes : téléchargement YouTube vers Extraire et parcours IA (1.13.18, 03/10/2026)
 
 Le bouton **Télécharger → Extraire** de la veille envoie maintenant l’adresse au pont local. Celui-ci utilise `yt-dlp`, transmet le fichier à Agnes sans le conserver, puis Extraire le charge directement dans l’étape 2. Le même parcours est disponible dans Extraire avec **Télécharger pour analyser**. Une vidéo publique et accessible continue normalement vers la transcription et les images ; une vidéo privée, protégée, indisponible ou exigeant une connexion reste refusée avec un message explicite, sans ouverture automatique d’un onglet. Le kit ZIP est conservé comme solution de secours.
 
 Dans **Étudier une référence**, **Remplir le parcours avec l’IA** enchaîne, après un clic explicite : transcription dans Extraire, analyse technique et visuelle, traduction fidèle, analyse de la mécanique et proposition originale adaptée à Marketing, Court métrage, Série ou Film. L’URL du fichier chargé est mémorisée pour éviter d’associer silencieusement la mauvaise vidéo.
+
+Le panneau d'analyse reste à droite du lecteur et n'apparaît qu'avec une vidéo. Il mesure localement définition, FPS, nombre d'images, codecs, netteté, lumière, contraste et saturation, puis peut demander à l'IA une lecture du style sur six photogrammes. Pour les vidéos YouTube longues, le pont adapte la qualité sous 250 Mo et travaille temporairement sur le disque du projet. Extraire distingue désormais un pont arrêté d'un transfert interrompu par le navigateur, notamment lorsque son disque local est saturé.
 
 ## Agnes : veille en cartes, dates et passerelle Extraire (1.13.16, 03/10/2026)
 

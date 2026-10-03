@@ -2,11 +2,17 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Agnes : téléchargement YouTube vers Extraire et parcours IA (1.13.17, 03/10/2026)
+
+Le bouton **Télécharger → Extraire** de la veille envoie maintenant l’adresse au pont local. Celui-ci utilise `yt-dlp`, transmet le fichier à Agnes sans le conserver, puis Extraire le charge directement dans l’étape 2. Le même parcours est disponible dans Extraire avec **Télécharger pour analyser**. Une vidéo publique et accessible continue normalement vers la transcription et les images ; une vidéo privée, protégée, indisponible ou exigeant une connexion reste refusée avec un message explicite, sans ouverture automatique d’un onglet. Le kit ZIP est conservé comme solution de secours.
+
+Dans **Étudier une référence**, **Remplir le parcours avec l’IA** enchaîne, après un clic explicite : transcription dans Extraire, analyse technique et visuelle, traduction fidèle, analyse de la mécanique et proposition originale adaptée à Marketing, Court métrage, Série ou Film. L’URL du fichier chargé est mémorisée pour éviter d’associer silencieusement la mauvaise vidéo.
+
 ## Agnes : veille en cartes, dates et passerelle Extraire (1.13.16, 03/10/2026)
 
 L’onglet **Veille vidéo** affiche maintenant ses résultats sous forme de cartes avec miniature YouTube, date de publication, durée et statistiques. Le filtre de publication propose 7 jours, 30 jours, 3 mois, 6 mois, 1 an ou toutes les dates ; lorsqu’une période est choisie, une vidéo sans date vérifiable est masquée.
 
-La veille n’est plus réservée au marketing : l’objectif peut être **Marketing — Anthony, 10 s**, **Court métrage**, **Série** ou **Film**. L’analyse et la création finale s’adaptent à l’objectif, tout en conservant la séparation source/traduction/interprétation et le contrôle anti-copie. Le bouton **Utiliser dans Extraire** place le lien dans l’onglet Extraire sans lancer de téléchargement automatique ; **Ouvrir la source** reste le lien vers YouTube ou TikTok.
+La veille n’est plus réservée au marketing : l’objectif peut être **Marketing — Anthony, 10 s**, **Court métrage**, **Série** ou **Film**. L’analyse et la création finale s’adaptent à l’objectif, tout en conservant la séparation source/traduction/interprétation et le contrôle anti-copie. **Ouvrir la source** reste le lien vers YouTube ou TikTok.
 
 ## Agnes : veille vidéo TikTok + YouTube (1.13.15, 03/10/2026)
 

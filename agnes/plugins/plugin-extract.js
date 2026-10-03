@@ -1,20 +1,20 @@
 // plugins/plugin-extract.js — Extracteur : téléchargement par lien, script (transcription), images d'une vidéo
-// 1. Lien → vidéo : un navigateur ne peut pas récupérer une vidéo TikTok/Instagram/YouTube (blocage des sites),
-//    l'app prépare donc un kit yt-dlp (.bat / .sh) qui télécharge vos liens sur votre PC. Les liens directs
-//    vers un fichier .mp4 sont récupérés directement quand le serveur l'autorise.
+// 1. Lien → vidéo : le pont local utilise yt-dlp pour charger une vidéo publique directement dans l'analyse.
+//    Le kit .bat / .sh reste disponible comme solution de secours. Les liens directs vers un fichier .mp4
+//    sont récupérés dans le navigateur quand le serveur l'autorise.
 // 2. Script : transcription Whisper dans le navigateur (gratuit, privé, modèle téléchargé une fois) ou API OpenAI,
 //    ou import de sous-titres .srt/.vtt. Export texte / timecodes / .srt, envoi vers l'onglet Scénario.
 // 3. Images : extraction toutes les N secondes, N images réparties, une image par plan (détection des coupes)
 //    ou capture manuelle ; export .zip, envoi vers la Bibliothèque ou vers Stills → Clip.
 AgnesPlugins.register("extracteur", {
   name: "Extracteur (lien, script, images)",
-  version: "1.9",
+  version: "2.0",
   TIKWM: "https://www.tikwm.com",
   TFJS: "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js",
 
   init: function (core) {
     var App = window.AgnesApp, esc = App.esc, self = this;
-    this.core = core; this.frames = []; this.segments = []; this.video = null; this.srcName = ""; this.metaSeq = 0; this.metaInfo = null;
+    this.core = core; this.frames = []; this.segments = []; this.video = null; this.srcName = ""; this.sourceUrl = ""; this.metaSeq = 0; this.metaInfo = null;
     this.transformersPromise = null; this.asrLoading = null; this.asrLoadingModel = "";
     var cfg = core.pluginSettings("extracteur", {
       dlQuality: "1080", dlSubs: true, dlAudio: false,
@@ -50,16 +50,17 @@ AgnesPlugins.register("extracteur", {
       '<div id="exVOut" style="margin-top:10px"></div></div>' +
       // ---------- 1. Lien ----------
       '<div class="card"><h3>1. Télécharger depuis un lien</h3>' +
-      '<p class="hint">Collez un ou plusieurs liens (TikTok, YouTube, Instagram, X, Facebook…), un par ligne. Les sites bloquent le téléchargement depuis une page web : ' +
-      'l\'app prépare un petit kit <b>yt-dlp</b> qui télécharge tout d\'un double-clic sur votre PC. Déposez ensuite les vidéos ci-dessous pour en extraire le script et les images.</p>' +
+      '<p class="hint">Collez un ou plusieurs liens (TikTok, YouTube, Instagram, X, Facebook…), un par ligne. Le pont local peut utiliser <b>yt-dlp</b> pour charger la première vidéo directement dans l’étape 2. ' +
+      'Le kit ZIP reste disponible si un site refuse le téléchargement intégré.</p>' +
       '<textarea id="exLinks" rows="4" placeholder="https://www.tiktok.com/@compte/video/7412345678901234567&#10;https://www.youtube.com/shorts/…"></textarea>' +
       '<div class="row-inline" style="margin-top:8px"><label class="hint" style="margin:0">Qualité <select id="exQ"><option value="1080">1080p max</option><option value="720">720p max</option><option value="best">La meilleure</option></select></label>' +
       '<label class="hint" style="margin:0"><input type="checkbox" id="exSubs"> Sous-titres du site (.srt) si disponibles</label>' +
       '<label class="hint" style="margin:0"><input type="checkbox" id="exAudio"> Aussi l\'audio seul (.mp3)</label></div>' +
-      '<div class="row-inline" style="margin-top:8px"><button class="primary-btn" id="exTkBtn">Récupérer les vidéos TikTok ici</button>' +
-      '<button class="small-btn" id="exKit">Kit yt-dlp (.zip) — tous les sites</button><button class="small-btn" id="exDirect">Lien direct vers un fichier .mp4</button></div>' +
+      '<div class="row-inline" style="margin-top:8px"><button class="primary-btn" id="exImport">Télécharger pour analyser</button>' +
+      '<button class="small-btn" id="exTkBtn">Choisir une qualité TikTok</button>' +
+      '<button class="small-btn" id="exKit">Kit yt-dlp (.zip) — secours</button><button class="small-btn" id="exDirect">Lien direct vers un fichier .mp4</button></div>' +
       '<p class="hint" style="margin-top:6px"><b>TikTok</b> : récupération directe par le service gratuit <b>TikWM</b> (non officiel : il peut être lent, limité à ~1 lien/s, ou indisponible). ' +
-      'En cas d\'échec, ou pour les autres sites, utilisez le kit yt-dlp.</p>' +
+      'Pour YouTube et les autres sites pris en charge, le téléchargement intégré passe par votre pont local. Une vidéo privée, protégée ou nécessitant une connexion restera refusée.</p>' +
       '<label class="hint" style="display:block"><input type="checkbox" id="exProxy"> Si TikWM est bloqué, réessayer via le relais public allOrigins (votre lien passe alors par ce relais)</label>' +
       '<div id="exTk" style="margin-top:8px"></div></div>' +
       // ---------- Source ----------
@@ -144,6 +145,7 @@ AgnesPlugins.register("extracteur", {
 
     // ---------- 1. Lien ----------
     $("exKit").addEventListener("click", function () { self.downloadKit(); });
+    $("exImport").addEventListener("click", function () { self.downloadForAnalysis(); });
     $("exTkBtn").addEventListener("click", function () { self.fetchTikToks(); });
     $("exProxy").checked = !!cfg.tkProxy;
     $("exProxy").addEventListener("change", function () { cfg.tkProxy = this.checked; cfg.save(); });
@@ -275,12 +277,52 @@ AgnesPlugins.register("extracteur", {
     this.st().links = links.value; this.saveSoon();
     window.AgnesApp.showView("view_extraire");
     links.scrollIntoView({ behavior: "smooth", block: "center" });
-    this.core.toast("Lien ajouté dans Extraire. Utilisez la récupération TikTok ou le kit yt-dlp pour YouTube.", "ok");
+    this.core.toast("Lien ajouté dans Extraire. Cliquez sur « Télécharger pour analyser ».", "ok");
     return true;
   },
-  setSource: function (blob, name, restoring) {
+  importUrl: function (url) {
+    if (!this.openUrl(url)) return Promise.resolve(false);
+    return this.downloadForAnalysis(url);
+  },
+  downloadForAnalysis: function (givenUrl) {
+    var self = this, core = this.core, links = this.links(), url = String(givenUrl || links[0] || "").trim();
+    if (!url) { core.toast("Collez un lien vidéo.", "err"); return Promise.resolve(false); }
+    var parsed;
+    try { parsed = new URL(url); } catch (error) { parsed = null; }
+    if (!parsed || !/^https?:$/.test(parsed.protocol)) { core.toast("Adresse vidéo invalide.", "err"); return Promise.resolve(false); }
+    var btn = this.$("exImport"), ancien = btn.textContent;
+    btn.disabled = true; btn.textContent = "Téléchargement local…";
+    core.toast("Le pont local récupère la vidéo avec yt-dlp…");
+    var hauteur = this.cfg.dlQuality === "best" ? 1080 : Number(this.cfg.dlQuality) || 1080;
+    return fetch(this.bridgeBase() + "/video/importer", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "video/*,application/json" },
+      body: JSON.stringify({ url: parsed.href, hauteur: hauteur })
+    }).then(function (r) {
+      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (d) {
+        if (r.status === 404) throw new Error("le pont local n’est pas encore à jour pour le téléchargement intégré");
+        throw new Error(d.error || ("HTTP " + r.status));
+      });
+      return r.blob().then(function (blob) {
+        if (blob.size < 20000 || /text|html|json/i.test(blob.type || "")) throw new Error("le pont n’a pas renvoyé de fichier vidéo");
+        return { blob: /^video\//i.test(blob.type || "") ? blob : new Blob([blob], { type: "video/mp4" }),
+          name: decodeURIComponent(r.headers.get("X-File-Name") || "video.mp4") };
+      });
+    }).then(function (out) {
+      self.setSource(out.blob, out.name, false, parsed.href);
+      self.$("exPlayer").scrollIntoView({ behavior: "smooth", block: "center" });
+      core.toast("Vidéo chargée dans l’étape 2. Vous pouvez maintenant la transcrire et l’analyser.", "ok");
+      return true;
+    }).catch(function (error) {
+      var message = error instanceof TypeError ? "pont local injoignable : relancez-le" : (error.message || error);
+      core.toast("Téléchargement impossible : " + message + ". Si la vidéo est publique, réessayez ; sinon utilisez le kit yt-dlp ou un fichier que vous possédez.", "err");
+      return false;
+    }).finally(function () { btn.disabled = false; btn.textContent = ancien; });
+  },
+  setSource: function (blob, name, restoring, sourceUrl) {
     var v = this.$("exPlayer");
-    if (!restoring) this.newSession(blob, name);
+    if (!restoring) this.newSession(blob, name, sourceUrl);
+    var ss = this.session();
+    this.sourceUrl = String(sourceUrl || (ss && ss.sourceUrl) || "");
     if (this.videoUrl) URL.revokeObjectURL(this.videoUrl);
     this.video = blob; this.srcName = name; this.videoUrl = URL.createObjectURL(blob);
     var audio = /^audio\//.test(blob.type);
@@ -339,7 +381,7 @@ AgnesPlugins.register("extracteur", {
       .catch(function (e) { if (seq === self.metaSeq) self.metadataError(e, silent); return null; });
   },
   cleanMetadata: function () {
-    var self = this, blob = this.video; if (!blob) return this.core.toast("Choisissez d'abord une vidéo.", "err");
+    var self = this, blob = this.video, sourceUrl = this.sourceUrl; if (!blob) return this.core.toast("Choisissez d'abord une vidéo.", "err");
     var btn = this.$("exMetaClean"), old = btn.textContent; btn.disabled = true; this.$("exMetaCheck").disabled = true; btn.textContent = "Nettoyage…";
     this.$("exMetaStatus").textContent = "FFmpeg crée une copie nettoyée sans modifier l'original…";
     fetch(this.bridgeBase() + "/media/nettoyer", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream", "X-File-Name": encodeURIComponent(this.srcName || "video.mp4") }, body: blob })
@@ -347,7 +389,7 @@ AgnesPlugins.register("extracteur", {
         if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || ("HTTP " + r.status)); });
         return r.blob().then(function (b) { return { blob: b, name: decodeURIComponent(r.headers.get("X-File-Name") || "video_nettoyee.mp4") }; });
       }).then(function (out) {
-        self.setSource(out.blob, out.name);
+        self.setSource(out.blob, out.name, false, sourceUrl);
         self.core.toast("Copie nettoyée chargée dans l'analyse. La vidéo originale est conservée.", "ok");
       }).catch(function (e) { self.metadataError(e, false); })
       .finally(function () { btn.disabled = false; btn.textContent = old; if (self.video) self.$("exMetaCheck").disabled = false; });
@@ -414,13 +456,16 @@ AgnesPlugins.register("extracteur", {
   },
   analyseVideo: function () {
     var self = this, core = this.core, blob = this.video, btn = this.$("exVideoAnalyze"), statut = this.$("exVideoAnalysisStatus"), resultat = this.$("exVideoAnalysisResult");
-    if (!blob || /^audio\//.test(blob.type)) return core.toast("Choisissez d’abord une vidéo.", "err");
+    if (!blob || /^audio\//.test(blob.type)) { core.toast("Choisissez d’abord une vidéo.", "err"); return Promise.resolve(null); }
     var seq = ++this.analysisSeq, ancien = btn.textContent; btn.disabled = true; btn.textContent = "Analyse…"; resultat.innerHTML = ""; statut.textContent = "Mesure de la vidéo et prélèvement de 6 images représentatives…";
     var meta = this.metaInfo ? Promise.resolve(this.metaInfo) : this.checkMetadata(false).then(function () { return self.metaInfo; });
-    Promise.all([meta, this.videoAnalysisSamples()]).then(function (donnees) {
+    return Promise.all([meta, this.videoAnalysisSamples()]).then(function (donnees) {
       if (seq !== self.analysisSeq) throw new Error("analyse remplacée par une autre vidéo");
       var technique = donnees[0], echantillon = donnees[1], html = self.renderVideoTechnical(technique, echantillon); resultat.innerHTML = html;
-      var at; try { at = self.atelier(); } catch (e) { statut.textContent = "Mesures terminées. Analyse du style indisponible : " + e.message; return null; }
+      var at; try { at = self.atelier(); } catch (e) {
+        self.videoAnalysis = { technique: technique, visuel: "", at: Date.now() };
+        statut.textContent = "Mesures terminées. Analyse du style indisponible : " + e.message; return self.videoAnalysis;
+      }
       statut.textContent = "Analyse du style visuel par l’IA sur 6 images…";
       var v = (technique && technique.video) || {}, resume = "Vidéo : " + (v.largeur || echantillon.largeur) + "×" + (v.hauteur || echantillon.hauteur) + ", " + (v.fps || "FPS inconnu") + " FPS, durée " + self.fmtTime(echantillon.duree) + ".";
       var contenu = [{ type: "text", text: resume + "\nLes images suivantes sont des prélèvements à " + echantillon.images.map(function (x) { return self.fmtTime(x.t); }).join(", ") + ". Analyse uniquement ce qui est visible. Sépare OBSERVATIONS et INTERPRÉTATION. Décris : médium probable (prise de vue, 2D, 3D, IA…), style, palette, lumière, composition/cadrages, niveau de détail, cohérence visuelle et défauts visibles. Termine par 4 conseils concrets pour reproduire cette qualité. N’invente ni histoire, ni mouvement entre les images, ni information absente." }];
@@ -429,14 +474,17 @@ AgnesPlugins.register("extracteur", {
         .then(function (m) {
           if (seq !== self.analysisSeq) return;
           var texte = String(m.content || "").trim(); self.videoAnalysis = { technique: technique, visuel: texte, at: Date.now() };
-          resultat.innerHTML = html + '<div class="refs-block" style="margin-top:10px"><b>Analyse visuelle par IA</b><p style="white-space:pre-wrap;margin:8px 0 0">' + window.AgnesApp.esc(texte || "information non disponible") + '</p></div>';
-          statut.textContent = "Analyse terminée" + (m._provider ? " par " + m._provider : "") + ".";
-        }).catch(function (e) {
-          if (seq !== self.analysisSeq) return;
-          var message = e.display || e.message || String(e); resultat.innerHTML = html + '<div class="refs-block" style="margin-top:10px"><b>Analyse visuelle indisponible</b><p class="hint" style="margin:6px 0 0">' + window.AgnesApp.esc(message) + '</p></div>';
-          statut.textContent = "Mesures techniques terminées ; le modèle IA sélectionné n’a pas pu analyser les images.";
-        });
-    }).catch(function (e) { if (seq === self.analysisSeq) { statut.textContent = "Analyse impossible : " + (e.message || e); core.toast("Analyse vidéo : " + (e.message || e), "err"); } })
+           resultat.innerHTML = html + '<div class="refs-block" style="margin-top:10px"><b>Analyse visuelle par IA</b><p style="white-space:pre-wrap;margin:8px 0 0">' + window.AgnesApp.esc(texte || "information non disponible") + '</p></div>';
+           statut.textContent = "Analyse terminée" + (m._provider ? " par " + m._provider : "") + ".";
+           return self.videoAnalysis;
+         }).catch(function (e) {
+           if (seq !== self.analysisSeq) return;
+           var message = e.display || e.message || String(e); self.videoAnalysis = { technique: technique, visuel: "", at: Date.now() };
+           resultat.innerHTML = html + '<div class="refs-block" style="margin-top:10px"><b>Analyse visuelle indisponible</b><p class="hint" style="margin:6px 0 0">' + window.AgnesApp.esc(message) + '</p></div>';
+           statut.textContent = "Mesures techniques terminées ; le modèle IA sélectionné n’a pas pu analyser les images.";
+           return self.videoAnalysis;
+         });
+    }).catch(function (e) { if (seq === self.analysisSeq) { statut.textContent = "Analyse impossible : " + (e.message || e); core.toast("Analyse vidéo : " + (e.message || e), "err"); } return null; })
       .finally(function () { if (seq === self.analysisSeq) { btn.disabled = false; btn.textContent = ancien; } });
   },
   fmtTime: function (s, ms) {
@@ -498,7 +546,7 @@ AgnesPlugins.register("extracteur", {
       return r.blob();
     }).then(function (b) {
       var name = (url.split("?")[0].split("/").pop() || "video.mp4");
-      self.setSource(b, name); core.toast("Vidéo récupérée : " + (b.size / 1048576).toFixed(1) + " Mo.", "ok");
+      self.setSource(b, name, false, url); core.toast("Vidéo récupérée : " + (b.size / 1048576).toFixed(1) + " Mo.", "ok");
     }).catch(function (e) {
       core.toast("Récupération directe impossible : " + (e instanceof TypeError ? "le site bloque les téléchargements depuis une page web — utilisez le kit" : e.message) + ".", "err");
     });
@@ -603,7 +651,7 @@ AgnesPlugins.register("extracteur", {
       if (choice.local) infos.push("via le pont local");
       else if (choice.proxy) infos.push("via le relais public");
       var detail = infos.length ? " (" + infos.join(", ") + ")" : "";
-      if (act === "load") { self.setSource(blob, name); self.$("exPlayer").scrollIntoView({ behavior: "smooth", block: "center" }); core.toast("Vidéo chargée" + detail + " : passez au script ou aux images.", "ok"); }
+      if (act === "load") { self.setSource(blob, name, false, it.url); self.$("exPlayer").scrollIntoView({ behavior: "smooth", block: "center" }); core.toast("Vidéo chargée" + detail + " : passez au script ou aux images.", "ok"); }
       else { core.download(blob, name); core.toast("Téléchargement" + detail + " : " + name, "ok"); }
     }).catch(function (e) {
       var reason = e instanceof TypeError ? "blocage du serveur" : e.message;
@@ -669,6 +717,26 @@ AgnesPlugins.register("extracteur", {
     if (this.cfg.engine === "subs") return Promise.reject(new Error("moteur « sous-titres » choisi dans Extraire : choisissez Whisper ou OpenAI"));
     this.resetView(); this.setSource(blob, name || "vidéo");
     return this.runTranscription();
+  },
+  // Prépare une référence pour Veille : transcription puis analyse technique/visuelle, uniquement après clic utilisateur.
+  prepareReference: function (onStatus) {
+    var self = this, status = typeof onStatus === "function" ? onStatus : function () {};
+    if (!this.video) return Promise.reject(new Error("aucune vidéo n’est chargée dans Extraire"));
+    if (this.cfg.engine === "subs" && !this.scriptText()) {
+      return Promise.reject(new Error("le moteur « sous-titres » est sélectionné : importez le fichier .srt/.vtt ou choisissez Whisper/OpenAI"));
+    }
+    var transcription = this.scriptText() ? Promise.resolve({ text: this.scriptText() }) : (status("Transcription…"), this.runTranscription());
+    return transcription.then(function (result) {
+      var source = String((result && result.text) || self.scriptText() || "").trim();
+      if (!source) throw new Error("aucune parole n’a été détectée dans la vidéo");
+      if (self.videoAnalysis) return { source: source, analysis: self.videoAnalysis };
+      status("Analyse des images…");
+      return self.analyseVideo().then(function (analysis) { return { source: source, analysis: analysis }; });
+    }).then(function (result) {
+      status("Référence prête");
+      return { source: result.source, visual: String(result.analysis && result.analysis.visuel || "").trim(),
+        name: self.srcName || "vidéo", url: self.sourceUrl || "" };
+    });
   },
   // 01/10 — mots minutés pour le karaoké de l'extension Montage : [{ text, start, end }] (secondes de la vidéo donnée).
   // N'utilise ni ne modifie l'onglet Extraire. Whisper local seulement (l'API OpenAI ne rend pas les mots ici).
@@ -961,7 +1029,7 @@ AgnesPlugins.register("extracteur", {
   // =========================================================
   // ENREGISTREMENT DANS LE PROJET
   // proj.extract = { links, tk[], veille{}, sessions[], current }
-  // session = { id, name, srcKey, segments[], scriptEdit, scriptFmt, frames[{ t, key, on }], convInstr, convOut, at }
+  // session = { id, name, sourceUrl, srcKey, segments[], scriptEdit, scriptFmt, frames[{ t, key, on }], convInstr, convOut, at }
   // Fichiers dans IndexedDB : « extract:v:<session> » (vidéo), « extract:f:<session>:<id> » (images)
   // =========================================================
   st: function () {
@@ -972,8 +1040,8 @@ AgnesPlugins.register("extracteur", {
   },
   session: function () { var st = this.st(); return st.sessions.find(function (x) { return x.id === st.current; }) || null; },
   saveSoon: function () { var self = this; clearTimeout(this._sv); this._sv = setTimeout(function () { self.core.saveProject(); }, 400); },
-  newSession: function (blob, name) {
-    var st = this.st(), id = window.AgnesApp.uid(), ss = { id: id, name: name || "vidéo", srcKey: "extract:v:" + id, segments: [], scriptEdit: null, frames: [], convInstr: "", convOut: "", at: Date.now() };
+  newSession: function (blob, name, sourceUrl) {
+    var st = this.st(), id = window.AgnesApp.uid(), ss = { id: id, name: name || "vidéo", sourceUrl: String(sourceUrl || ""), srcKey: "extract:v:" + id, segments: [], scriptEdit: null, frames: [], convInstr: "", convOut: "", at: Date.now() };
     st.sessions.unshift(ss); st.current = id;
     // on repart d'une page propre pour cette vidéo
     this.segments = []; this.showScript(); this.clearFramesUI();
@@ -1011,7 +1079,7 @@ AgnesPlugins.register("extracteur", {
     st.current = id; this.saveSoon();
     this.segments = (ss.segments || []).slice(); this.clearFramesUI();
     return this.core.store.get(ss.srcKey).then(function (blob) {
-      if (blob) self.setSource(blob, ss.name, true);
+      if (blob) self.setSource(blob, ss.name, true, ss.sourceUrl);
       else { self.video = null; self.srcName = ss.name; self.$("exPlayer").style.display = "none"; self.$("exVideoAnalysisWrap").style.display = "none"; self.resetVideoAnalysis(); self.$("exSrcInfo").textContent = ss.name + " (fichier vidéo indisponible : glissez-le à nouveau pour extraire des images)"; }
       self.showScript();
       if (ss.scriptEdit != null) { if (ss.scriptFmt) self.$("exFormat").value = ss.scriptFmt; self.$("exScript").value = ss.scriptEdit; self.$("exScriptWrap").style.display = ""; }
@@ -1035,7 +1103,7 @@ AgnesPlugins.register("extracteur", {
     this.renderSessions();
   },
   resetView: function () {
-    this.video = null; this.srcName = ""; this.segments = []; this.showScript(); this.clearFramesUI();
+    this.video = null; this.srcName = ""; this.sourceUrl = ""; this.segments = []; this.showScript(); this.clearFramesUI();
     var v = this.$("exPlayer"); v.removeAttribute("src"); v.style.display = "none"; this.$("exVideoAnalysisWrap").style.display = "none"; this.$("exSrcInfo").textContent = "";
     this.resetVideoAnalysis();
     this.resetMetadata();

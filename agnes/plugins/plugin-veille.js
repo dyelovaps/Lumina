@@ -1,6 +1,6 @@
 AgnesPlugins.register("veille-video", {
   name: "Veille vidéo TikTok et YouTube",
-  version: "2.1",
+  version: "2.2",
 
   init: function (core) {
     this.core = core;
@@ -19,7 +19,9 @@ AgnesPlugins.register("veille-video", {
       '<p class="hint">Un filtre précis écarte les vidéos dont le format, la langue, le pays ou la date n’est pas publié. YouTube ne fournit généralement pas de pays d’origine vérifiable.</p>' +
       '<div id="vvStatus" class="hint"></div><div id="vvResults"></div></div>' +
       '<div class="card" id="vvWorkflow" style="display:none"><h3 id="vvWorkflowTitle">Étudier une référence</h3>' +
-      '<p class="hint">Chaque étape est lancée par vous. Aucune vidéo tierce n’est téléchargée ni republiée automatiquement.</p>' +
+      '<p class="hint">Chaque étape est lancée par vous. Utilisez d’abord « Télécharger → Extraire » sur la carte, puis le bouton ci-dessous. Aucune vidéo n’est republiée.</p>' +
+      '<div class="row-inline"><button class="primary-btn" id="vvAuto" type="button">✨ Remplir le parcours avec l’IA</button>' +
+      '<span class="hint" id="vvAutoStatus" style="margin:0">Transcription, analyse visuelle, traduction, analyse puis proposition originale.</span></div>' +
       '<div id="vvReference"></div>' +
       '<div class="refs-block"><h4>1. SOURCE VÉRIFIÉE — transcription originale</h4>' +
       '<p class="hint">Les métriques et l’URL viennent de la veille. La transcription doit être fournie ou contrôlée par vous ; elle n’est pas vérifiée par la plateforme.</p>' +
@@ -63,6 +65,7 @@ AgnesPlugins.register("veille-video", {
     });
     this.view.querySelector("#vvFromExtract").addEventListener("click", function () { self.fromExtract("source"); });
     this.view.querySelector("#vvVisualExtract").addEventListener("click", function () { self.fromExtract("visual"); });
+    this.view.querySelector("#vvAuto").addEventListener("click", function () { self.autoFill(); });
     this.view.querySelector("#vvTranslate").addEventListener("click", function () { self.translate(); });
     this.view.querySelector("#vvAnalyze").addEventListener("click", function () { self.analyze(); });
     this.view.querySelector("#vvCreate").addEventListener("click", function () { self.createScript(); });
@@ -181,7 +184,7 @@ AgnesPlugins.register("veille-video", {
         '<span>Commentaires <b>' + number(video.comments) + '</b></span><span>Partages <b>' + number(video.shares) + '</b></span></div>' +
         '<p class="vv-source">Source : ' + esc(video.source || "—") + '<br>Vérifié : ' + esc(video.verified_at || "—") + '</p>' +
         '<div class="vv-actions"><a class="small-btn" href="' + esc(video.url) + '" target="_blank" rel="noopener">Ouvrir la source</a>' +
-        '<button class="small-btn" type="button" data-extract="' + index + '">Utiliser dans Extraire</button>' +
+        '<button class="small-btn" type="button" data-extract="' + index + '">Télécharger → Extraire</button>' +
         ((state.filters || {}).purpose === "marketing" || !(state.filters || {}).purpose ? '<button class="small-btn" type="button" data-export="' + index + '">Envoyer à Marketing_Avatar</button>' : '') +
         '<button class="primary-btn" type="button" data-study="' + index + '">Étudier — ' + esc(profile.label) + '</button></div></div></article>';
     }).join("") + '</div>';
@@ -196,10 +199,10 @@ AgnesPlugins.register("veille-video", {
     var video = this.state().videos[index];
     if (!video) return;
     var extract = AgnesPlugins.isLoaded("extracteur") && AgnesPlugins.get("extracteur");
-    if (!extract || typeof extract.openUrl !== "function") {
+    if (!extract || typeof extract.importUrl !== "function") {
       return this.core.toast("Activez Extraire dans les réglages, puis rechargez Agnes.", "err");
     }
-    extract.openUrl(video.url);
+    extract.importUrl(video.url);
   },
 
   selectVideo: function (index) {
@@ -283,6 +286,52 @@ AgnesPlugins.register("veille-video", {
     reference.control = null; this.core.saveProject(); this.renderWorkflow();
   },
 
+  autoFill: function () {
+    var self = this, reference = this.selected();
+    var extract = AgnesPlugins.isLoaded("extracteur") && AgnesPlugins.get("extracteur");
+    if (!reference || !extract || typeof extract.prepareReference !== "function") {
+      this.core.toast("Activez Extraire et chargez la vidéo de cette référence.", "err"); return Promise.resolve(false);
+    }
+    if (!extract.video) {
+      this.core.toast("La vidéo n’est pas encore chargée dans Extraire. Cliquez d’abord sur « Télécharger → Extraire » dans sa carte.", "err"); return Promise.resolve(false);
+    }
+    var expected = String(reference.video && reference.video.url || "").replace(/\/$/, "");
+    var actual = String(extract.sourceUrl || "").replace(/\/$/, "");
+    if (actual && actual !== expected && !window.confirm("La vidéo chargée dans Extraire vient d’une autre adresse. Voulez-vous tout de même l’associer à cette référence ?")) return Promise.resolve(false);
+    if (!actual && !window.confirm("Extraire ne connaît pas l’adresse d’origine du fichier chargé. Confirmez-vous qu’il correspond bien à cette référence ?")) return Promise.resolve(false);
+    var button = this.view.querySelector("#vvAuto"), status = this.view.querySelector("#vvAutoStatus"), old = button.textContent;
+    button.disabled = true; button.textContent = "Préparation…";
+    status.textContent = "Préparation de la référence dans Extraire…";
+    return extract.prepareReference(function (step) { status.textContent = step; button.textContent = step; }).then(function (data) {
+      reference.source = String(data.source || "").trim();
+      reference.sourceOrigin = "Extraire : " + data.name + (data.url ? " · URL associée" : " · association confirmée");
+      reference.visual = String(data.visual || "").trim();
+      reference.visualOrigin = reference.visual ? "analyse visuelle IA d’Extraire, à vérifier" : "analyse visuelle indisponible";
+      reference.translation = ""; reference.analysis = ""; reference.creation = ""; reference.control = null;
+      self.core.saveProject(); self.renderWorkflow();
+      status.textContent = "Traduction…"; button.textContent = "Traduction…";
+      return self.translate();
+    }).then(function () {
+      if (!reference.translation) throw new Error("la traduction n’a pas pu être produite");
+      status.textContent = "Analyse de la mécanique…"; button.textContent = "Analyse…";
+      return self.analyze();
+    }).then(function () {
+      if (!reference.analysis) throw new Error("l’analyse n’a pas pu être produite");
+      status.textContent = "Création d’une proposition originale…"; button.textContent = "Création…";
+      return self.createScript();
+    }).then(function () {
+      if (!reference.creation) throw new Error("la proposition n’a pas pu être produite");
+      status.textContent = "Parcours rempli. Relisez les observations et la proposition avant production.";
+      self.core.toast("Le parcours de veille a été rempli. Vérifiez le résultat avant de l’utiliser.", "ok");
+      return true;
+    }).catch(function (error) {
+      var message = error.display || error.message || String(error);
+      status.textContent = "Parcours interrompu : " + message;
+      self.core.toast("Parcours IA : " + message, "err");
+      return false;
+    }).finally(function () { button.disabled = false; button.textContent = old; });
+  },
+
   atelier: function () {
     var atelier = AgnesPlugins.isLoaded("atelier") && AgnesPlugins.get("atelier");
     if (!atelier || !atelier.chat) throw new Error("Activez l’Atelier IA pour cette étape, ou saisissez le résultat manuellement.");
@@ -291,13 +340,13 @@ AgnesPlugins.register("veille-video", {
 
   runAI: function (buttonId, system, user, field) {
     var self = this, reference = this.selected(), button = this.view.querySelector("#" + buttonId), atelier;
-    try { atelier = this.atelier(); } catch (error) { this.core.toast(error.message, "err"); return; }
+    try { atelier = this.atelier(); } catch (error) { this.core.toast(error.message, "err"); return Promise.resolve(null); }
     var snapshot = [reference.source, reference.translation, reference.analysis, reference.visual].join("\u0000");
     button.disabled = true;
     var maxTokens = field === "creation" ? this.purposeProfile(reference.purpose).maxTokens : 1400;
-    atelier.chat([{ role: "system", content: system }, { role: "user", content: user }], { temperature: field === "translation" ? 0 : 0.4, max_tokens: maxTokens })
+    return atelier.chat([{ role: "system", content: system }, { role: "user", content: user }], { temperature: field === "translation" ? 0 : 0.4, max_tokens: maxTokens })
       .then(function (message) {
-        if (self.selected() !== reference || snapshot !== [reference.source, reference.translation, reference.analysis, reference.visual].join("\u0000")) return;
+        if (self.selected() !== reference || snapshot !== [reference.source, reference.translation, reference.analysis, reference.visual].join("\u0000")) return null;
         var result = String(message.content || "").trim();
         if (!result) throw new Error("réponse vide");
         reference[field] = result;
@@ -305,28 +354,29 @@ AgnesPlugins.register("veille-video", {
         if (field === "analysis") reference.creation = "";
         reference.control = null; self.core.saveProject(); self.renderWorkflow();
         if (field === "creation") self.checkOriginality();
-      }).catch(function (error) { self.core.toast("Étape IA : " + (error.display || error.message || error), "err"); })
+        return result;
+      }).catch(function (error) { self.core.toast("Étape IA : " + (error.display || error.message || error), "err"); return null; })
       .finally(function () { button.disabled = false; });
   },
 
   translate: function () {
     this.saveDraft();
     var reference = this.selected();
-    if (!reference || !reference.source) return this.core.toast("Fournissez la transcription originale d’abord.", "err");
+    if (!reference || !reference.source) { this.core.toast("Fournissez la transcription originale d’abord.", "err"); return Promise.resolve(null); }
     if (reference.video.language === "fr") {
       reference.translation = reference.source; reference.analysis = ""; reference.creation = "";
-      this.core.saveProject(); this.renderWorkflow(); return;
+      this.core.saveProject(); this.renderWorkflow(); return Promise.resolve(reference.translation);
     }
-    this.runAI("vvTranslate", "Traduis fidèlement en français. Ne résume pas, ne corrige pas le fond, n’analyse pas et n’ajoute aucune information. Réponds uniquement par la traduction.",
+    return this.runAI("vvTranslate", "Traduis fidèlement en français. Ne résume pas, ne corrige pas le fond, n’analyse pas et n’ajoute aucune information. Réponds uniquement par la traduction.",
       "TRANSCRIPTION ORIGINALE :\n" + reference.source, "translation");
   },
 
   analyze: function () {
     this.saveDraft();
     var reference = this.selected();
-    if (!reference || !reference.source || !reference.translation) return this.core.toast("Terminez la transcription et la traduction d’abord.", "err");
+    if (!reference || !reference.source || !reference.translation) { this.core.toast("Terminez la transcription et la traduction d’abord.", "err"); return Promise.resolve(null); }
     var profile = this.purposeProfile(reference.purpose);
-    this.runAI("vvAnalyze", "Analyse une référence vidéo sans l’imiter, pour préparer une création de type « " + profile.label + " ». Sépare OBSERVATIONS FACTUELLES (uniquement le texte et les notes visuelles fournis) et INTERPRÉTATIONS (hypothèses, jamais des faits). Décris " + profile.focus + ". Si les images ne sont pas documentées, écris « Visuel non vérifiable ». N’invente ni métrique, ni plan, ni preuve. Ne reproduis aucune phrase du texte source.",
+    return this.runAI("vvAnalyze", "Analyse une référence vidéo sans l’imiter, pour préparer une création de type « " + profile.label + " ». Sépare OBSERVATIONS FACTUELLES (uniquement le texte et les notes visuelles fournis) et INTERPRÉTATIONS (hypothèses, jamais des faits). Décris " + profile.focus + ". Si les images ne sont pas documentées, écris « Visuel non vérifiable ». N’invente ni métrique, ni plan, ni preuve. Ne reproduis aucune phrase du texte source.",
       "URL : " + reference.video.url + "\nTRANSCRIPTION :\n" + reference.source + "\nTRADUCTION :\n" + reference.translation +
       "\nNOTES VISUELLES FOURNIES :\n" + (reference.visual || "Aucune"), "analysis");
   },
@@ -334,9 +384,9 @@ AgnesPlugins.register("veille-video", {
   createScript: function () {
     this.saveDraft();
     var reference = this.selected();
-    if (!reference || !reference.analysis) return this.core.toast("Terminez l’analyse avant la création.", "err");
+    if (!reference || !reference.analysis) { this.core.toast("Terminez l’analyse avant la création.", "err"); return Promise.resolve(null); }
     var profile = this.purposeProfile(reference.purpose);
-    this.runAI("vvCreate", profile.create,
+    return this.runAI("vvCreate", profile.create,
       "MÉCANIQUE GÉNÉRALE À RÉINTERPRÉTER, sans copier le contenu :\n" + reference.analysis, "creation");
   },
 

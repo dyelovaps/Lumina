@@ -30,8 +30,14 @@ Changer la période, le classement, le nombre ou la durée **reclasse sans refai
 
 ## 1. Télécharger depuis un lien
 
+### Tous les sites pris en charge : directement dans l'analyse
+
+Collez un lien YouTube, TikTok, Instagram, X, Facebook, Vimeo ou Dailymotion, puis cliquez **Télécharger pour analyser**. Le pont local lance `yt-dlp`, limite le fichier à 250 Mo, ne prend qu'une vidéo (jamais une playlist entière), puis transmet le fichier à l'étape 2. Le fichier temporaire du pont est supprimé après l'envoi ; la copie de travail reste enregistrée dans le projet Agnes.
+
+Si la vidéo est publique et accessible, elle apparaît dans le lecteur et peut être transcrite ou analysée normalement. Si elle est privée, protégée, indisponible, soumise à DRM ou demande une connexion, le téléchargement est refusé clairement et aucun onglet ne s'ouvre automatiquement.
+
 ### TikTok : directement dans l'app
-Collez un ou plusieurs liens TikTok (`tiktok.com/@…/video/…` ou liens courts `vm.tiktok.com/…`), puis **Récupérer les vidéos TikTok ici**. L'app interroge **TikWM**, un service gratuit non officiel qui renvoie les fichiers sans filigrane. Pour chaque vidéo : titre, compte, durée, vues, et les boutons :
+Pour choisir entre HD, qualité standard ou filigrane, collez un ou plusieurs liens TikTok (`tiktok.com/@…/video/…` ou liens courts `vm.tiktok.com/…`), puis **Choisir une qualité TikTok**. L'app interroge **TikWM**, un service gratuit non officiel qui renvoie les fichiers disponibles. Pour chaque vidéo : titre, compte, durée, vues, et les boutons :
 
 | Bouton | Effet |
 |---|---|
@@ -41,15 +47,15 @@ Collez un ou plusieurs liens TikTok (`tiktok.com/@…/video/…` ou liens courts
 
 - TikWM accepte environ **1 lien par seconde** : l'app espace les demandes toute seule. Le service peut être lent ou indisponible ; il essaie deux méthodes avant d'abandonner.
 - Si TikWM est bloqué chez vous, cochez **« réessayer via le relais public allOrigins »**. Votre lien passe alors par ce relais.
-- Si le **fichier** lui-même refuse de se télécharger, il s'ouvre dans un onglet : clic droit → « Enregistrer la vidéo sous… », puis glissez-le à l'étape 2.
-- **Instagram, YouTube, X…** ne passent pas par TikWM : utilisez le kit ci-dessous.
+- Si TikWM refuse le fichier, essayez **Télécharger pour analyser** via le pont local, puis le kit de secours si nécessaire.
+- **Instagram, YouTube, X…** ne passent pas par TikWM : utilisez le téléchargement intégré ci-dessus.
 
-### Tous les sites : le kit yt-dlp
+### Solution de secours : le kit yt-dlp
 **Pourquoi un kit ?** Les sites (TikTok, Instagram, YouTube…) empêchent une page web de récupérer leurs vidéos. Les sites de téléchargement en ligne passent par leur propre serveur. L'app, elle, prépare un petit kit qui fait le travail **sur votre PC**, avec **yt-dlp**, l'outil gratuit de référence (TikTok, YouTube, Instagram, X, Facebook, Vimeo et des centaines d'autres).
 
 1. Collez vos liens, **un par ligne**.
 2. Choisissez la qualité (1080p max conseillé). Options : **sous-titres du site** (.srt, quand le site en fournit) et **audio seul** (.mp3).
-3. **Télécharger le kit (.zip)** → dézippez → double-clic sur **`telecharger.bat`** (Windows) ou `bash telecharger.sh` (Mac/Linux).
+3. **Kit yt-dlp (.zip) — secours** → dézippez → double-clic sur **`telecharger.bat`** (Windows) ou `bash telecharger.sh` (Mac/Linux).
 4. Les vidéos arrivent dans **`telechargements/`**, numérotées dans l'ordre des liens.
 
 **Première fois : installer yt-dlp** (et FFmpeg, déjà utile pour le kit de montage)
@@ -58,7 +64,7 @@ Collez un ou plusieurs liens TikTok (`tiktok.com/@…/video/…` ou liens courts
 | Windows | `winget install yt-dlp.yt-dlp` puis `winget install Gyan.FFmpeg` |
 | Mac | `brew install ffmpeg` puis `pipx install "yt-dlp[default,curl-cffi]"` |
 
-Le script met yt-dlp à jour à chaque lancement : c'est ce qui le fait marcher quand un site change. Pour ajouter des liens plus tard, éditez `liens.txt` et relancez.
+Le script met yt-dlp à jour à chaque lancement. Pour ajouter des liens plus tard, éditez `liens.txt` et relancez. Les fichiers du kit ne reviennent pas automatiquement dans Agnes : glissez la vidéo obtenue dans l'étape 2.
 
 **Essayer en direct** : fonctionne pour un lien qui mène **directement à un fichier** `.mp4`, si son serveur l'autorise. Pas pour une page TikTok.
 

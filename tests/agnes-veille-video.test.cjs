@@ -29,10 +29,10 @@ function load(fetchImpl = async () => { throw new Error('appel réseau inattendu
 test('Veille vidéo est une extension Agnes indépendante, active par défaut', () => {
   const { plugin } = load();
   assert.equal(plugin.name, 'Veille vidéo TikTok et YouTube');
-  assert.equal(plugin.version, '2.1');
+  assert.equal(plugin.version, '2.2');
 
   const modules = fs.readFileSync(path.join(AGNES, 'Module-reglage', 'active-module.js'), 'utf8');
-  assert.match(modules, /key: "veille_video", id: "veille-video"[^\n]*plugin-veille\.js\?v=2\.1"[^\n]*defaultOn: true/);
+  assert.match(modules, /key: "veille_video", id: "veille-video"[^\n]*plugin-veille\.js\?v=2\.2"[^\n]*defaultOn: true/);
   assert.ok(fs.existsSync(path.join(AGNES, 'docs', '32-veille-video.md')));
   assert.match(SOURCE, /AgnesPlugins\.isLoaded\("extracteur"\)\s*&&\s*AgnesPlugins\.get\("extracteur"\)/);
 });
@@ -57,7 +57,12 @@ test('la recherche et les exports utilisent seulement les routes publiques prév
   assert.match(SOURCE, /source \|\| "—"/);
   assert.match(SOURCE, /verified_at \|\| "—"/);
   assert.match(SOURCE, /data-extract/);
-  assert.match(fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-extract.js'), 'utf8'), /openUrl: function \(url\)/);
+  const extract = fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-extract.js'), 'utf8');
+  assert.match(extract, /openUrl: function \(url\)/);
+  assert.match(extract, /downloadForAnalysis: function/);
+  assert.match(extract, /\/video\/importer/);
+  assert.match(extract, /prepareReference: function/);
+  assert.match(SOURCE, /id="vvAuto"/);
 });
 
 test('le filtre de publication masque les anciennes vidéos et les dates inconnues', () => {
@@ -157,10 +162,10 @@ test('film et série utilisent le contrôle générique sans dépendre du pont M
   assert.equal(atelierButton.disabled, false);
 });
 
-test('le bouton Extraire transmet le lien au module sans ouvrir la page source', () => {
+test('le bouton Extraire transmet le lien au téléchargement intégré sans ouvrir la page source', () => {
   const { plugin, plugins } = load();
   let received = '';
-  plugins.extracteur = { openUrl(url) { received = url; } };
+  plugins.extracteur = { importUrl(url) { received = url; return Promise.resolve(true); } };
   plugin.core = { getProject: () => ({ videoVeille: { filters: {}, references: {}, videos: [{ url: 'https://youtu.be/abcdefghijk' }] } }), toast() {} };
   plugin.sendToExtract(0);
   assert.equal(received, 'https://youtu.be/abcdefghijk');
@@ -185,4 +190,63 @@ test('Extraire reçoit le lien une seule fois et ouvre son propre onglet', () =>
   assert.equal(links.value.split('\n').filter((line) => line.includes('youtube.com')).length, 1);
   assert.equal(state.links, links.value);
   assert.deepEqual(shown, ['view_extraire', 'view_extraire']);
+});
+
+test('Extraire charge le fichier rendu par yt-dlp directement dans l’étape 2', async () => {
+  const plugins = {}, calls = [];
+  const context = {
+    AgnesPlugins: { register(id, plugin) { plugins[id] = plugin; }, get(id) { return plugins[id]; }, isLoaded() { return false; } },
+    URL, Blob, console,
+    fetch: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return {
+        ok: true,
+        headers: { get(name) { return name === 'X-File-Name' ? 'reference-youtube.mp4' : ''; } },
+        blob: async () => new Blob([new Uint8Array(25000)], { type: 'video/mp4' }),
+      };
+    },
+  };
+  context.window = { AgnesApp: {} };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-extract.js'), 'utf8'), context);
+  const extract = plugins.extracteur;
+  const button = { disabled: false, textContent: 'Télécharger pour analyser' };
+  let loaded = null;
+  extract.core = { toast() {} };
+  extract.cfg = { dlQuality: '720' };
+  extract.links = () => ['https://www.youtube.com/watch?v=abcdefghijk'];
+  extract.bridgeBase = () => 'http://127.0.0.1:8177';
+  extract.$ = (id) => id === 'exImport' ? button : { scrollIntoView() {} };
+  extract.setSource = (blob, name, restoring, sourceUrl) => { loaded = { blob, name, restoring, sourceUrl }; };
+  assert.equal(await extract.downloadForAnalysis(), true);
+  assert.equal(calls[0].url, 'http://127.0.0.1:8177/video/importer');
+  assert.equal(calls[0].body.hauteur, 720);
+  assert.equal(loaded.name, 'reference-youtube.mp4');
+  assert.equal(loaded.sourceUrl, 'https://www.youtube.com/watch?v=abcdefghijk');
+  assert.equal(loaded.blob.type, 'video/mp4');
+});
+
+test('le déclencheur IA remplit le parcours dans l’ordre depuis Extraire', async () => {
+  const { plugin, plugins } = load();
+  const reference = { video: { url: 'https://youtu.be/abcdefghijk', language: 'en' }, source: '', visual: '', translation: '', analysis: '', creation: '' };
+  const button = { disabled: false, textContent: '✨ Remplir le parcours avec l’IA' }, status = { textContent: '' };
+  plugins.extracteur = {
+    video: new Blob([new Uint8Array(25000)], { type: 'video/mp4' }),
+    sourceUrl: reference.video.url,
+    prepareReference: async () => ({ source: 'Original words', visual: 'Plan serré.', name: 'reference.mp4', url: reference.video.url }),
+  };
+  plugin.selected = () => reference;
+  plugin.view = { querySelector: (selector) => selector === '#vvAuto' ? button : status };
+  plugin.core = { saveProject() {}, toast() {} };
+  plugin.renderWorkflow = () => {};
+  plugin.translate = async () => { reference.translation = 'Traduction'; return reference.translation; };
+  plugin.analyze = async () => { reference.analysis = 'Analyse'; return reference.analysis; };
+  plugin.createScript = async () => { reference.creation = 'Création'; return reference.creation; };
+  assert.equal(await plugin.autoFill(), true);
+  assert.equal(reference.source, 'Original words');
+  assert.equal(reference.visual, 'Plan serré.');
+  assert.equal(reference.translation, 'Traduction');
+  assert.equal(reference.analysis, 'Analyse');
+  assert.equal(reference.creation, 'Création');
+  assert.match(status.textContent, /Parcours rempli/);
 });

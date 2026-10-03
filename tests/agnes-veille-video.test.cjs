@@ -226,6 +226,38 @@ test('Extraire charge le fichier rendu par yt-dlp directement dans l’étape 2'
   assert.equal(loaded.blob.type, 'video/mp4');
 });
 
+test('Extraire distingue un transfert interrompu d’un pont réellement arrêté', async () => {
+  const plugins = {}, calls = [], toasts = [];
+  const context = {
+    AgnesPlugins: { register(id, plugin) { plugins[id] = plugin; }, get(id) { return plugins[id]; }, isLoaded() { return false; } },
+    URL, Blob, TypeError, console,
+    fetch: async (url) => {
+      calls.push(url);
+      if (url.endsWith('/video/importer')) throw new TypeError('Failed to fetch');
+      if (url.endsWith('/health')) return { ok: true, status: 200 };
+      throw new Error('adresse inattendue');
+    },
+  };
+  context.window = { AgnesApp: {} };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(AGNES, 'plugins', 'plugin-extract.js'), 'utf8'), context);
+  const extract = plugins.extracteur;
+  const button = { disabled: false, textContent: 'Télécharger pour analyser' };
+  extract.core = { toast(message) { toasts.push(message); } };
+  extract.cfg = { dlQuality: '720' };
+  extract.links = () => ['https://www.youtube.com/watch?v=abcdefghijk'];
+  extract.bridgeBase = () => 'http://127.0.0.1:8177';
+  extract.$ = (id) => id === 'exImport' ? button : { scrollIntoView() {} };
+
+  assert.equal(await extract.downloadForAnalysis(), false);
+  assert.deepEqual(calls, [
+    'http://127.0.0.1:8177/video/importer',
+    'http://127.0.0.1:8177/health',
+  ]);
+  assert.match(toasts.at(-1), /pont répond/);
+  assert.match(toasts.at(-1), /disque C:/);
+});
+
 test('le déclencheur IA remplit le parcours dans l’ordre depuis Extraire', async () => {
   const { plugin, plugins } = load();
   const reference = { video: { url: 'https://youtu.be/abcdefghijk', language: 'en' }, source: '', visual: '', translation: '', analysis: '', creation: '' };

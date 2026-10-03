@@ -8,7 +8,7 @@
 //    ou capture manuelle ; export .zip, envoi vers la Bibliothèque ou vers Stills → Clip.
 AgnesPlugins.register("extracteur", {
   name: "Extracteur (lien, script, images)",
-  version: "2.0",
+  version: "2.0.1",
   TIKWM: "https://www.tikwm.com",
   TFJS: "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js",
 
@@ -313,9 +313,20 @@ AgnesPlugins.register("extracteur", {
       core.toast("Vidéo chargée dans l’étape 2. Vous pouvez maintenant la transcrire et l’analyser.", "ok");
       return true;
     }).catch(function (error) {
-      var message = error instanceof TypeError ? "pont local injoignable : relancez-le" : (error.message || error);
-      core.toast("Téléchargement impossible : " + message + ". Si la vidéo est publique, réessayez ; sinon utilisez le kit yt-dlp ou un fichier que vous possédez.", "err");
-      return false;
+      if (!(error instanceof TypeError)) {
+        core.toast("Téléchargement impossible : " + (error.message || error) + ". Si la vidéo est publique, réessayez ; sinon utilisez le kit yt-dlp ou un fichier que vous possédez.", "err");
+        return false;
+      }
+      // Un fetch interrompu ne signifie pas forcément que le pont est arrêté : sur une grosse
+      // vidéo, Chrome peut manquer d'espace local pendant la création du Blob de réponse.
+      return fetch(self.bridgeBase() + "/health", { cache: "no-store" }).then(function (r) {
+        if (!r.ok) throw new Error("health HTTP " + r.status);
+        core.toast("Téléchargement interrompu alors que le pont répond. Libérez plusieurs Go sur le disque C: puis réessayez.", "err");
+        return false;
+      }, function () {
+        core.toast("Téléchargement impossible : pont local injoignable. Relancez lancer_pont.bat puis réessayez.", "err");
+        return false;
+      });
     }).finally(function () { btn.disabled = false; btn.textContent = ancien; });
   },
   setSource: function (blob, name, restoring, sourceUrl) {

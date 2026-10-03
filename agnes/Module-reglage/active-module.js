@@ -5,8 +5,8 @@
   // Ajoutez ici vos futures extensions : { key, id (nom passé à AgnesPlugins.register), label, file }
   var EXTENSIONS = [
     { key: "stills", id: "stills", label: "Stills → Clip (importer ses images numérotées + prompts, animer avec Agnes) — onglet Stills → Clip", file: "plugins/plugin-stills.js", defaultOn: true },
-    { key: "extracteur", id: "extracteur", label: "Extracteur (lien → vidéo, script par transcription, images d'une vidéo) — onglet Extraire", file: "plugins/plugin-extract.js?v=1.8", defaultOn: true },
-    { key: "veille_video", id: "veille-video", label: "Veille vidéo publique TikTok et YouTube — onglet Veille vidéo", file: "plugins/plugin-veille.js?v=2.0", defaultOn: true },
+    { key: "extracteur", id: "extracteur", label: "Extracteur (lien → vidéo, script par transcription, images d'une vidéo) — onglet Extraire", file: "plugins/plugin-extract.js?v=1.9", defaultOn: true },
+    { key: "veille_video", id: "veille-video", label: "Veille vidéo publique TikTok et YouTube — Marketing, court métrage, série ou film — onglet Veille vidéo", file: "plugins/plugin-veille.js?v=2.1", defaultOn: true },
     { key: "scenario", id: "scenario", label: "Import de scénario (plans + dialogues + casting) — onglet Scénario", file: "plugins/plugin-script.js" },
     { key: "bible", id: "bible", label: "Bible de continuité (personnages, lieux, ADN ajouté aux prompts) — onglet Bible", file: "plugins/plugin-bible.js" },
     { key: "tts", id: "tts", label: "Voix-off & dialogues (ElevenLabs / OpenAI / micro) — onglet Voix", file: "plugins/plugin-tts.js" },

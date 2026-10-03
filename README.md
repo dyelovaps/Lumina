@@ -2,6 +2,12 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Agnes : veille en cartes, dates et passerelle Extraire (1.13.16, 03/10/2026)
+
+L’onglet **Veille vidéo** affiche maintenant ses résultats sous forme de cartes avec miniature YouTube, date de publication, durée et statistiques. Le filtre de publication propose 7 jours, 30 jours, 3 mois, 6 mois, 1 an ou toutes les dates ; lorsqu’une période est choisie, une vidéo sans date vérifiable est masquée.
+
+La veille n’est plus réservée au marketing : l’objectif peut être **Marketing — Anthony, 10 s**, **Court métrage**, **Série** ou **Film**. L’analyse et la création finale s’adaptent à l’objectif, tout en conservant la séparation source/traduction/interprétation et le contrôle anti-copie. Le bouton **Utiliser dans Extraire** place le lien dans l’onglet Extraire sans lancer de téléchargement automatique ; **Ouvrir la source** reste le lien vers YouTube ou TikTok.
+
 ## Agnes : veille vidéo TikTok + YouTube (1.13.15, 03/10/2026)
 
 Nouvelle extension indépendante **Veille vidéo** (`agnes/plugins/plugin-veille.js`, notice `agnes/docs/32-veille-video.md`, test `tests/agnes-veille-video.test.cjs`) : recherche publique TikTok et YouTube par mots-clés, filtres plateforme/format/langue/pays, métriques avec leur source et leur date de vérification, puis export facultatif vers `Marketing_Avatar`.

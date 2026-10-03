@@ -8,7 +8,7 @@
 //    ou capture manuelle ; export .zip, envoi vers la Bibliothèque ou vers Stills → Clip.
 AgnesPlugins.register("extracteur", {
   name: "Extracteur (lien, script, images)",
-  version: "1.8",
+  version: "1.9",
   TIKWM: "https://www.tikwm.com",
   TFJS: "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js",
 
@@ -262,6 +262,21 @@ AgnesPlugins.register("extracteur", {
       var t = core.getSelectedTake(s); return t && t.kind === "video" ? '<option value="' + s.id + '">Plan #' + (i + 1) + ' — ' + window.AgnesApp.esc((s.prompt || "").slice(0, 40)) + '</option>' : "";
     }).join("");
     this.$("exFromApp").innerHTML = '<option value="">…ou un rendu vidéo de ce projet</option>' + opts;
+  },
+  openUrl: function (url) {
+    var parsed;
+    try { parsed = new URL(String(url || "").trim()); } catch (error) { parsed = null; }
+    if (!parsed || (parsed.protocol !== "https:" && parsed.protocol !== "http:")) {
+      this.core.toast("Adresse vidéo invalide.", "err"); return false;
+    }
+    var links = this.$("exLinks"), list = links.value.split(/\r?\n/).map(function (item) { return item.trim(); }).filter(Boolean);
+    if (list.indexOf(parsed.href) === -1) list.unshift(parsed.href);
+    links.value = list.join("\n");
+    this.st().links = links.value; this.saveSoon();
+    window.AgnesApp.showView("view_extraire");
+    links.scrollIntoView({ behavior: "smooth", block: "center" });
+    this.core.toast("Lien ajouté dans Extraire. Utilisez la récupération TikTok ou le kit yt-dlp pour YouTube.", "ok");
+    return true;
   },
   setSource: function (blob, name, restoring) {
     var v = this.$("exPlayer");

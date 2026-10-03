@@ -55,4 +55,34 @@ test('le manifeste autorise le WebAssembly local et n’expose rien aux sites', 
   assert.match(m.content_security_policy.extension_pages, /'wasm-unsafe-eval'/);
   assert.doesNotMatch(m.content_security_policy.extension_pages, /https?:/);
   assert.ok(!JSON.stringify(m.web_accessible_resources).includes('transformers'));
+  for (const host of ['https://huggingface.co/*', 'https://*.huggingface.co/*', 'https://*.hf.co/*']) {
+    assert.ok(m.host_permissions.includes(host), `permission modèle manquante : ${host}`);
+  }
+});
+
+test('Whisper local utilise un seul chargement WASM q8 stable', async () => {
+  const ex = extracteur('chrome-extension://abcdefgh/agnes/index.html');
+  let calls = 0;
+  let options = null;
+  const asr = () => Promise.resolve({ text: '' });
+  ex.importWhisper = async () => ({
+    env: { allowLocalModels: true, allowRemoteModels: false, useBrowserCache: false, backends: { onnx: { wasm: {} } } },
+    pipeline: async (_task, _model, opts) => {
+      calls += 1;
+      options = opts;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return asr;
+    },
+  });
+  const statusA = { textContent: '' };
+  const statusB = { textContent: '' };
+  const [first, second] = await Promise.all([
+    ex.loadWhisper('Xenova/whisper-base', statusA),
+    ex.loadWhisper('Xenova/whisper-base', statusB),
+  ]);
+  assert.equal(calls, 1);
+  assert.equal(first, asr);
+  assert.equal(second, asr);
+  assert.equal(options.device, 'wasm');
+  assert.equal(options.dtype, 'q8');
 });

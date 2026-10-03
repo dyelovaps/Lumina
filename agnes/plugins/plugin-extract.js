@@ -8,34 +8,45 @@
 //    ou capture manuelle ; export .zip, envoi vers la Bibliothèque ou vers Stills → Clip.
 AgnesPlugins.register("extracteur", {
   name: "Extracteur (lien, script, images)",
-  version: "1.1",
+  version: "1.8",
   TIKWM: "https://www.tikwm.com",
   TFJS: "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js",
 
   init: function (core) {
     var App = window.AgnesApp, esc = App.esc, self = this;
-    this.core = core; this.frames = []; this.segments = []; this.video = null; this.srcName = "";
+    this.core = core; this.frames = []; this.segments = []; this.video = null; this.srcName = ""; this.metaSeq = 0; this.metaInfo = null;
+    this.transformersPromise = null; this.asrLoading = null; this.asrLoadingModel = "";
     var cfg = core.pluginSettings("extracteur", {
       dlQuality: "1080", dlSubs: true, dlAudio: false,
       engine: "local", whisper: "Xenova/whisper-small", lang: "french", openaiKey: "", openaiModel: "whisper-1",
       mode: "scenes", every: 2, count: 12, threshold: 30, pick: "middle", fmt: "image/jpeg"
     });
     this.cfg = cfg;
+    // Migration unique : l'ancien réglage par défaut chargeait whisper-small en WebGPU et pouvait faire
+    // recharger l'onglet par manque de mémoire. On repart une fois sur le modèle léger et stable.
+    if (!cfg.whisperStableWasm) {
+      cfg.whisper = "Xenova/whisper-base";
+      cfg.whisperStableWasm = true;
+      cfg.save();
+    }
 
     var view = core.ui.addTab("extraire", "Extraire",
       '<p class="hint">Pour vos propres vidéos, ou pour analyser une référence. Republier le contenu d\'un autre créateur demande son accord.</p>' +
       // ---------- 0. Veille ----------
-      '<div class="card"><h3>🔎 Veille — les meilleures vidéos de votre catégorie</h3>' +
-      '<p class="hint" style="margin-top:0">L\'IA propose des mots-clés, TikWM cherche sur TikTok avec les vraies statistiques (vues, likes, partages, date), l\'app classe. ' +
-      'Les liens cochés vont dans « 1. Télécharger depuis un lien ». Tout est enregistré dans le projet.</p>' +
+      '<div class="card"><h3>🔎 Veille — vidéos performantes de votre catégorie</h3>' +
+      '<p class="hint" style="margin-top:0">L\'IA propose des mots-clés, puis l\'app repère des vidéos TikTok et vérifie leurs statistiques publiques (compte, vues, likes, commentaires, partages et date). ' +
+      'Le classement porte sur les résultats accessibles au moment de la recherche : il ne garantit pas le classement global de TikTok. Les liens cochés vont dans « 1. Télécharger depuis un lien ».</p>' +
       '<div class="grid2"><div class="field"><label for="exVCat">Catégorie ou série</label><input type="text" id="exVCat" placeholder="Ex. mini-séries dramatiques avec des personnages fruits IA"></div>' +
       '<div class="field"><label for="exVKeys">Mots-clés TikTok (un par ligne)</label><textarea id="exVKeys" rows="3" placeholder="fruit drama&#10;aidrama&#10;série ia"></textarea></div></div>' +
       '<div class="row-inline"><button class="small-btn" id="exVSuggest" type="button">✨ Proposer des mots-clés (IA)</button>' +
+      '<label class="inline">Pays cible <input type="text" id="exVCountry" placeholder="Monde / France / Japon…" style="width:155px"></label>' +
       '<label class="inline">Période <select id="exVPeriod" style="width:auto"><option value="0">Toutes</option><option value="7">7 jours</option><option value="30">30 jours</option><option value="90">3 mois</option><option value="180">6 mois</option></select></label>' +
       '<label class="inline">Classer par <select id="exVSort" style="width:auto"><option value="play">Vues</option><option value="like">Likes</option><option value="share">Partages</option><option value="eng">Engagement</option></select></label>' +
       '<label class="inline">Garder <select id="exVKeep" style="width:auto"><option>10</option><option>20</option><option>30</option><option>50</option></select></label>' +
       '<label class="inline">Durée max <input type="number" id="exVMaxDur" min="0" placeholder="—" style="width:70px"> s</label>' +
-      '<button class="primary-btn" id="exVSearch" type="button">Chercher</button></div>' +
+      '<button class="primary-btn" id="exVSearch" type="button">Chercher</button>' +
+      '<button class="small-btn" id="exVCodex" type="button">🌐 Recherche renforcée (Codex + TikTok)</button></div>' +
+      '<p class="hint" style="margin:6px 0 0">Si la recherche gratuite est bloquée, la recherche renforcée essaie Codex puis, si nécessaire, ouvre temporairement TikTok dans votre Chrome. Elle ne conserve que les liens réellement affichés et fait vérifier leurs statistiques. Le pays cible oriente la recherche, mais TikTok peut encore la personnaliser selon votre compte et votre connexion. Le quota Codex est utilisé uniquement lorsque vous cliquez sur ce bouton.</p>' +
       '<div id="exVOut" style="margin-top:10px"></div></div>' +
       // ---------- 1. Lien ----------
       '<div class="card"><h3>1. Télécharger depuis un lien</h3>' +
@@ -57,15 +68,25 @@ AgnesPlugins.register("extracteur", {
       '<div class="row-inline" style="margin-top:8px"><select id="exFromApp" style="min-width:260px"><option value="">…ou un rendu vidéo de ce projet</option></select><span class="hint" id="exSrcInfo" style="margin:0"></span></div>' +
       '<div class="row-inline" id="exSessBar" style="margin-top:8px;display:none"><label class="inline">Vidéos analysées de ce projet <select id="exSess" style="width:auto;min-width:240px"></select></label>' +
       '<button class="small-btn" id="exSessDel" type="button">Retirer de la liste</button></div>' +
-      '<video id="exPlayer" controls playsinline style="display:none;max-width:100%;max-height:48vh;margin-top:10px;border-radius:10px;background:#000"></video></div>' +
+      '<div class="refs-block" id="exMetaBox" style="display:none;margin-top:10px"><div class="row-inline">' +
+      '<b>Confidentialité des métadonnées</b><button class="small-btn" id="exMetaCheck" type="button">Vérifier avec FFprobe</button>' +
+      '<button class="primary-btn" id="exMetaClean" type="button" style="display:none">Nettoyer avec FFmpeg</button>' +
+      '<button class="small-btn" id="exMetaDownload" type="button" style="display:none">Télécharger la copie nettoyée</button></div>' +
+      '<p class="hint" id="exMetaStatus" style="margin:7px 0 0"></p><div class="hint" id="exMetaDetails" style="margin-top:5px"></div></div>' +
+      '<div id="exVideoAnalysisWrap" style="display:none;grid-template-columns:minmax(280px,375px) minmax(300px,1fr);gap:16px;align-items:start;margin-top:10px">' +
+      '<video id="exPlayer" controls playsinline style="display:block;width:100%;max-height:70vh;border-radius:10px;background:#000"></video>' +
+      '<div class="refs-block" id="exVideoAnalysisBox" style="min-height:180px;max-height:70vh;overflow:auto"><div class="row-inline">' +
+      '<b>Analyse technique et visuelle</b><button class="primary-btn" id="exVideoAnalyze" type="button">✨ Analyser la vidéo</button></div>' +
+      '<p class="hint" id="exVideoAnalysisStatus" style="margin:7px 0 0">L’analyse démarre uniquement lorsque vous appuyez sur le bouton.</p>' +
+      '<div id="exVideoAnalysisResult" style="margin-top:8px"></div></div></div></div>' +
       // ---------- 3. Script ----------
       '<div class="card"><h3>3. Récupérer le script</h3><div class="ext-cols">' +
       '<div class="field"><label>Moteur</label><select id="exEngine"><option value="local">Whisper dans le navigateur (gratuit, privé)</option><option value="openai">API OpenAI (clé)</option><option value="subs">Fichier de sous-titres (.srt / .vtt)</option></select></div>' +
-      '<div class="field ex-local"><label>Précision</label><select id="exWhisper"><option value="Xenova/whisper-base">Rapide (modèle ~80 Mo)</option><option value="Xenova/whisper-small">Précis (modèle ~250 Mo)</option></select></div>' +
+      '<div class="field ex-local"><label>Précision</label><select id="exWhisper"><option value="Xenova/whisper-base">Rapide et stable (recommandé, ~80 Mo)</option><option value="Xenova/whisper-small">Précis (~250 Mo, ordinateur puissant)</option></select></div>' +
       '<div class="field ex-local ex-openai"><label>Langue parlée</label><select id="exLang"><option value="french">Français</option><option value="english">Anglais</option><option value="spanish">Espagnol</option><option value="arabic">Arabe</option><option value="">Détection auto</option></select></div>' +
       '<div class="field ex-openai"><label>Clé OpenAI</label><input type="password" id="exKey" placeholder="reprise de l\'onglet Voix si vide"></div>' +
       '<div class="field ex-openai"><label>Modèle</label><select id="exOModel"><option value="whisper-1">whisper-1 (avec timecodes)</option><option value="gpt-4o-transcribe">gpt-4o-transcribe (texte seul, plus précis)</option><option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe (texte seul)</option></select></div>' +
-      '</div><p class="hint ex-local">Le modèle est téléchargé une seule fois puis gardé par le navigateur. Comptez environ le temps réel de la vidéo avec le modèle précis.</p>' +
+      '</div><p class="hint ex-local">Le modèle est téléchargé une seule fois puis gardé par le navigateur. Le mode local stable limite la mémoire utilisée afin d\'éviter le rechargement de la page.</p>' +
       '<div class="row-inline"><button class="primary-btn" id="exTranscribe">Transcrire</button><label class="small-btn ex-subs" style="cursor:pointer">Importer .srt / .vtt<input type="file" id="exSubsFile" accept=".srt,.vtt,.txt" hidden></label><span class="hint" id="exTStatus" style="margin:0"></span></div>' +
       '<div id="exScriptWrap" style="display:none;margin-top:10px"><div class="row-inline"><select id="exFormat"><option value="text">Texte</option><option value="time">Avec timecodes</option><option value="srt">Sous-titres .srt</option></select>' +
       '<button class="small-btn" id="exCopy">Copier</button><button class="small-btn" id="exDlTxt">Télécharger</button><button class="small-btn" id="exToScenario">→ Scénario</button>' +
@@ -128,8 +149,10 @@ AgnesPlugins.register("extracteur", {
     $("exProxy").addEventListener("change", function () { cfg.tkProxy = this.checked; cfg.save(); });
     $("exTk").addEventListener("click", function (e) {
       var b = e.target.closest("[data-tk]"); if (!b) return;
+      e.preventDefault();
       var it = self.tk[+b.getAttribute("data-i")]; if (!it) return;
       var act = b.getAttribute("data-tk");
+      if (b.classList.contains("primary-btn")) act = "load";
       if (act === "open") return window.open(self.tkUrl(it, b.getAttribute("data-q")), "_blank", "noopener");
       if (act === "cover") return self.tkCover(it);
       self.tkMedia(it, b.getAttribute("data-q"), act, b);
@@ -152,6 +175,10 @@ AgnesPlugins.register("extracteur", {
         self.setSource(b, "plan-" + (core.getShots().indexOf(s) + 1) + ".mp4");
       }).catch(function (e) { core.toast(e.message, "err"); });
     });
+    $("exMetaCheck").addEventListener("click", function () { self.checkMetadata(false); });
+    $("exMetaClean").addEventListener("click", function () { self.cleanMetadata(); });
+    $("exMetaDownload").addEventListener("click", function () { if (self.video) core.download(self.video, self.srcName || "video_nettoyee.mp4"); });
+    $("exVideoAnalyze").addEventListener("click", function () { self.analyseVideo(); });
 
     // ---------- 3. Script ----------
     $("exTranscribe").addEventListener("click", function () { self.transcribe(); });
@@ -190,8 +217,9 @@ AgnesPlugins.register("extracteur", {
 
     // ---------- Veille ----------
     $("exVSearch").addEventListener("click", function () { self.veilleSearch(); });
+    $("exVCodex").addEventListener("click", function () { self.veilleCodexSearch(); });
     $("exVSuggest").addEventListener("click", function () { self.veilleSuggest(); });
-    ["exVCat", "exVKeys", "exVPeriod", "exVSort", "exVKeep", "exVMaxDur"].forEach(function (id) {
+    ["exVCat", "exVKeys", "exVCountry", "exVPeriod", "exVSort", "exVKeep", "exVMaxDur"].forEach(function (id) {
       $(id).addEventListener("change", function () { self.veilleSaveForm(); if (id === "exVSort" || id === "exVKeep" || id === "exVMaxDur" || id === "exVPeriod") self.veilleRender(); });
     });
     $("exVOut").addEventListener("change", function (e) {
@@ -240,13 +268,161 @@ AgnesPlugins.register("extracteur", {
     if (!restoring) this.newSession(blob, name);
     if (this.videoUrl) URL.revokeObjectURL(this.videoUrl);
     this.video = blob; this.srcName = name; this.videoUrl = URL.createObjectURL(blob);
-    v.src = this.videoUrl; v.style.display = /^audio\//.test(blob.type) ? "none" : "";
+    var audio = /^audio\//.test(blob.type);
+    v.src = this.videoUrl; v.style.display = audio ? "none" : "block";
+    this.$("exVideoAnalysisWrap").style.display = audio ? "none" : "grid";
+    this.resetVideoAnalysis();
     var self = this;
     v.onloadedmetadata = function () {
       var d = isFinite(v.duration) ? v.duration : 0;
       self.$("exSrcInfo").textContent = name + (d ? " · " + self.fmtTime(d) : "") + (v.videoWidth ? " · " + v.videoWidth + "×" + v.videoHeight : "");
     };
     this.$("exSrcInfo").textContent = name;
+    this.resetMetadata();
+    this.checkMetadata(true);
+  },
+  bridgeBase: function () {
+    var moteurs = window.AgnesPlugins && AgnesPlugins.get("moteurs");
+    return String((moteurs && moteurs.cfg && moteurs.cfg.pont) || "http://127.0.0.1:8177").replace(/\/+$/, "");
+  },
+  resetMetadata: function () {
+    this.metaSeq += 1; this.metaInfo = null;
+    if (!this.$ || !this.$("exMetaBox")) return;
+    this.$("exMetaBox").style.display = this.video ? "" : "none";
+    this.$("exMetaStatus").textContent = this.video ? "Vérification locale en attente…" : "";
+    this.$("exMetaDetails").innerHTML = "";
+    this.$("exMetaCheck").disabled = !this.video;
+    this.$("exMetaClean").style.display = "none";
+    this.$("exMetaDownload").style.display = this.video && /_nettoyee\.[^.]+$/i.test(this.srcName || "") ? "" : "none";
+  },
+  renderMetadata: function (data) {
+    var esc = window.AgnesApp.esc, items = (data && data.metadonnees) || [], sensibles = items.filter(function (x) { return x.confidentielle; });
+    this.metaInfo = data;
+    this.$("exMetaBox").style.display = "";
+    this.$("exMetaCheck").disabled = false;
+    this.$("exMetaClean").style.display = sensibles.length ? "" : "none";
+    this.$("exMetaStatus").textContent = sensibles.length
+      ? sensibles.length + " information(s) potentiellement confidentielle(s) détectée(s). Créez une copie nettoyée avant de continuer."
+      : "Aucune information confidentielle détectée. Les données purement techniques peuvent rester présentes.";
+    if (!items.length) this.$("exMetaDetails").innerHTML = "";
+    else this.$("exMetaDetails").innerHTML = '<details' + (sensibles.length ? " open" : "") + '><summary>Voir les métadonnées repérées</summary><ul style="margin:6px 0 0 18px">' +
+      items.map(function (x) { return '<li><b>' + esc(x.categorie) + '</b> — ' + esc(x.cle) + ' : ' + esc(x.valeur) + (x.confidentielle ? "" : " (technique)") + '</li>'; }).join("") + "</ul></details>";
+  },
+  metadataError: function (e, silent) {
+    var msg = (e && e.message) || String(e || "erreur inconnue");
+    this.$("exMetaCheck").disabled = false; this.$("exMetaClean").style.display = "none";
+    this.$("exMetaStatus").textContent = "Vérification indisponible : " + msg;
+    if (!silent) this.core.toast("Métadonnées : " + msg, "err");
+  },
+  checkMetadata: function (silent) {
+    var self = this, blob = this.video; if (!blob) { if (!silent) this.core.toast("Choisissez d'abord une vidéo.", "err"); return Promise.resolve(); }
+    var seq = ++this.metaSeq, btn = this.$("exMetaCheck"); btn.disabled = true;
+    this.$("exMetaStatus").textContent = "Vérification locale avec FFprobe…"; this.$("exMetaDetails").innerHTML = ""; this.$("exMetaClean").style.display = "none";
+    return fetch(this.bridgeBase() + "/media/metadata", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream", "X-File-Name": encodeURIComponent(this.srcName || "video.mp4") }, body: blob })
+      .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); })
+      .then(function (d) { if (seq !== self.metaSeq) return null; self.renderMetadata(d); return d; })
+      .catch(function (e) { if (seq === self.metaSeq) self.metadataError(e, silent); return null; });
+  },
+  cleanMetadata: function () {
+    var self = this, blob = this.video; if (!blob) return this.core.toast("Choisissez d'abord une vidéo.", "err");
+    var btn = this.$("exMetaClean"), old = btn.textContent; btn.disabled = true; this.$("exMetaCheck").disabled = true; btn.textContent = "Nettoyage…";
+    this.$("exMetaStatus").textContent = "FFmpeg crée une copie nettoyée sans modifier l'original…";
+    fetch(this.bridgeBase() + "/media/nettoyer", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream", "X-File-Name": encodeURIComponent(this.srcName || "video.mp4") }, body: blob })
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || ("HTTP " + r.status)); });
+        return r.blob().then(function (b) { return { blob: b, name: decodeURIComponent(r.headers.get("X-File-Name") || "video_nettoyee.mp4") }; });
+      }).then(function (out) {
+        self.setSource(out.blob, out.name);
+        self.core.toast("Copie nettoyée chargée dans l'analyse. La vidéo originale est conservée.", "ok");
+      }).catch(function (e) { self.metadataError(e, false); })
+      .finally(function () { btn.disabled = false; btn.textContent = old; if (self.video) self.$("exMetaCheck").disabled = false; });
+  },
+  resetVideoAnalysis: function () {
+    this.analysisSeq = (this.analysisSeq || 0) + 1; this.videoAnalysis = null;
+    if (!this.$ || !this.$("exVideoAnalysisResult")) return;
+    this.$("exVideoAnalysisResult").innerHTML = "";
+    this.$("exVideoAnalysisStatus").textContent = this.video ? "L’analyse démarre uniquement lorsque vous appuyez sur le bouton." : "";
+    this.$("exVideoAnalyze").disabled = !this.video;
+  },
+  videoAnalysisSamples: function () {
+    var self = this;
+    return this.worker().then(function (v) {
+      var duree = Number(v.duration) || 0, ratios = [0.03, 0.18, 0.37, 0.56, 0.76, 0.95], vus = {}, temps = [];
+      ratios.forEach(function (r) { var t = Math.max(0, Math.min(duree - 0.05, duree * r)); var cle = t.toFixed(2); if (!vus[cle]) { vus[cle] = true; temps.push(t); } });
+      var images = [], mesures = [], chaine = Promise.resolve();
+      temps.forEach(function (t) {
+        chaine = chaine.then(function () { return self.seekVideo(v, t); }).then(function () {
+          var max = 384, k = Math.min(1, max / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement("canvas");
+          c.width = Math.max(2, Math.round(v.videoWidth * k)); c.height = Math.max(2, Math.round(v.videoHeight * k));
+          var ctx = c.getContext("2d", { willReadFrequently: true }); ctx.drawImage(v, 0, 0, c.width, c.height);
+          var px = ctx.getImageData(0, 0, c.width, c.height).data, gris = new Float32Array(c.width * c.height), somme = 0, somme2 = 0, sat = 0;
+          for (var i = 0, p = 0; i < px.length; i += 4, p++) {
+            var r = px[i], g = px[i + 1], b = px[i + 2], y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            gris[p] = y; somme += y; somme2 += y * y; sat += (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+          }
+          var n = gris.length, lap2 = 0, lapN = 0;
+          for (var y0 = 1; y0 < c.height - 1; y0++) for (var x0 = 1; x0 < c.width - 1; x0++) {
+            var q = y0 * c.width + x0, lap = 4 * gris[q] - gris[q - 1] - gris[q + 1] - gris[q - c.width] - gris[q + c.width]; lap2 += lap * lap; lapN++;
+          }
+          mesures.push({ lumiere: somme / n, contraste: Math.sqrt(Math.max(0, somme2 / n - Math.pow(somme / n, 2))), saturation: sat / n * 100, nettete: Math.sqrt(lap2 / Math.max(1, lapN)) });
+          images.push({ t: t, data: c.toDataURL("image/jpeg", 0.78) });
+        });
+      });
+      return chaine.then(function () {
+        function moyenne(cle) { return mesures.reduce(function (s, x) { return s + x[cle]; }, 0) / Math.max(1, mesures.length); }
+        return { largeur: v.videoWidth, hauteur: v.videoHeight, duree: duree, images: images,
+          mesures: { lumiere: moyenne("lumiere"), contraste: moyenne("contraste"), saturation: moyenne("saturation"), nettete: moyenne("nettete") } };
+      });
+    });
+  },
+  renderVideoTechnical: function (meta, echantillon) {
+    var esc = window.AgnesApp.esc, v = (meta && meta.video) || {}, a = (meta && meta.audio) || {};
+    var largeur = Number(v.largeur) || echantillon.largeur || 0, hauteur = Number(v.hauteur) || echantillon.hauteur || 0, petit = Math.min(largeur, hauteur), grand = Math.max(largeur, hauteur);
+    var definition = petit >= 2160 ? "très élevée (4K ou plus)" : petit >= 1080 ? "élevée (Full HD)" : petit >= 720 ? "bonne (HD)" : petit >= 540 ? "moyenne" : "faible";
+    var m = echantillon.mesures || {}, nettete = m.nettete >= 24 ? "détails marqués" : m.nettete >= 12 ? "netteté moyenne" : "image plutôt douce";
+    var lumiere = m.lumiere < 70 ? "sombre" : m.lumiere > 190 ? "très claire" : "équilibrée";
+    var contraste = m.contraste < 30 ? "faible" : m.contraste > 65 ? "fort" : "moyen";
+    var fps = Number(v.fps) || 0, images = Number(v.images) || 0, debit = Number(meta && meta.debit) || 0, taille = Number(meta && meta.taille_octets) || (this.video && this.video.size) || 0;
+    var lignes = [
+      ["Définition", largeur && hauteur ? largeur + " × " + hauteur + " — " + definition : "information non disponible"],
+      ["Format", largeur && hauteur ? (hauteur > largeur ? "vertical" : largeur > hauteur ? "horizontal" : "carré") + " · " + (grand / Math.max(1, petit)).toFixed(2) + ":1" : "information non disponible"],
+      ["Images par seconde", fps ? fps.toLocaleString("fr-FR") + " FPS" : "information non disponible"],
+      ["Nombre d’images", images ? (v.images_estimees ? "environ " : "") + images.toLocaleString("fr-FR") : "information non disponible"],
+      ["Encodage", [v.codec, v.profil, v.pixel].filter(Boolean).join(" · ") || "information non disponible"],
+      ["Débit vidéo", debit ? Math.round(debit / 1000).toLocaleString("fr-FR") + " kbit/s" : "information non disponible"],
+      ["Taille du fichier", taille ? (taille / 1048576).toFixed(1).replace(".", ",") + " Mo" : "information non disponible"],
+      ["Mesure sur " + echantillon.images.length + " images", nettete + " · luminosité " + lumiere + " · contraste " + contraste + " · saturation moyenne " + Math.round(m.saturation || 0) + " %"],
+      ["Audio", a.codec ? a.codec + (a.frequence ? " · " + Math.round(a.frequence / 1000) + " kHz" : "") + (a.canaux ? " · " + a.canaux + " canal(aux)" : "") : "information non disponible"]
+    ];
+    return '<div><b>Mesures locales</b><dl style="display:grid;grid-template-columns:max-content 1fr;gap:5px 12px;margin:8px 0 0">' + lignes.map(function (x) { return '<dt class="hint" style="margin:0">' + esc(x[0]) + '</dt><dd style="margin:0">' + esc(x[1]) + '</dd>'; }).join("") + '</dl>' +
+      '<p class="hint" style="margin:8px 0 0">La netteté, la lumière, le contraste et la saturation sont des estimations calculées sur les images échantillonnées, pas une certification de qualité.</p></div>';
+  },
+  analyseVideo: function () {
+    var self = this, core = this.core, blob = this.video, btn = this.$("exVideoAnalyze"), statut = this.$("exVideoAnalysisStatus"), resultat = this.$("exVideoAnalysisResult");
+    if (!blob || /^audio\//.test(blob.type)) return core.toast("Choisissez d’abord une vidéo.", "err");
+    var seq = ++this.analysisSeq, ancien = btn.textContent; btn.disabled = true; btn.textContent = "Analyse…"; resultat.innerHTML = ""; statut.textContent = "Mesure de la vidéo et prélèvement de 6 images représentatives…";
+    var meta = this.metaInfo ? Promise.resolve(this.metaInfo) : this.checkMetadata(false).then(function () { return self.metaInfo; });
+    Promise.all([meta, this.videoAnalysisSamples()]).then(function (donnees) {
+      if (seq !== self.analysisSeq) throw new Error("analyse remplacée par une autre vidéo");
+      var technique = donnees[0], echantillon = donnees[1], html = self.renderVideoTechnical(technique, echantillon); resultat.innerHTML = html;
+      var at; try { at = self.atelier(); } catch (e) { statut.textContent = "Mesures terminées. Analyse du style indisponible : " + e.message; return null; }
+      statut.textContent = "Analyse du style visuel par l’IA sur 6 images…";
+      var v = (technique && technique.video) || {}, resume = "Vidéo : " + (v.largeur || echantillon.largeur) + "×" + (v.hauteur || echantillon.hauteur) + ", " + (v.fps || "FPS inconnu") + " FPS, durée " + self.fmtTime(echantillon.duree) + ".";
+      var contenu = [{ type: "text", text: resume + "\nLes images suivantes sont des prélèvements à " + echantillon.images.map(function (x) { return self.fmtTime(x.t); }).join(", ") + ". Analyse uniquement ce qui est visible. Sépare OBSERVATIONS et INTERPRÉTATION. Décris : médium probable (prise de vue, 2D, 3D, IA…), style, palette, lumière, composition/cadrages, niveau de détail, cohérence visuelle et défauts visibles. Termine par 4 conseils concrets pour reproduire cette qualité. N’invente ni histoire, ni mouvement entre les images, ni information absente." }];
+      echantillon.images.forEach(function (x) { contenu.push({ type: "image_url", image_url: { url: x.data } }); });
+      return at.chat([{ role: "system", content: "Tu es directeur de la photographie et analyste d’images. Tu distingues les faits visuels des interprétations et tu signales les limites d’un échantillon de photogrammes." }, { role: "user", content: contenu }], { temperature: 0.2, max_tokens: 1600, _single: true })
+        .then(function (m) {
+          if (seq !== self.analysisSeq) return;
+          var texte = String(m.content || "").trim(); self.videoAnalysis = { technique: technique, visuel: texte, at: Date.now() };
+          resultat.innerHTML = html + '<div class="refs-block" style="margin-top:10px"><b>Analyse visuelle par IA</b><p style="white-space:pre-wrap;margin:8px 0 0">' + window.AgnesApp.esc(texte || "information non disponible") + '</p></div>';
+          statut.textContent = "Analyse terminée" + (m._provider ? " par " + m._provider : "") + ".";
+        }).catch(function (e) {
+          if (seq !== self.analysisSeq) return;
+          var message = e.display || e.message || String(e); resultat.innerHTML = html + '<div class="refs-block" style="margin-top:10px"><b>Analyse visuelle indisponible</b><p class="hint" style="margin:6px 0 0">' + window.AgnesApp.esc(message) + '</p></div>';
+          statut.textContent = "Mesures techniques terminées ; le modèle IA sélectionné n’a pas pu analyser les images.";
+        });
+    }).catch(function (e) { if (seq === self.analysisSeq) { statut.textContent = "Analyse impossible : " + (e.message || e); core.toast("Analyse vidéo : " + (e.message || e), "err"); } })
+      .finally(function () { if (seq === self.analysisSeq) { btn.disabled = false; btn.textContent = ancien; } });
   },
   fmtTime: function (s, ms) {
     s = Math.max(0, s || 0); var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = Math.floor(s % 60), z = function (n, l) { return String(n).padStart(l || 2, "0"); };
@@ -365,7 +541,7 @@ AgnesPlugins.register("extracteur", {
       if (it.err) return '<div class="ext-row"><span class="ext-tag err">échec</span><span class="grow hint" style="margin:0">' + esc(it.url) + ' — ' + esc(String(it.err).replace(/[.\s]+$/, '')) +
         '. Réessayez dans un moment, cochez le relais ci-dessus, ou utilisez le kit yt-dlp.</span></div>';
       var d = it.d, a = d.author || {}, dur = d.duration ? self.fmtTime(d.duration) : "";
-      var btn = function (act, q, label, cls) { return '<button class="' + (cls || "small-btn") + '" data-tk="' + act + '" data-q="' + q + '" data-i="' + i + '">' + label + '</button>'; };
+      var btn = function (act, q, label, cls) { return '<button type="button" class="' + (cls || "small-btn") + '" data-tk="' + act + '" data-q="' + q + '" data-i="' + i + '">' + label + '</button>'; };
       return '<div class="ext-row">' + (d.cover ? '<img src="' + esc(self.abs(d.cover)) + '" alt="" style="width:54px;height:96px;object-fit:cover;border-radius:6px" referrerpolicy="no-referrer">' : '') +
         '<div class="grow"><b>' + esc((d.title || "Vidéo TikTok").slice(0, 120)) + '</b><br><span class="hint" style="margin:0">@' + esc(a.unique_id || a.nickname || "—") + (dur ? " · " + dur : "") +
         (d.play_count ? " · " + Number(d.play_count).toLocaleString("fr-FR") + " vues" : "") + '</span>' +
@@ -374,22 +550,53 @@ AgnesPlugins.register("extracteur", {
         (d.wmplay ? btn("save", "wm", "⬇ Avec filigrane") : "") + btn("cover", "", "Couverture → Bibliothèque") + '</div></div></div>';
     }).join("");
   },
-  // Récupère le fichier ; si le serveur refuse, on ouvre le lien pour « Enregistrer sous… »
+  // Récupère le fichier : direct, puis pont local (qui n'est pas soumis au CORS du navigateur),
+  // puis relais allOrigins si l'option est cochée. Aucun échec n'ouvre un onglet tout seul.
   tkMedia: function (it, q, act, btn) {
-    var self = this, core = this.core, url = this.tkUrl(it, q), name = this.tkName(it, q);
+    var self = this, core = this.core, url = this.tkUrl(it, q);
     if (!url) return core.toast("Lien vidéo absent pour cette qualité.", "err");
+    var choices = [{ url: url, q: q, proxy: false }];
+    if (q === "hd") {
+      var sd = this.tkUrl(it, "sd");
+      if (sd && sd !== url) choices.push({ url: sd, q: "sd", proxy: false });
+    }
+    var direct = choices.slice(), moteurs = window.AgnesPlugins && AgnesPlugins.get("moteurs");
+    var pont = String((moteurs && moteurs.cfg && moteurs.cfg.pont) || "http://127.0.0.1:8177").replace(/\/+$/, "");
+    direct.forEach(function (c) {
+      choices.push({ url: pont + "/media/proxy?url=" + encodeURIComponent(c.url), q: c.q, local: true });
+    });
+    if (this.cfg.tkProxy) direct.forEach(function (c) {
+      choices.push({ url: "https://api.allorigins.win/raw?url=" + encodeURIComponent(c.url), q: c.q, proxy: true });
+    });
     var label = btn.textContent; btn.disabled = true; btn.textContent = "…";
-    fetch(url, { referrerPolicy: "no-referrer" }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.blob();
-    }).then(function (b) {
-      if (b.size < 20000) throw new Error("fichier vide");
-      var blob = /video|octet/.test(b.type) ? new Blob([b], { type: "video/mp4" }) : b;
-      if (act === "load") { self.setSource(blob, name); self.$("exPlayer").scrollIntoView({ behavior: "smooth", block: "center" }); core.toast("Vidéo chargée : passez au script ou aux images.", "ok"); }
-      else { core.download(blob, name); core.toast("Téléchargement : " + name, "ok"); }
+    function tryChoice(i, lastError) {
+      if (i >= choices.length) return Promise.reject(lastError || new Error("aucun flux vidéo accessible"));
+      var choice = choices[i];
+      return fetch(choice.url, { referrerPolicy: "no-referrer" }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.blob();
+      }).then(function (b) {
+        if (b.size < 20000) throw new Error("fichier vide");
+        if (/text|html|json/i.test(b.type || "")) throw new Error("le serveur n'a pas renvoyé une vidéo");
+        return { blob: /^video\//i.test(b.type || "") ? b : new Blob([b], { type: "video/mp4" }), choice: choice };
+      }).catch(function (e) { return tryChoice(i + 1, e); });
+    }
+    tryChoice(0).then(function (result) {
+      var blob = result.blob, choice = result.choice, name = self.tkName(it, choice.q);
+      var infos = [];
+      if (choice.q !== q) infos.push("qualité standard");
+      if (choice.local) infos.push("via le pont local");
+      else if (choice.proxy) infos.push("via le relais public");
+      var detail = infos.length ? " (" + infos.join(", ") + ")" : "";
+      if (act === "load") { self.setSource(blob, name); self.$("exPlayer").scrollIntoView({ behavior: "smooth", block: "center" }); core.toast("Vidéo chargée" + detail + " : passez au script ou aux images.", "ok"); }
+      else { core.download(blob, name); core.toast("Téléchargement" + detail + " : " + name, "ok"); }
     }).catch(function (e) {
-      window.open(url, "_blank", "noopener");
-      core.toast("Téléchargement direct refusé (" + (e instanceof TypeError ? "blocage du serveur" : e.message) + ") : la vidéo s'ouvre dans un onglet — clic droit → « Enregistrer la vidéo sous… », puis glissez-la dans l'étape 2.", "err");
+      var reason = e instanceof TypeError ? "blocage du serveur" : e.message;
+      if (act === "load") {
+        core.toast("Impossible de charger la vidéo dans l'analyse (" + reason + "). " + (self.cfg.tkProxy ? "Téléchargez-la puis glissez-la dans l'étape 2." : "Cochez le relais public puis réessayez, ou téléchargez-la et glissez-la dans l'étape 2."), "err");
+        return;
+      }
+      core.toast("Téléchargement impossible (" + reason + "). Cochez le relais public puis réessayez.", "err");
     }).finally(function () { btn.disabled = false; btn.textContent = label; });
   },
   tkCover: function (it) {
@@ -492,8 +699,9 @@ AgnesPlugins.register("extracteur", {
     return [{ lib: this.TFJS, wasm: null, proxy: true }];
   },
   importWhisper: function () {
-    var tries = this.whisperSources(), last = null;
-    return tries.reduce(function (chain, src) {
+    if (this.transformersPromise) return this.transformersPromise;
+    var self = this, tries = this.whisperSources(), last = null;
+    var loading = tries.reduce(function (chain, src) {
       return chain.catch(function (e) {
         if (e) last = e;
         return import(src.lib).then(function (T) {
@@ -503,25 +711,47 @@ AgnesPlugins.register("extracteur", {
         });
       });
     }, Promise.reject(null)).catch(function (e) { throw e || last; });
+    this.transformersPromise = loading.catch(function (e) {
+      self.transformersPromise = null;
+      throw e;
+    });
+    return this.transformersPromise;
   },
   loadWhisper: function (model, st) {
     var self = this;
     if (this.asr && this.asrModel === model) return Promise.resolve(this.asr);
+    if (this.asrLoading) {
+      if (this.asrLoadingModel === model) {
+        st.textContent = "Chargement du modèle déjà en cours…";
+        return this.asrLoading;
+      }
+      return this.asrLoading.then(function () { return self.loadWhisper(model, st); });
+    }
     st.textContent = "Chargement du moteur…";
-    return this.importWhisper().then(function (T) {
+    var loading = this.importWhisper().then(function (T) {
       T.env.allowLocalModels = false;
+      T.env.allowRemoteModels = true;
+      T.env.useBrowserCache = true;
+      // Le mode WebGPU charge Whisper en pleine précision et peut dépasser la mémoire de l'onglet.
+      // WASM q8 est moins gourmand et évite les rechargements/crashs observés dans Chrome.
+      try { T.env.backends.onnx.wasm.proxy = false; T.env.backends.onnx.wasm.numThreads = 1; } catch (e0) { }
       var files = {};
       var progress = function (p) {
         if (p.status === "progress" && p.file) { files[p.file] = p; }
         var list = Object.keys(files).map(function (k) { return files[k]; }), tot = list.reduce(function (a, f) { return a + (f.total || 0); }, 0), got = list.reduce(function (a, f) { return a + (f.loaded || 0); }, 0);
         if (tot) st.textContent = "Téléchargement du modèle (une seule fois)… " + Math.round(got / tot * 100) + " %";
       };
-      var make = function (device) { return T.pipeline("automatic-speech-recognition", model, { device: device, progress_callback: progress }); };
-      return (navigator.gpu ? make("webgpu").catch(function () { return make("wasm"); }) : make("wasm"));
-    }).then(function (asr) { self.asr = asr; self.asrModel = model; return asr; })
+      return T.pipeline("automatic-speech-recognition", model, { device: "wasm", dtype: "q8", progress_callback: progress });
+    }).then(function (asr) { self.asr = asr; self.asrModel = model; return asr; });
+    this.asrLoading = loading; this.asrLoadingModel = model;
+    return loading
       .catch(function (e) {
-        throw new Error("moteur Whisper indisponible (" + (e.message || e) + "). Le modèle se télécharge une seule fois depuis " +
+        var detail = String((e && e.message) || e || "erreur inconnue");
+        if (/Aborted|out of memory|memory access|device.*lost/i.test(detail)) detail = "le moteur local a été interrompu par Chrome (mémoire insuffisante)";
+        throw new Error("moteur Whisper indisponible (" + detail + "). Le modèle se télécharge une seule fois depuis " +
           "Hugging Face : vérifiez la connexion internet, ou utilisez l'API OpenAI / un fichier de sous-titres.");
+      }).finally(function () {
+        if (self.asrLoading === loading) { self.asrLoading = null; self.asrLoadingModel = ""; }
       });
   },
   localTranscribe: function (pcm, st) {
@@ -767,7 +997,7 @@ AgnesPlugins.register("extracteur", {
     this.segments = (ss.segments || []).slice(); this.clearFramesUI();
     return this.core.store.get(ss.srcKey).then(function (blob) {
       if (blob) self.setSource(blob, ss.name, true);
-      else { self.video = null; self.srcName = ss.name; self.$("exPlayer").style.display = "none"; self.$("exSrcInfo").textContent = ss.name + " (fichier vidéo indisponible : glissez-le à nouveau pour extraire des images)"; }
+      else { self.video = null; self.srcName = ss.name; self.$("exPlayer").style.display = "none"; self.$("exVideoAnalysisWrap").style.display = "none"; self.resetVideoAnalysis(); self.$("exSrcInfo").textContent = ss.name + " (fichier vidéo indisponible : glissez-le à nouveau pour extraire des images)"; }
       self.showScript();
       if (ss.scriptEdit != null) { if (ss.scriptFmt) self.$("exFormat").value = ss.scriptFmt; self.$("exScript").value = ss.scriptEdit; self.$("exScriptWrap").style.display = ""; }
       self.$("exConvInstr").value = ss.convInstr || ""; self.$("exConvOut").value = ss.convOut || "";
@@ -791,7 +1021,9 @@ AgnesPlugins.register("extracteur", {
   },
   resetView: function () {
     this.video = null; this.srcName = ""; this.segments = []; this.showScript(); this.clearFramesUI();
-    var v = this.$("exPlayer"); v.removeAttribute("src"); v.style.display = "none"; this.$("exSrcInfo").textContent = "";
+    var v = this.$("exPlayer"); v.removeAttribute("src"); v.style.display = "none"; this.$("exVideoAnalysisWrap").style.display = "none"; this.$("exSrcInfo").textContent = "";
+    this.resetVideoAnalysis();
+    this.resetMetadata();
     this.$("exConvInstr").value = ""; this.$("exConvOut").value = ""; this.$("exConvBox").style.display = "none";
   },
   // À l'ouverture de l'app ou au changement de projet : on retrouve tout
@@ -810,12 +1042,12 @@ AgnesPlugins.register("extracteur", {
   // =========================================================
   veilleSaveForm: function () {
     var v = this.st().veille, $ = this.$.bind(this);
-    v.cat = $("exVCat").value; v.keys = $("exVKeys").value; v.period = +$("exVPeriod").value; v.sort = $("exVSort").value;
+    v.cat = $("exVCat").value; v.keys = $("exVKeys").value; v.country = $("exVCountry").value.trim(); v.period = +$("exVPeriod").value; v.sort = $("exVSort").value;
     v.keep = +$("exVKeep").value; v.maxDur = +$("exVMaxDur").value || 0; this.saveSoon();
   },
   veilleFillForm: function () {
     var v = this.st().veille, $ = this.$.bind(this);
-    $("exVCat").value = v.cat || ""; $("exVKeys").value = v.keys || ""; $("exVPeriod").value = String(v.period != null ? v.period : 30);
+    $("exVCat").value = v.cat || ""; $("exVKeys").value = v.keys || ""; $("exVCountry").value = v.country || ""; $("exVPeriod").value = String(v.period != null ? v.period : 30);
     $("exVSort").value = v.sort || "play"; $("exVKeep").value = String(v.keep || 20); $("exVMaxDur").value = v.maxDur || "";
   },
   atelier: function () {
@@ -829,84 +1061,237 @@ AgnesPlugins.register("extracteur", {
     if (!v.cat) return core.toast("Décrivez d'abord votre catégorie ou votre série.", "err");
     var at; try { at = this.atelier(); } catch (e) { return core.toast(e.message, "err"); }
     btn.disabled = true; btn.textContent = "L'IA cherche des mots-clés…";
-    at.chat([{ role: "system", content: "Tu es expert des tendances TikTok francophones. Réponds uniquement par une liste de 8 recherches TikTok, une par ligne, sans numéro ni commentaire : mots-clés courts et hashtags sans #, en français surtout, 2 en anglais." },
-      { role: "user", content: "Catégorie : " + v.cat }], { temperature: 0.5, max_tokens: 200 })
+    at.chat([{ role: "system", content: "Tu es expert des tendances TikTok. Réponds uniquement par une liste de 6 recherches TikTok, une par ligne, sans numéro ni commentaire : mots-clés courts et hashtags sans #, dans la langue utile au pays cible et avec 2 variantes internationales." },
+      { role: "user", content: "Catégorie : " + v.cat + "\nPays cible : " + (v.country || "monde / sans filtre") }], { temperature: 0.5, max_tokens: 200 })
       .then(function (m) {
-        var keys = String(m.content || "").split(/\n+/).map(function (l) { return l.replace(/^[\s\-*•\d.)#]+/, "").trim(); }).filter(function (l) { return l && l.length < 60; }).slice(0, 10);
+        var keys = String(m.content || "").split(/\n+/).map(function (l) { return l.replace(/^[\s\-*•\d.)#]+/, "").trim(); }).filter(function (l) { return l && l.length < 60; }).slice(0, 8);
         if (!keys.length) throw new Error("réponse vide");
         self.$("exVKeys").value = keys.join("\n"); self.veilleSaveForm();
         core.toast(keys.length + " mots-clés proposés : modifiez-les si besoin, puis « Chercher ».", "ok");
       }).catch(function (e) { core.toast("Mots-clés : " + (e.display || e.message || e), "err"); })
       .finally(function () { btn.disabled = false; btn.textContent = "✨ Proposer des mots-clés (IA)"; });
   },
-  // Recherche TikWM : GET puis POST, relais allOrigins si coché
+  // Recherche : pont local en priorité (TikWM, puis recherche web de secours), accès direct en repli.
   tikwmSearch: function (kw, cursor) {
-    var self = this, params = { keywords: kw, count: "30", cursor: String(cursor || 0), HD: "1", region: "FR" };
+    var self = this, params = { keywords: kw, count: "8", cursor: String(cursor || 0), hd: "1", web: "1", region: "FR" };
     var qs = Object.keys(params).map(function (k) { return k + "=" + encodeURIComponent(params[k]); }).join("&"), url = this.TIKWM + "/api/feed/search?" + qs;
     function parse(j) {
       if (j && typeof j.contents === "string") { try { j = JSON.parse(j.contents); } catch (e) { } }
-      if (!j || (j.code != null && j.code !== 0)) throw new Error((j && j.msg) || "réponse TikWM invalide");
-      var d = j.data || {}; return { videos: d.videos || d.aweme_list || (Array.isArray(d) ? d : []), cursor: d.cursor, more: !!d.hasMore };
+      if (!j || (j.code != null && Number(j.code) !== 0)) throw new Error((j && (j.error || j.msg)) || "réponse TikWM invalide");
+      var d = j.data || {}; return { videos: d.videos || d.aweme_list || (Array.isArray(d) ? d : []), cursor: d.cursor, more: !!(d.hasMore || d.has_more), source: j.source || "TikWM", warning: j.warning || "" };
     }
-    var tries = [function () { return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(parse); },
-      function () { return fetch(self.TIKWM + "/api/feed/search", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(params) }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(parse); }];
-    if (this.cfg.tkProxy) tries.push(function () { return fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url)).then(function (r) { return r.json(); }).then(parse); });
-    var chain = Promise.reject(), last = null;
-    tries.forEach(function (t) { chain = chain.catch(function (e) { if (e) last = e; return t(); }); });
-    return chain.catch(function (e) { throw e && e.message ? e : last || new Error("échec"); });
+    function json(r, pontLocal) {
+      return r.text().then(function (texte) {
+        var j;
+        try { j = JSON.parse(texte); }
+        catch (e) {
+          var invalide = new Error(/<!doctype|<html/i.test(texte) ? "le service a renvoyé une page de protection HTML" : "réponse non JSON");
+          invalide.pontLocal = !!pontLocal; throw invalide;
+        }
+        if (!r.ok) {
+          var err = new Error(j.error || j.msg || ("HTTP " + r.status));
+          err.pontLocal = !!pontLocal && r.status !== 404; throw err;
+        }
+        return j;
+      });
+    }
+    function limite(p, ms) { return Promise.race([p, new Promise(function (_, rej) { setTimeout(function () { rej(new Error("délai dépassé")); }, ms); })]); }
+    var pont = this.bridgeBase() + "/tiktok/search?" + qs;
+    return limite(fetch(pont, { headers: { Accept: "application/json" } }).then(function (r) { return json(r, true); }).then(parse), 60000)
+      .catch(function (pontErreur) {
+        // Le pont a déjà essayé TikWM et les moteurs gratuits : conserver son message clair au lieu de relire
+        // la page HTML de Cloudflare. Le direct ne sert que si le pont lui-même est injoignable ou trop ancien.
+        if (pontErreur && pontErreur.pontLocal) throw pontErreur;
+        var tries = [
+          function () { return limite(fetch(url, { headers: { Accept: "application/json, text/plain, */*" } }).then(function (r) { return json(r, false); }).then(parse), 18000); },
+          function () { return limite(fetch(self.TIKWM + "/api/feed/search", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json, text/plain, */*" }, body: new URLSearchParams(params) }).then(function (r) { return json(r, false); }).then(parse), 18000); }
+        ];
+        if (self.cfg.tkProxy) tries.push(function () { return limite(fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url)).then(function (r) { return json(r, false); }).then(parse), 25000); });
+        var chain = Promise.reject(), last = pontErreur;
+        tries.forEach(function (t) { chain = chain.catch(function (e) { if (e) last = e; return t(); }); });
+        return chain.catch(function (e) { throw e && e.message ? e : last || new Error("échec"); });
+      });
+  },
+  veilleIngest: function (found, kw, r) {
+    var self = this;
+    (r.videos || []).forEach(function (x) {
+      var id = String(x.video_id || x.aweme_id || x.id || ""); if (!id) return;
+      var a = x.author || {}, stats = x.statistics || x.stats || {}, astats = a.statistics || a.stats || {};
+      var metric = function () { for (var z = 0; z < arguments.length; z++) if (arguments[z] !== undefined && arguments[z] !== null && arguments[z] !== "") { var n = Number(arguments[z]); if (isFinite(n)) return n; } return null; };
+      var user = a.unique_id || a.uniqueId || x.author_name || x.authorName || "";
+      var direct = x.web_video_url || x.share_url || x.url || ("https://www.tiktok.com/@" + (user || "_") + "/video/" + id);
+      var item = found[id] || { id: id, url: direct, title: x.title || x.desc || "", user: user, nickname: a.nickname || "", cover: self.abs(x.cover || x.origin_cover || ""),
+        dur: metric(x.duration), play: metric(x.play_count, stats.play_count, x.view_count, stats.view_count), like: metric(x.digg_count, stats.digg_count, x.like_count, stats.like_count),
+        comment: metric(x.comment_count, stats.comment_count), share: metric(x.share_count, stats.share_count), collect: metric(x.collect_count, stats.collect_count),
+        followers: metric(a.follower_count, astats.follower_count, astats.followerCount), time: metric(x.create_time, x.createTime), region: x.region || "", source: r.source || "TikWM", keys: [], on: false };
+      var origine = String(x.source_keyword || kw || "recherche").trim();
+      if (origine && item.keys.indexOf(origine) === -1) item.keys.push(origine);
+      found[id] = item;
+    });
   },
   veilleSearch: function () {
     var self = this, core = this.core, v = this.st().veille, btn = this.$("exVSearch"), out = this.$("exVOut");
     this.veilleSaveForm();
-    var keys = String(v.keys || "").split(/\n+/).map(function (k) { return k.replace(/^#/, "").trim(); }).filter(Boolean).slice(0, 12);
+    var keys = String(v.keys || "").split(/\n+/).map(function (k) { return k.replace(/^#/, "").trim(); }).filter(Boolean).slice(0, 8);
     if (!keys.length) return core.toast("Écrivez au moins un mot-clé (ou « Proposer des mots-clés »).", "err");
-    btn.disabled = true; var found = {}, errors = [], chain = Promise.resolve();
+    btn.disabled = true; var found = {}, errors = [], warnings = [], chain = Promise.resolve();
     keys.forEach(function (kw, i) {
       chain = chain.then(function () {
         out.innerHTML = '<p class="hint">Recherche « ' + window.AgnesApp.esc(kw) + ' » (' + (i + 1) + '/' + keys.length + ')…</p>';
         return self.tikwmSearch(kw, 0).then(function (r) {
-          r.videos.forEach(function (x) {
-            var id = String(x.video_id || x.aweme_id || x.id || ""); if (!id) return;
-            var a = x.author || {}, user = a.unique_id || a.uniqueId || "";
-            var item = found[id] || { id: id, url: "https://www.tiktok.com/@" + (user || "_") + "/video/" + id, title: x.title || x.desc || "", user: user, cover: self.abs(x.cover || x.origin_cover || ""),
-              dur: +x.duration || 0, play: +x.play_count || 0, like: +x.digg_count || 0, comment: +x.comment_count || 0, share: +x.share_count || 0, time: +x.create_time || 0, keys: [], on: false };
-            if (item.keys.indexOf(kw) === -1) item.keys.push(kw);
-            found[id] = item;
-          });
+          if (r.warning) warnings.push(r.warning);
+          self.veilleIngest(found, kw, r);
         }, function (e) { errors.push(kw + " : " + (e.message || e)); })
           .then(function () { return new Promise(function (res) { setTimeout(res, 1200); }); });   // TikWM : ~1 requête / s
       });
     });
     chain.then(function () {
       v.results = Object.keys(found).map(function (k) { return found[k]; }); v.at = Date.now(); v.analysis = "";
+      v.notice = warnings.filter(function (x, i, a) { return a.indexOf(x) === i; }).join(" "); v.errors = errors;
       self.veilleView().slice(0, 5).forEach(function (r) { r.on = true; });
       core.saveProject(); self.veilleRender();
-      if (!v.results.length) core.toast("Aucune vidéo trouvée" + (errors.length ? " — " + errors[0] + ". Réessayez dans une minute ou cochez le relais allOrigins (étape 1)." : "."), "err");
+      if (!v.results.length) core.toast("Aucune vidéo trouvée" + (errors.length ? " — " + errors[0] + ". Vérifiez que le pont est relancé, puis réessayez." : "."), "err");
       else core.toast(v.results.length + " vidéo(s) trouvée(s) ; les " + Math.min(v.keep || 20, self.veilleView().length) + " meilleures sont affichées" + (errors.length ? " (" + errors.length + " recherche(s) en échec)" : "") + ".", "ok");
     }).finally(function () { btn.disabled = false; });
+  },
+  veilleTikTokBrowserSearch: function (keys, compte, out, country) {
+    var self = this;
+    if (!window.chrome || !chrome.tabs || !chrome.scripting) return Promise.reject(new Error("ouvrez Agnes depuis l’extension Lumina pour utiliser la recherche TikTok du navigateur"));
+    var tabId = null, items = [], vus = {}, limite = Math.max(10, Math.min(60, Number(compte) || 20)), cible = String(country || "").trim();
+    function erreurChrome(repli) { return chrome.runtime && chrome.runtime.lastError ? chrome.runtime.lastError.message : repli; }
+    function attendre(id) {
+      return new Promise(function (resolve, reject) {
+        var fini = false, timer = setTimeout(function () { nettoyer(); reject(new Error("TikTok met trop longtemps à charger")); }, 30000);
+        function nettoyer() { clearTimeout(timer); chrome.tabs.onUpdated.removeListener(ecoute); }
+        function ok() { if (fini) return; fini = true; nettoyer(); setTimeout(resolve, 1800); }
+        function ecoute(changedId, change) { if (changedId === id && change.status === "complete") ok(); }
+        chrome.tabs.onUpdated.addListener(ecoute);
+        chrome.tabs.get(id, function (tab) { if (chrome.runtime.lastError) { nettoyer(); reject(new Error(erreurChrome("onglet TikTok inaccessible"))); } else if (tab && tab.status === "complete") ok(); });
+      });
+    }
+    function ouvrir(url) {
+      return new Promise(function (resolve, reject) {
+        if (tabId == null) chrome.tabs.create({ url: url, active: false }, function (tab) {
+          if (chrome.runtime.lastError || !tab) reject(new Error(erreurChrome("impossible d’ouvrir TikTok")));
+          else { tabId = tab.id; resolve(); }
+        });
+        else chrome.tabs.update(tabId, { url: url, active: false }, function () {
+          if (chrome.runtime.lastError) reject(new Error(erreurChrome("impossible d’ouvrir la recherche TikTok"))); else resolve();
+        });
+      }).then(function () { return attendre(tabId); });
+    }
+    function relever() {
+      return new Promise(function (resolve, reject) {
+        chrome.scripting.executeScript({ target: { tabId: tabId }, func: async function () {
+          for (var tour = 0; tour < 3; tour++) {
+            window.scrollTo(0, Math.max(document.body.scrollHeight, document.documentElement.scrollHeight));
+            await new Promise(function (r) { setTimeout(r, 1200); });
+          }
+          var urls = [], deja = {};
+          function ajouter(brut) {
+            try {
+              var u = new URL(brut, location.href), m = u.href.match(/^https:\/\/(?:www\.)?tiktok\.com\/@[A-Za-z0-9._-]+\/video\/\d+/i);
+              if (m && !deja[m[0].toLowerCase()]) { deja[m[0].toLowerCase()] = true; urls.push(m[0]); }
+            } catch (e) { }
+          }
+          document.querySelectorAll('a[href*="/video/"]').forEach(function (a) { ajouter(a.href); });
+          var html = document.documentElement.innerHTML.replace(/\\u002F/gi, "/").replace(/\\\//g, "/");
+          (html.match(/https?:\/\/(?:www\.)?tiktok\.com\/@[A-Za-z0-9._-]+\/video\/\d+/gi) || []).forEach(ajouter);
+          var texte = (document.body && document.body.innerText || "").slice(0, 1500);
+          return { urls: urls, connexion: /se connecter|log in|sign up|captcha|verify/i.test(texte) };
+        } }, function (res) {
+          if (chrome.runtime.lastError) reject(new Error(erreurChrome("lecture de TikTok refusée")));
+          else resolve(res && res[0] && res[0].result || { urls: [] });
+        });
+      });
+    }
+    var chaine = Promise.resolve(), connexion = false;
+    keys.forEach(function (kw, i) {
+      chaine = chaine.then(function () {
+        if (items.length >= limite) return;
+        out.innerHTML = '<p class="hint">TikTok affiche les résultats « ' + window.AgnesApp.esc(kw) + ' » (' + (i + 1) + '/' + keys.length + ')…</p>';
+        var requete = kw + (cible && !/^(monde|global|world)$/i.test(cible) ? " " + cible : "");
+        return ouvrir("https://www.tiktok.com/search/video?q=" + encodeURIComponent(requete)).then(relever).then(function (rep) {
+          connexion = connexion || !!rep.connexion;
+          (rep.urls || []).forEach(function (url) {
+            var id = url.toLowerCase(); if (!vus[id] && items.length < limite) { vus[id] = true; items.push({ url: url, keyword: kw }); }
+          });
+        });
+      });
+    });
+    return chaine.then(function () {
+      if (!items.length) throw new Error(connexion ? "TikTok demande une connexion ou une vérification : ouvrez TikTok, connectez-vous, puis réessayez" : "TikTok n’a affiché aucun lien vidéo direct pour ces mots-clés");
+      out.innerHTML = '<p class="hint">' + items.length + ' lien(s) trouvé(s) dans TikTok. Vérification des comptes et des statistiques…</p>';
+      return fetch(self.bridgeBase() + "/tiktok/verifier-liens", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ items: items, count: limite }) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || ("HTTP " + r.status)); return j; }); });
+    }).finally(function () { if (tabId != null) chrome.tabs.remove(tabId, function () { void chrome.runtime.lastError; }); });
+  },
+  veilleCodexSearch: function () {
+    var self = this, core = this.core, v = this.st().veille, btn = this.$("exVCodex"), out = this.$("exVOut");
+    this.veilleSaveForm();
+    var keys = String(v.keys || "").split(/\n+/).map(function (k) { return k.replace(/^#/, "").trim(); }).filter(Boolean).slice(0, 8);
+    if (!keys.length) return core.toast("Écrivez au moins un mot-clé (ou « Proposer des mots-clés »).", "err");
+    btn.disabled = true; btn.textContent = "Recherche renforcée…";
+    out.innerHTML = '<p class="hint">Codex cherche des liens TikTok publics. Si le Web n’en expose pas, la recherche continuera automatiquement dans TikTok…</p>';
+    var controle = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var minuterie = controle ? setTimeout(function () { controle.abort(); }, 300000) : null, codexErreur = "";
+    fetch(this.bridgeBase() + "/tiktok/recherche-codex", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ keywords: keys, count: Math.min(20, Number(v.keep) || 20), period: Number(v.period) || 0, country: v.country || "" }),
+      signal: controle ? controle.signal : undefined
+    }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || ("HTTP " + r.status)); return j; }); })
+      .catch(function (e) {
+        codexErreur = e && e.name === "AbortError" ? "Codex : délai dépassé" : "Codex : " + (e.message || e);
+        if (minuterie) { clearTimeout(minuterie); minuterie = null; }
+        out.innerHTML = '<p class="hint">Codex n’a pas fourni de lien direct. Recherche dans TikTok avec votre navigateur…</p>';
+        return self.veilleTikTokBrowserSearch(keys, Math.min(60, Math.max(20, Number(v.keep) || 20)), out, v.country);
+      }).then(function (j) {
+        var d = j.data || {}, rep = { videos: d.videos || [], source: j.source || "Recherche renforcée + statistiques TikWM", warning: j.warning || "" }, found = {};
+        if (codexErreur) rep.warning = codexErreur + ". " + rep.warning;
+        self.veilleIngest(found, keys.join(", "), rep);
+        v.results = Object.keys(found).map(function (k) { return found[k]; }); v.at = Date.now(); v.analysis = "";
+        v.notice = rep.warning; v.errors = [];
+        self.veilleView().slice(0, 5).forEach(function (x) { x.on = true; });
+        if (!v.results.length) throw new Error("aucun lien TikTok direct et vérifiable trouvé");
+        core.saveProject(); self.veilleRender();
+        core.toast(v.results.length + " vidéo(s) trouvée(s) et vérifiée(s).", "ok");
+      }).catch(function (e) {
+        var message = e && e.name === "AbortError" ? "délai dépassé après 5 minutes" : (e.message || e);
+        v.errors = ["Recherche renforcée : " + message]; self.veilleRender();
+        core.toast("Recherche renforcée : " + message, "err");
+      }).finally(function () {
+        if (minuterie) clearTimeout(minuterie);
+        btn.disabled = false; btn.textContent = "🌐 Recherche renforcée (Codex + TikTok)";
+      });
   },
   // Résultats filtrés (période, durée) et classés
   veilleView: function () {
     var v = this.st().veille, now = Date.now() / 1000, list = (v.results || []).slice();
-    if (v.period) list = list.filter(function (r) { return !r.time || now - r.time <= v.period * 86400; });
+    if (v.period) list = list.filter(function (r) { return r.time && now - r.time <= v.period * 86400; });
     if (v.maxDur) list = list.filter(function (r) { return !r.dur || r.dur <= v.maxDur; });
-    var score = { play: function (r) { return r.play; }, like: function (r) { return r.like; }, share: function (r) { return r.share; },
-      eng: function (r) { return r.play > 500 ? (r.like + r.comment * 2 + r.share * 3) / r.play : 0; } }[v.sort || "play"];
+    var score = { play: function (r) { return r.play || 0; }, like: function (r) { return r.like || 0; }, share: function (r) { return r.share || 0; },
+      eng: function (r) { return r.play > 500 ? ((r.like || 0) + (r.comment || 0) * 2 + (r.share || 0) * 3) / r.play : 0; } }[v.sort || "play"];
     return list.sort(function (a, b) { return score(b) - score(a); }).slice(0, v.keep || 20);
   },
   veilleRender: function () {
     var self = this, v = this.st().veille, out = this.$("exVOut"), esc = window.AgnesApp.esc, list = this.veilleView();
-    if (!v.results || !v.results.length) { out.innerHTML = ""; return; }
-    var n = function (x) { return x >= 1e6 ? (x / 1e6).toFixed(1).replace(".", ",") + " M" : x >= 1e3 ? Math.round(x / 1e3) + " k" : String(x); };
+    if (!v.results || !v.results.length) {
+      out.innerHTML = v.errors && v.errors.length ? '<div class="refs-block"><b>Recherche indisponible</b><p class="hint" style="margin:5px 0 0">' + esc(v.errors.join(" · ")) + '<br>Relancez le pont local, puis réessayez. Les erreurs restent affichées pour faciliter le diagnostic.</p></div>' : "";
+      return;
+    }
+    var n = function (x) { return x == null ? "—" : x >= 1e6 ? (x / 1e6).toFixed(1).replace(".", ",") + " M" : x >= 1e3 ? Math.round(x / 1e3) + " k" : String(x); };
     var all = v.results;
     out.innerHTML = '<p class="hint" style="margin:0 0 8px">' + list.length + ' vidéo(s) affichée(s) sur ' + all.length + ' trouvée(s)' + (v.at ? ' · recherche du ' + new Date(v.at).toLocaleString("fr-FR") : '') + '</p>' +
+      (v.notice ? '<div class="refs-block" style="margin-bottom:8px"><span class="hint">' + esc(v.notice) + '</span></div>' : '') +
+      (v.errors && v.errors.length ? '<p class="hint" style="margin:0 0 8px">Recherches non abouties : ' + esc(v.errors.join(" · ")) + '</p>' : '') +
       list.map(function (r) {
-        var i = all.indexOf(r), eng = r.play ? Math.round((r.like + r.comment + r.share) / r.play * 1000) / 10 : 0;
+        var i = all.indexOf(r), eng = r.play ? Math.round(((r.like || 0) + (r.comment || 0) + (r.share || 0)) / r.play * 1000) / 10 : null;
         return '<div class="ext-row ex-vrow"><input type="checkbox" data-vi="' + i + '"' + (r.on ? " checked" : "") + ' aria-label="Garder cette vidéo">' +
           (r.cover ? '<img src="' + esc(r.cover) + '" alt="" referrerpolicy="no-referrer">' : '<span class="ex-vnocover"></span>') +
           '<div class="grow"><b>' + esc((r.title || "Vidéo TikTok").slice(0, 110)) + '</b><br><span class="hint" style="margin:0">@' + esc(r.user || "—") +
-          (r.time ? ' · ' + new Date(r.time * 1000).toLocaleDateString("fr-FR") : '') + (r.dur ? ' · ' + r.dur + ' s' : '') + ' · via « ' + esc(r.keys.join(", ")) + ' »</span>' +
-          '<div class="ex-vstats"><span>👁 ' + n(r.play) + '</span><span>❤ ' + n(r.like) + '</span><span>💬 ' + n(r.comment) + '</span><span>↗ ' + n(r.share) + '</span><span>' + eng + ' % d\'engagement</span>' +
+          (r.nickname ? ' (' + esc(r.nickname) + ')' : '') + (r.time ? ' · ' + new Date(r.time * 1000).toLocaleDateString("fr-FR") : ' · date indisponible') + (r.dur ? ' · ' + r.dur + ' s' : '') + ' · via « ' + esc(r.keys.join(", ")) + ' »</span>' +
+          '<div class="ex-vstats"><span>👁 ' + n(r.play) + '</span><span>❤ ' + n(r.like) + '</span><span>💬 ' + n(r.comment) + '</span><span>↗ ' + n(r.share) + '</span>' + (r.collect != null ? '<span>🔖 ' + n(r.collect) + '</span>' : '') +
+          '<span>' + (eng == null ? "engagement —" : eng + " % d'engagement") + '</span><span>source : ' + esc(r.source || "TikWM") + '</span>' +
           '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">ouvrir</a></div></div></div>';
       }).join("") +
       '<div class="row-inline" style="margin-top:8px"><button class="small-btn" data-vact="all" type="button">Tout cocher / décocher</button>' +

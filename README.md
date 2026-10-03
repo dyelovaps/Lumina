@@ -2,6 +2,14 @@
 
 Lot Imagine pour [grok.com/imagine](https://grok.com/imagine).
 
+## Agnes : veille vidéo TikTok + YouTube (1.13.15, 03/10/2026)
+
+Nouvelle extension indépendante **Veille vidéo** (`agnes/plugins/plugin-veille.js`, notice `agnes/docs/32-veille-video.md`, test `tests/agnes-veille-video.test.cjs`) : recherche publique TikTok et YouTube par mots-clés, filtres plateforme/format/langue/pays, métriques avec leur source et leur date de vérification, puis export facultatif vers `Marketing_Avatar`.
+
+Le parcours **Étudier pour Anthony** sépare la source, la traduction fidèle, l’analyse et la création originale de 10 secondes. Un contrôle lexical local et une revue IA du sens bloquent l’envoi à l’Atelier en cas de proximité excessive. Extraire et l’Atelier restent optionnels : désactiver Veille vidéo ne casse aucun autre onglet, et aucune vidéo tierce n’est téléchargée ou publiée automatiquement.
+
+Prérequis : relancer le pont `prod-fruits`, recharger Lumina dans Chrome, puis ouvrir **Agnes → Veille vidéo**.
+
 ## Agnes : Styles de prompt, séries débloquées (1.13.7, 01/10/2026)
 
 Copie `agnes/` mise à jour (`npm run sync:agnes`). Agnes 3.12, détail dans `agnes/docs/29-styles.md`.

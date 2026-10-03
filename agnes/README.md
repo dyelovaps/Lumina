@@ -32,7 +32,8 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | Étape | Onglet | Ce que vous faites |
 |---|---|---|
 | 1 | **Atelier IA** | L'équipe d'agents écrit concept, bibles, épisodes, scénario et prompts. Le Chef de production range le travail dans l'app, avec votre autorisation |
-| 1 bis | **Extraire** *(facultatif)* | Veille des meilleures vidéos de votre catégorie, puis une vidéo de référence : script, une image par plan, conversion en prompts pour Le lot |
+| 1 bis | **Veille vidéo** *(facultatif)* | Recherchez des références publiques TikTok et YouTube, vérifiez les métriques, traduisez et étudiez une vidéo sans la copier |
+| 1 ter | **Extraire** *(facultatif)* | Téléchargez une vidéo autorisée, puis récupérez son script, ses plans et ses images pour Le lot |
 | 2 | **Bible** | Vérifiez l'ADN des personnages et des lieux, ajoutez leurs images de référence |
 | 3 | **Bibliothèque** | Préparez les références (personnages, décors), sous **les mêmes noms** que dans la Bible |
 | 4 | **Scénario** ou **Le lot** | Le scénario devient des plans avec leurs dialogues ; le script numéroté devient une carte par plan avec ses références |
@@ -91,6 +92,7 @@ L'application tourne entièrement dans le navigateur : pas de serveur, pas d'ins
 | [17 — Publication](docs/17-publication.md) | Textes TikTok / Reels / Shorts / YouTube, couverture, kit |
 | [18 — Planning](docs/18-planning.md) | Calendrier, rythme de diffusion, export agenda |
 | [19 — Extraire](docs/19-extracteur.md) | Veille TikTok (meilleures vidéos d'une catégorie), TikTok par lien, kit yt-dlp, script (Whisper) converti en prompts pour Le lot, images d'une vidéo ; tout enregistré dans le projet |
+| [32 — Veille vidéo](docs/32-veille-video.md) | Recherche publique TikTok et YouTube, métriques vérifiées, filtres pays/langue/format, export facultatif vers Marketing_Avatar et parcours anti-copie pour Anthony |
 | [22 — AutoCaption](docs/22-autocaption.md) | Sous-titres animés et stylés (TikTok, karaoké, mot par mot…) posés après la génération, dans l'Assemblage et le kit FFmpeg ; exports .srt / .ass |
 | [25 — Mentions @ et #](docs/25-mentions.md) | `@[Personnage]` coche sa référence, `#[Skill]` place un skill dans le texte ; suggestions en tapant @ ou # |
 | [24 — Moteurs de génération](docs/24-moteurs.md) | Images par ChatGPT (via le pont local) ou Agnes, vidéos par Grok ou Google Flow (via Lumina) ou Agnes |
